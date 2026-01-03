@@ -7,7 +7,7 @@ import morgan from "morgan";
 import rateLimit from "express-rate-limit";
 
 // Routes
-import authRoutes from "./routes/AuthRoutes.js";
+import authRoutes from "./routes/authRoutes.js";
 import serviceRoutes from "./routes/serviceRoutes.js";           // ✅ Public service routes
 import adminServiceRoutes from "./routes/adminServiceRoutes.js"; // ✅ Admin-only services
 import orderRoutes from "./routes/orderRoutes.js";

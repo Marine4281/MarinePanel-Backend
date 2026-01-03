@@ -40,7 +40,7 @@ app.use(
 /* Middlewares */
 app.use(
   cors({
-    origin: "http://localhost:5173", // frontend origin
+    origin: "https://marine-panel-frontend.vercel.app/", // frontend origin
     credentials: true,
   })
 );

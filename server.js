@@ -11,7 +11,7 @@ mongoose.connect(process.env.MONGO_URI)
   .then(() => console.log("MongoDB connected"))
   .catch(err => console.log(err));
 
-const PORT = process.env.PORT || 5000;
+const PORT = process.env.PORT || 10000;
 
 // Wrap Express app in HTTP server
 const server = http.createServer(app);
@@ -19,7 +19,7 @@ const server = http.createServer(app);
 // Initialize Socket.IO
 export const io = new Server(server, {
   cors: {
-    origin: "http://localhost:5173", // React frontend URL
+    origin: "https://marine-panel-frontend.vercel.app/", // React frontend URL
     methods: ["GET", "POST"],
   },
 });

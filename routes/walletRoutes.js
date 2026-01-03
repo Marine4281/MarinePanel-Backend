@@ -1,5 +1,5 @@
 import express from "express";
-import { getWallet, addFunds, withdrawFunds } from "../controllers/WalletController.js";
+import { getWallet, addFunds, withdrawFunds } from "../controllers/walletController.js";
 import { protect } from "../middlewares/authMiddleware.js";
 
 const router = express.Router();

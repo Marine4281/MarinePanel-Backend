@@ -1,6 +1,6 @@
 import express from "express";
 import { getAllOrders, completeOrder, refundOrder } from "../controllers/adminOrderController.js";
-import { getWalletStats } from "../controllers/WalletController.js";
+import { getWalletStats } from "../controllers/walletController.js";
 import { adminOnly } from "../middlewares/adminMiddleware.js";
 import { protect } from "../middlewares/authMiddleware.js";
 

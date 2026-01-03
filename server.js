@@ -1,0 +1,39 @@
+import mongoose from "mongoose";
+import dotenv from "dotenv";
+import app from "./app.js";
+import http from "http";
+import { Server } from "socket.io";
+
+dotenv.config();
+
+// Connect to MongoDB
+mongoose.connect(process.env.MONGO_URI)
+  .then(() => console.log("MongoDB connected"))
+  .catch(err => console.log(err));
+
+const PORT = process.env.PORT || 5000;
+
+// Wrap Express app in HTTP server
+const server = http.createServer(app);
+
+// Initialize Socket.IO
+export const io = new Server(server, {
+  cors: {
+    origin: "http://localhost:5173", // React frontend URL
+    methods: ["GET", "POST"],
+  },
+});
+
+// Make io accessible in routes/controllers via app.set (optional)
+app.set("io", io);
+
+io.on("connection", (socket) => {
+  console.log("New client connected:", socket.id);
+
+  socket.on("disconnect", () => {
+    console.log("Client disconnected:", socket.id);
+  });
+});
+
+// Start server
+server.listen(PORT, () => console.log(`Server running on port ${PORT}`));

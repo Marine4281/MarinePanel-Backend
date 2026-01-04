@@ -20,14 +20,18 @@ const server = http.createServer(app);
 export const io = new Server(server, {
   cors: {
     origin: (origin, callback) => {
+      // allow requests with no origin (like Postman)
+      if (!origin) return callback(null, true);
+
+      // allow production and all Vercel preview URLs
       if (
-        origin === "https://marine-panel-frontend.vercel.app" || // production
-        /\.vercel\.app$/.test(origin) // all previews
+        origin === "https://marine-panel-frontend.vercel.app" ||
+        /\.vercel\.app$/.test(origin)
       ) {
         callback(null, true);
       } else {
-        console.log("Blocked by CORS:", origin);
-        callback(new Error("Not allowed by CORS"));
+        console.log("Blocked by Socket.IO CORS:", origin);
+        callback(null, false); // ✅ do NOT throw error, just block
       }
     },
     methods: ["GET", "POST"],

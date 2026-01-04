@@ -40,24 +40,17 @@ app.use(
 /* Middlewares */
 app.use(
   cors({
-    origin: (origin, callback) => {
-      // allow requests with no origin (like Postman)
-      if (!origin) return callback(null, true);
-
-      if (
-        origin === "https://marine-panel-frontend.vercel.app" || // production
-        /\.vercel\.app$/.test(origin) // all Vercel preview URLs
-      ) {
-        callback(null, true);
-      } else {
-        console.log("Blocked by CORS:", origin);
-        callback(new Error("Not allowed by CORS"));
-      }
-    },
+    origin: [
+      "https://marine-panel-frontend.vercel.app", // production
+      /\.vercel\.app$/, // all Vercel previews
+    ],
     credentials: true,
   })
 );
 
+/* Body parser */
+app.use(express.json()); // ✅ Important! This avoids req.body undefined
+app.use(morgan("dev"));
 /* Health check */
 app.get("/", (req, res) => {
   res.json({ status: "Marine backend running" });

@@ -19,13 +19,21 @@ const server = http.createServer(app);
 // Initialize Socket.IO
 export const io = new Server(server, {
   cors: {
-    origin: ["https://marine-panel-frontend.vercel.app", 
-    /\.vercel\.app$/
-  ],
+    origin: (origin, callback) => {
+      if (
+        origin === "https://marine-panel-frontend.vercel.app" || // production
+        /\.vercel\.app$/.test(origin) // all previews
+      ) {
+        callback(null, true);
+      } else {
+        console.log("Blocked by CORS:", origin);
+        callback(new Error("Not allowed by CORS"));
+      }
+    },
     methods: ["GET", "POST"],
+    credentials: true,
   },
 });
-
 // Make io accessible in routes/controllers via app.set (optional)
 app.set("io", io);
 

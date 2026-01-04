@@ -40,10 +40,14 @@ app.use(
 /* Middlewares */
 app.use(
   cors({
-    origin: "https://marine-panel-frontend.vercel.app", // frontend origin
+    origin: [
+      "https://marine-panel-frontend.vercel.app",
+      /\.vercel\.app$/   // ✅ allow all Vercel preview URLs
+    ],
     credentials: true,
   })
 );
+
 app.use(express.json());
 app.use(morgan("dev"));
 

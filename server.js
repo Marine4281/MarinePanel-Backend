@@ -19,7 +19,9 @@ const server = http.createServer(app);
 // Initialize Socket.IO
 export const io = new Server(server, {
   cors: {
-    origin: "https://marine-panel-frontend.vercel.app", // React frontend URL
+    origin: ["https://marine-panel-frontend.vercel.app", 
+    /\.vercel\.app$/
+  ],
     methods: ["GET", "POST"],
   },
 });

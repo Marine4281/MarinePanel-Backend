@@ -40,16 +40,23 @@ app.use(
 /* Middlewares */
 app.use(
   cors({
-    origin: [
-      "https://marine-panel-frontend.vercel.app",
-      /\.vercel\.app$/   // ✅ allow all Vercel preview URLs
-    ],
+    origin: (origin, callback) => {
+      // allow requests with no origin (like Postman)
+      if (!origin) return callback(null, true);
+
+      if (
+        origin === "https://marine-panel-frontend.vercel.app" || // production
+        /\.vercel\.app$/.test(origin) // all Vercel preview URLs
+      ) {
+        callback(null, true);
+      } else {
+        console.log("Blocked by CORS:", origin);
+        callback(new Error("Not allowed by CORS"));
+      }
+    },
     credentials: true,
   })
 );
-
-app.use(express.json());
-app.use(morgan("dev"));
 
 /* Health check */
 app.get("/", (req, res) => {

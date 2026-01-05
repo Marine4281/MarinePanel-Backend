@@ -42,15 +42,14 @@ export const addFunds = async (req, res) => {
       return res.status(400).json({ message: `Minimum deposit for this method is ${method.minDeposit}` });
     }
 
-    if (["mobile-money", "mpesa"].includes(method.type)) {
-      if (!paymentDetails?.phone || !paymentDetails?.network) {
-        return res.status(400).json({ message: "Phone number and mobile money network are required" });
-      }
-      if (!paymentDetails.country) {
-        return res.status(400).json({ message: "Country is required for mobile money" });
-      }
+    // ✅ BLOCK MANUAL DEPOSIT FROM CREDITING WALLET
+    if (method.type === "manual") {
+      return res.status(200).json({
+        message: "Automatic payments are temporarily under maintenance. Please deposit manually and contact support for instructions.",
+      });
     }
 
+    // For other methods (card, mpesa, bank, etc.) continue normally
     let wallet = await Wallet.findOne({ user: req.user.id });
     if (!wallet) wallet = await Wallet.create({ user: req.user.id, transactions: [] });
 
@@ -58,7 +57,7 @@ export const addFunds = async (req, res) => {
     const transaction = {
       type: "Deposit",
       amount: Number(amount),
-      status: "Completed", // Auto-approved
+      status: "Completed", // auto-approved for normal methods
       method: method.name,
       details: paymentDetails || {},
       note: "",
@@ -75,23 +74,20 @@ export const addFunds = async (req, res) => {
       case "bank":
         transaction.note = `Send bank transfer to: ${method.bankInfo || "Contact support"}`;
         break;
-      case "manual":
-        transaction.note = "Manual deposit: please contact support.";
-        break;
       default:
         transaction.note = "Deposit initiated.";
     }
 
     wallet.transactions.push(transaction);
 
-    // 🔹 persist new balance in DB
+    // Persist balance
     wallet.balance = calculateCompletedBalance(wallet.transactions);
     await wallet.save();
 
-    // Sync to User
+    // Update User balance
     await User.findByIdAndUpdate(req.user.id, { balance: wallet.balance });
 
-    // 🔔 Emit CLEAN balance only
+    // Emit socket update
     req.app.get("io").emit("wallet:update", {
       userId: req.user.id,
       balance: wallet.balance,
@@ -99,10 +95,11 @@ export const addFunds = async (req, res) => {
     });
 
     res.status(201).json({
-      message: method.type === "manual" ? "Manual deposit: please contact support." : "Deposit successful",
+      message: "Deposit successful",
       wallet: { ...wallet.toObject(), balance: wallet.balance },
       instructions: transaction.note,
     });
+
   } catch (err) {
     console.error(err);
     res.status(500).json({ message: "Server error" });

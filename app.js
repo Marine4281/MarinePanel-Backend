@@ -41,7 +41,7 @@ app.use(
 app.use(
   cors({
     origin: [
-      "https://marine-panel-frontend.vercel.app", // production
+      "https://marinepanel.online", // production
       /\.vercel\.app$/, // all Vercel previews
     ],
     credentials: true,

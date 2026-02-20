@@ -16,31 +16,33 @@ const PORT = process.env.PORT || 10000;
 // Wrap Express app in HTTP server
 const server = http.createServer(app);
 
-// Initialize Socket.IO
+// Initialize Socket.IO with proper CORS
 export const io = new Server(server, {
   cors: {
     origin: (origin, callback) => {
       // allow requests with no origin (like Postman)
       if (!origin) return callback(null, true);
 
-      // allow production and all Vercel preview URLs
+      // allow production frontend + Vercel preview URLs
       if (
-        origin === "marinepanel.online" ||
+        origin === "https://marinepanel.online" || // ✅ include https://
         /\.vercel\.app$/.test(origin)
       ) {
         callback(null, true);
       } else {
         console.log("Blocked by Socket.IO CORS:", origin);
-        callback(null, false); // ✅ do NOT throw error, just block
+        callback(new Error("Not allowed by CORS")); // block other origins
       }
     },
     methods: ["GET", "POST"],
     credentials: true,
   },
 });
+
 // Make io accessible in routes/controllers via app.set (optional)
 app.set("io", io);
 
+// Socket.IO connection
 io.on("connection", (socket) => {
   console.log("New client connected:", socket.id);
 

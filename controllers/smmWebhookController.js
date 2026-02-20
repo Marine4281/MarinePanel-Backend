@@ -3,10 +3,12 @@ import Order from "../models/Order.js";
 
 // Allowed status transitions
 const allowedTransitions = {
-  pending: ["processing", "failed"],
-  processing: ["completed", "failed"],
-  completed: [],
+  pending: ["processing", "cancelled", "failed"],
+  processing: ["completed", "failed", "refunded"],
+  completed: ["refunded"],
+  cancelled: [],
   failed: [],
+  refunded: [],
 };
 
 // Optional: map provider statuses to internal statuses
@@ -36,7 +38,7 @@ export const smmWebhook = async (req, res) => {
     // 3️⃣ Validate transition
     if (
       order.status &&
-      !allowedTransitions[order.status].includes(status) &&
+      !allowedTransitions[order.status]?.includes(status) &&
       order.status !== status
     ) {
       return res.status(400).json({ message: "Invalid status transition" });

@@ -25,7 +25,7 @@ export const io = new Server(server, {
 
       // allow production and all Vercel preview URLs
       if (
-        origin === "https://marine-panel-frontend.vercel.app" ||
+        origin === "marinepanel.online" ||
         /\.vercel\.app$/.test(origin)
       ) {
         callback(null, true);

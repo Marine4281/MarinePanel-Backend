@@ -14,8 +14,10 @@ export const smmWebhook = async (req, res) => {
   try {
     const { orderId, status: providerStatus, quantityDelivered } = req.body;
 
-    const order = await Order.findById(orderId);
+    // 🔹 Use findOne instead of findById
+    const order = await Order.findOne({ orderId });
     if (!order) return res.status(404).json({ message: "Order not found" });
+
 
     // Normalize status simply
     const status =

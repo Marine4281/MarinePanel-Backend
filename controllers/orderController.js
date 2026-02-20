@@ -67,7 +67,7 @@ export const createOrder = async (req, res) => {
       link,
       quantity,
       charge: finalCharge,
-      status: "processing",
+      status: "pending",
 
       provider: serviceData.provider,
       providerApiUrl: serviceData.providerApiUrl,

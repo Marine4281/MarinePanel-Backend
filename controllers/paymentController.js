@@ -9,7 +9,7 @@ import Wallet from "../models/Wallet.js";
 export const initializePaystack = async (req, res) => {
   try {
     const { amount, method } = req.body;
-    if (!amount || amount <= 0) {
+    if (!amount || amount <= 0 || method) {
       return res.status(400).json({ message: "Invalid amount or method" });
     }
 

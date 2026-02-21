@@ -9,24 +9,6 @@ const calculateCompletedBalance = (transactions = []) =>
     .filter(t => t.status === "Completed")
     .reduce((acc, t) => acc + Number(t.amount || 0), 0);
 
-export const addFunds = async (req, res) => {
-  try {
-    const { amount, methodId, paymentDetails } = req.body;
-
-    if (!amount || !methodId) {
-      return res.status(400).json({ message: "Amount and payment method required" });
-    }
-
-    const method = await PaymentMethod.findById(methodId);
-    if (!method || !method.isVisible) {
-      return res.status(404).json({ message: "Payment method not found" });
-    }
-
-    if (Number(amount) < method.minDeposit) {
-      return res.status(400).json({
-        message: `Minimum deposit for this method is ${method.minDeposit}`,
-      });
-    }
 
     // Get or create wallet
     let wallet = await Wallet.findOne({ user: req.user.id });

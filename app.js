@@ -19,6 +19,7 @@ import adminSettingsRoutes from "./routes/adminSettingsRoutes.js";
 import paymentMethodRoutes from "./routes/paymentMethodRoutes.js";
 import adminPaymentMethodRoutes from "./routes/adminPaymentMethodRoutes.js";
 import smmWebhookRoutes from "./routes/smmWebhookRoutes.js";
+import paymentRoutes from "./routes/paymentRoutes.js";
 
 // ← NEW: Admin Orders Route
 import adminOrderRoutes from "./routes/adminOrderRoutes.js";
@@ -67,6 +68,7 @@ app.use("/api/wallet", walletRoutes);
 app.use("/api/users", userRoutes);
 app.use("/api/payment-methods", paymentMethodRoutes);
 app.use("/api/smm", smmWebhookRoutes);
+app.use("/api", paymentRoutes);
 
 /* Admin routes */
 app.use("/api/admin", adminRoutes);

@@ -23,6 +23,7 @@ export const initializePaystack = async (req, res) => {
       amount,
       status: "Pending",
       type: "Deposit",
+      method, 
     });
 
     const response = await axios.post(

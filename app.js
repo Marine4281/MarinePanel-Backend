@@ -68,7 +68,7 @@ app.use("/api/wallet", walletRoutes);
 app.use("/api/users", userRoutes);
 app.use("/api/payment-methods", paymentMethodRoutes);
 app.use("/api/smm", smmWebhookRoutes);
-app.use("/api", paymentRoutes);
+app.use("/api/payment", paymentRoutes);
 
 /* Admin routes */
 app.use("/api/admin", adminRoutes);

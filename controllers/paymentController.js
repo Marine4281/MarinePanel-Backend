@@ -56,6 +56,10 @@ export const initializePaystack = async (req, res) => {
 // ===============================
 export const handlePaystackWebhook = async (req, res) => {
   try {
+    console.log("🔥 Paystack Webhook Hit");
+    console.log("Headers:", req.headers);
+    console.log("Body:", req.body);
+    
     const hash = crypto
       .createHmac("sha512", process.env.PAYSTACK_SECRET_KEY)
       .update(JSON.stringify(req.body))

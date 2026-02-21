@@ -3,7 +3,9 @@ import crypto from "crypto";
 import Transaction from "../models/Transaction.js";
 import Wallet from "../models/Wallet.js";
 
-
+console.log("🔥 Paystack Webhook Hit");
+console.log("Headers:", req.headers);
+console.log("Body:", req.body);
 // ===============================
 // INITIALIZE PAYSTACK
 // ===============================

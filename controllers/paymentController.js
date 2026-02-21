@@ -6,9 +6,11 @@ import Wallet from "../models/Wallet.js";
 // ===============================
 // INITIALIZE PAYSTACK
 // ===============================
+
 export const initializePaystack = async (req, res) => {
   try {
-    const { amount, method } = req.body;
+    const { amount, method, paymentDetails } = req.body; // ✅ include paymentDetails
+
     if (!amount || amount <= 0 || !method) {
       return res.status(400).json({ message: "Invalid amount or method" });
     }
@@ -17,13 +19,15 @@ export const initializePaystack = async (req, res) => {
     const amountInKobo = amount * 100;
     const reference = `MP-${Date.now()}-${user._id}`;
 
+    // Save transaction including paymentDetails
     await Transaction.create({
       user: user._id,
       reference,
       amount,
       status: "Pending",
       type: "Deposit",
-      method, 
+      method,
+      paymentDetails, // ✅ store mobile money / card info
     });
 
     const response = await axios.post(
@@ -45,6 +49,7 @@ export const initializePaystack = async (req, res) => {
     return res.status(200).json({
       authorization_url: response.data.data.authorization_url,
       reference,
+      message: "Payment initialized successfully",
     });
   } catch (error) {
     console.error("Initialize Error:", error.response?.data || error.message);

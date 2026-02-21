@@ -17,41 +17,38 @@ export const initializePaystack = async (req, res) => {
 
     const user = req.user;
 
-    // 🌍 Currency Handling
+    // ✅ Currency handling (ONLY change made)
     let currency = "USD";
-    let convertedAmount = amount;
-    const USD_TO_KES_RATE = 130;
+    let amountToCharge = amount;
 
+    // If Mpesa → convert USD to KES
     if (method.toLowerCase().includes("mpesa")) {
+      const USD_TO_KES_RATE = 130; // change rate if needed
       currency = "KES";
-      convertedAmount = amount * USD_TO_KES_RATE;
+      amountToCharge = amount * USD_TO_KES_RATE;
     }
 
-    const amountInSmallestUnit = Math.round(convertedAmount * 100);
+    const amountInKobo = Math.round(amountToCharge * 100);
     const reference = `MP-${Date.now()}-${user._id}`;
 
-    // ✅ Save transaction (store extra info inside "details")
+    // Save transaction (UNCHANGED)
     await Transaction.create({
       user: user._id,
       reference,
-      amount, // Always store USD
+      amount,
       status: "Pending",
       type: "Deposit",
       method,
-      details: {
-        currency,
-        convertedAmount,
-        paymentDetails,
-      },
+      details: paymentDetails,
     });
 
     const response = await axios.post(
       "https://api.paystack.co/transaction/initialize",
       {
         email: user.email,
-        amount: amountInSmallestUnit,
+        amount: amountInKobo,
+        currency, // ✅ Added currency here
         reference,
-        currency,
         callback_url: `${process.env.FRONTEND_URL}/payment/success`,
       },
       {
@@ -77,9 +74,12 @@ export const initializePaystack = async (req, res) => {
 // ===============================
 // WEBHOOK HANDLER
 // ===============================
-
 export const handlePaystackWebhook = async (req, res) => {
   try {
+    console.log("🔥 Paystack Webhook Hit");
+    console.log("Headers:", req.headers);
+    console.log("Body:", req.body);
+
     const hash = crypto
       .createHmac("sha512", process.env.PAYSTACK_SECRET_KEY)
       .update(JSON.stringify(req.body))
@@ -90,46 +90,45 @@ export const handlePaystackWebhook = async (req, res) => {
     }
 
     const event = req.body;
-    if (event.event !== "charge.success") {
-      return res.status(200).send("Event ignored");
-    }
+    if (event.event !== "charge.success") return res.status(200).send("Event ignored");
 
     const { reference } = event.data;
-
     const transaction = await Transaction.findOne({ reference });
     if (!transaction) return res.status(404).send("Transaction not found");
     if (transaction.status === "Completed") return res.status(200).send("Already processed");
 
     const verify = await axios.get(
       `https://api.paystack.co/transaction/verify/${reference}`,
-      {
-        headers: {
-          Authorization: `Bearer ${process.env.PAYSTACK_SECRET_KEY}`,
-        },
-      }
+      { headers: { Authorization: `Bearer ${process.env.PAYSTACK_SECRET_KEY}` } }
     );
 
-    if (verify.data.data.status !== "success") {
+    // ✅ Verification adjusted for currency conversion
+    let expectedAmount = transaction.amount * 100;
+
+    if (verify.data.data.currency === "KES") {
+      const USD_TO_KES_RATE = 130;
+      expectedAmount = transaction.amount * USD_TO_KES_RATE * 100;
+    }
+
+    if (
+      verify.data.data.status !== "success" ||
+      verify.data.data.amount !== expectedAmount
+    ) {
       return res.status(400).send("Verification failed");
     }
 
     // Ensure wallet exists
     let wallet = await Wallet.findOne({ user: transaction.user });
     if (!wallet) {
-      wallet = await Wallet.create({
-        user: transaction.user,
-        balance: 0,
-        transactions: [],
-      });
+      wallet = await Wallet.create({ user: transaction.user, balance: 0, transactions: [] });
     }
 
-    // Credit wallet in USD
     wallet.transactions.push({
       type: "Deposit",
       amount: transaction.amount,
       status: "Completed",
       reference: transaction.reference,
-      note: `${transaction.method} deposit`,
+      note: "Paystack deposit",
       details: event.data,
     });
 

@@ -28,43 +28,32 @@ export const addFunds = async (req, res) => {
       });
     }
 
+    // Get or create wallet
+    let wallet = await Wallet.findOne({ user: req.user.id });
+    if (!wallet) wallet = await Wallet.create({ user: req.user.id, transactions: [] });
 
-    const reference = uuidv4();
-const transaction = {
-  type: "Deposit",
-  amount: Number(amount),
-  status: "Pending", // mark pending until payment confirmed
-  method: method.name,
-  details: paymentDetails || {},
-  note: "",
-  reference,
-};
-
-
-
-
-
-    // ✅ BLOCK MANUAL DEPOSIT FROM CREDITING WALLET
+    // ✅ BLOCK MANUAL DEPOSIT
     if (method.type === "manual") {
       return res.status(200).json({
         message: "Automatic payments are temporarily under maintenance. Please deposit manually and contact support for instructions.",
       });
     }
 
-    // For other methods (card, mpesa, bank, etc.) continue normally
-    let wallet = await Wallet.findOne({ user: req.user.id });
-    if (!wallet) wallet = await Wallet.create({ user: req.user.id, transactions: [] });
+    // Unique reference for the transaction
+    const reference = uuidv4();
 
-    // Create transaction
+    // Create transaction (only once)
     const transaction = {
       type: "Deposit",
       amount: Number(amount),
-      status: "Completed", // auto-approved for normal methods
+      status: "Pending", // pending until confirmed by webhook
       method: method.name,
       details: paymentDetails || {},
       note: "",
+      reference,
     };
 
+    // Customize note based on payment method
     switch (method.type) {
       case "card":
         transaction.note = "Processing card payment...";
@@ -82,7 +71,7 @@ const transaction = {
 
     wallet.transactions.push(transaction);
 
-    // Persist balance
+    // Persist balance (counts only Completed transactions)
     wallet.balance = calculateCompletedBalance(wallet.transactions);
     await wallet.save();
 
@@ -97,8 +86,9 @@ const transaction = {
     });
 
     res.status(201).json({
-      message: "Deposit successful",
+      message: "Deposit initiated. Awaiting confirmation.",
       wallet: { ...wallet.toObject(), balance: wallet.balance },
+      reference, // frontend can track payment status with this
       instructions: transaction.note,
     });
 

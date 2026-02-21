@@ -1,13 +1,30 @@
 import Wallet from "../models/Wallet.js";
 import User from "../models/User.js";
 import PaymentMethod from "../models/PaymentMethod.js";
+import { v4 as uuidv4 } from "uuid"; // npm i uuid
 
-// ✅ Single source of truth
-const calculateCompletedBalance = (transactions = []) => {
-  return transactions
+const calculateCompletedBalance = (transactions = []) =>
+  transactions
     .filter(t => t.status === "Completed")
-    .reduce((acc, t) => acc + (Number(t.amount) || 0), 0);
-};
+    .reduce((acc, t) => acc + Number(t.amount || 0), 0);
+
+export const addFunds = async (req, res) => {
+  try {
+    const { amount, methodId, paymentDetails } = req.body;
+    if (!amount || !methodId) {
+      return res.status(400).json({ message: "Amount and payment method required" });
+    }
+
+    const method = await PaymentMethod.findById(methodId);
+    if (!method || !method.isVisible) {
+      return res.status(404).json({ message: "Payment method not found" });
+    }
+
+    if (Number(amount) < method.minDeposit) {
+      return res.status(400).json({
+        message: `Minimum deposit for this method is ${method.minDeposit}`,
+      });
+    }
 
 // ================= GET WALLET =================
 export const getWallet = async (req, res) => {
@@ -25,24 +42,7 @@ export const getWallet = async (req, res) => {
   }
 };
 
-// ================= ADD FUNDS =================
-import { v4 as uuidv4 } from "uuid"; // npm i uuid
 
-// Inside addFunds function
-const reference = uuidv4(); // unique reference
-
-const transaction = {
-  type: "Deposit",
-  amount: Number(amount),
-  status: "Pending", // wait for webhook to confirm
-  method: method.name,
-  details: paymentDetails || {},
-  reference, // <-- add reference
-  note: "Waiting for payment confirmation...",
-};
-
-wallet.transactions.push(transaction);
-await wallet.save();
 
     // ✅ BLOCK MANUAL DEPOSIT FROM CREDITING WALLET
     if (method.type === "manual") {

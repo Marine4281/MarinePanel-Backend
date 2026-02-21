@@ -29,6 +29,18 @@ export const addFunds = async (req, res) => {
     }
 
 
+    const reference = uuidv4();
+const transaction = {
+  type: "Deposit",
+  amount: Number(amount),
+  status: "Pending", // mark pending until payment confirmed
+  method: method.name,
+  details: paymentDetails || {},
+  note: "",
+  reference,
+};
+
+
 
 
 

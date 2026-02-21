@@ -1,12 +1,13 @@
-const express = require("express");
-const router = express.Router();
-const { initializePaystack, handlePaystackWebhook } = require("../controllers/paymentController");
-const protect = require("../middleware/authMiddleware");
+import express from "express";
+import { initializePaystack, handlePaystackWebhook } from "../controllers/paymentController.js";
+import protect from "../middleware/authMiddleware.js";
 
-// Initialize payment (protected route)
+const router = express.Router();
+
+// Initialize payment (protected)
 router.post("/initialize", protect, initializePaystack);
 
-// Webhook (NO protect middleware!)
-router.post("/webhook/paystack", express.json({ verify: (req, res, buf) => { req.rawBody = buf } }), handlePaystackWebhook);
+// Webhook (no auth middleware!)
+router.post("/webhook/paystack", handlePaystackWebhook);
 
-module.exports = router;
+export default router;

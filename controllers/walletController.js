@@ -12,12 +12,7 @@ const calculateCompletedBalance = (transactions = []) =>
 
 
 
-    // ✅ BLOCK MANUAL DEPOSIT
-    if (method.type === "manual") {
-      return res.status(200).json({
-        message: "Automatic payments are temporarily under maintenance. Please deposit manually and contact support for instructions.",
-      });
-    }
+
 
     // Unique reference for the transaction
     const reference = uuidv4();

@@ -97,6 +97,9 @@ export const addFunds = async (req, res) => {
     res.status(500).json({ message: "Server error" });
   }
 };
+// Get or create wallet
+    let wallet = await Wallet.findOne({ user: req.user.id });
+    if (!wallet) wallet = await Wallet.create({ user: req.user.id, transactions: [] });
 
 // ================= WITHDRAW FUNDS =================
 export const withdrawFunds = async (req, res) => {

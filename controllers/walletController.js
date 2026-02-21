@@ -10,9 +10,7 @@ const calculateCompletedBalance = (transactions = []) =>
     .reduce((acc, t) => acc + Number(t.amount || 0), 0);
 
 
-    // Get or create wallet
-    let wallet = await Wallet.findOne({ user: req.user.id });
-    if (!wallet) wallet = await Wallet.create({ user: req.user.id, transactions: [] });
+
 
     // ✅ BLOCK MANUAL DEPOSIT
     if (method.type === "manual") {

@@ -97,9 +97,30 @@ export const addFunds = async (req, res) => {
     res.status(500).json({ message: "Server error" });
   }
 };
-// Get or create wallet
+// ================= GET WALLET =================
+export const getWallet = async (req, res) => {
+  try {
     let wallet = await Wallet.findOne({ user: req.user.id });
-    if (!wallet) wallet = await Wallet.create({ user: req.user.id, transactions: [] });
+
+    if (!wallet) {
+      wallet = await Wallet.create({ user: req.user.id, transactions: [] });
+    }
+
+    const balance = calculateCompletedBalance(wallet.transactions);
+
+    wallet.balance = balance;
+    await wallet.save();
+
+    res.json({
+      ...wallet.toObject(),
+      balance,
+    });
+
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Server error" });
+  }
+};
 
 // ================= WITHDRAW FUNDS =================
 export const withdrawFunds = async (req, res) => {

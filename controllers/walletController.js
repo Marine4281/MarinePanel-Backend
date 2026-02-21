@@ -1,7 +1,6 @@
 import Wallet from "../models/Wallet.js";
 import User from "../models/User.js";
 import PaymentMethod from "../models/PaymentMethod.js";
-import { v4 as uuidv4 } from "uuid"; // npm i uuid
 
 // ✅ Calculate completed transactions
 const calculateCompletedBalance = (transactions = []) =>
@@ -9,24 +8,7 @@ const calculateCompletedBalance = (transactions = []) =>
     .filter(t => t.status === "Completed")
     .reduce((acc, t) => acc + Number(t.amount || 0), 0);
 
-
-
-
-
-
-    // Unique reference for the transaction
-    const reference = uuidv4();
-
-    // Create transaction (only once)
-    const transaction = {
-      type: "Deposit",
-      amount: Number(amount),
-      status: "Pending", // pending until confirmed by webhook
-      method: method.name,
-      details: paymentDetails || {},
-      note: "",
-      reference,
-    };
+    
 
     // Customize note based on payment method
     switch (method.type) {

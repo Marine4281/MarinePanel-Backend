@@ -17,42 +17,34 @@ export const initializePaystack = async (req, res) => {
 
     const user = req.user;
 
-    // -----------------------------
     // 🌍 Currency Handling
-    // -----------------------------
-    let currency = "USD"; // default
-    let convertedAmount = amount; // amount in original currency
-    const USD_TO_KES_RATE = 130; // 🔁 Change this if needed
+    let currency = "USD";
+    let convertedAmount = amount;
+    const USD_TO_KES_RATE = 130;
 
-    // If using M-Pesa → convert USD to KES
     if (method.toLowerCase().includes("mpesa")) {
       currency = "KES";
       convertedAmount = amount * USD_TO_KES_RATE;
     }
 
-    // Paystack requires smallest currency unit
     const amountInSmallestUnit = Math.round(convertedAmount * 100);
-
     const reference = `MP-${Date.now()}-${user._id}`;
 
-    // -----------------------------
-    // Save transaction (always store USD in your DB)
-    // -----------------------------
+    // ✅ Save transaction (store extra info inside "details")
     await Transaction.create({
       user: user._id,
       reference,
-      amount, // store USD value
+      amount, // Always store USD
       status: "Pending",
       type: "Deposit",
       method,
-      paymentDetails,
-      currency, // store payment currency
-      convertedAmount, // store converted value (KES if mpesa)
+      details: {
+        currency,
+        convertedAmount,
+        paymentDetails,
+      },
     });
 
-    // -----------------------------
-    // Initialize Paystack
-    // -----------------------------
     const response = await axios.post(
       "https://api.paystack.co/transaction/initialize",
       {
@@ -108,9 +100,6 @@ export const handlePaystackWebhook = async (req, res) => {
     if (!transaction) return res.status(404).send("Transaction not found");
     if (transaction.status === "Completed") return res.status(200).send("Already processed");
 
-    // -----------------------------
-    // Verify transaction with Paystack
-    // -----------------------------
     const verify = await axios.get(
       `https://api.paystack.co/transaction/verify/${reference}`,
       {
@@ -124,9 +113,7 @@ export const handlePaystackWebhook = async (req, res) => {
       return res.status(400).send("Verification failed");
     }
 
-    // -----------------------------
     // Ensure wallet exists
-    // -----------------------------
     let wallet = await Wallet.findOne({ user: transaction.user });
     if (!wallet) {
       wallet = await Wallet.create({
@@ -136,26 +123,22 @@ export const handlePaystackWebhook = async (req, res) => {
       });
     }
 
-    // -----------------------------
-    // Credit wallet using ORIGINAL USD amount
-    // -----------------------------
+    // Credit wallet in USD
     wallet.transactions.push({
       type: "Deposit",
-      amount: transaction.amount, // credit USD
+      amount: transaction.amount,
       status: "Completed",
       reference: transaction.reference,
       note: `${transaction.method} deposit`,
       details: event.data,
     });
 
-    wallet.balance += transaction.amount; // add USD amount
+    wallet.balance += transaction.amount;
     await wallet.save();
 
-    // Update transaction status
     transaction.status = "Completed";
     await transaction.save();
 
-    // Emit real-time update
     req.app.get("io").emit("wallet:update", {
       userId: transaction.user,
       balance: wallet.balance,

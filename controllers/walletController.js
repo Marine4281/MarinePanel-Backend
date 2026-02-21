@@ -3,6 +3,7 @@ import User from "../models/User.js";
 import PaymentMethod from "../models/PaymentMethod.js";
 import { v4 as uuidv4 } from "uuid"; // npm i uuid
 
+// ✅ Calculate completed transactions
 const calculateCompletedBalance = (transactions = []) =>
   transactions
     .filter(t => t.status === "Completed")
@@ -11,6 +12,7 @@ const calculateCompletedBalance = (transactions = []) =>
 export const addFunds = async (req, res) => {
   try {
     const { amount, methodId, paymentDetails } = req.body;
+
     if (!amount || !methodId) {
       return res.status(400).json({ message: "Amount and payment method required" });
     }
@@ -26,21 +28,10 @@ export const addFunds = async (req, res) => {
       });
     }
 
-// ================= GET WALLET =================
-export const getWallet = async (req, res) => {
-  try {
+    // Get or create wallet
     let wallet = await Wallet.findOne({ user: req.user.id });
-    if (!wallet) return res.status(404).json({ message: "Wallet not found" });
+    if (!wallet) wallet = await Wallet.create({ user: req.user.id, transactions: [] });
 
-    // Calculate balance from transactions (never rely on stored balance)
-    const balance = calculateCompletedBalance(wallet.transactions);
-
-    res.json({ ...wallet.toObject(), balance });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ message: "Server error" });
-  }
-};
 
 
 

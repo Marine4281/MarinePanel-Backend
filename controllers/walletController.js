@@ -26,21 +26,23 @@ export const getWallet = async (req, res) => {
 };
 
 // ================= ADD FUNDS =================
-export const addFunds = async (req, res) => {
-  try {
-    const { amount, methodId, paymentDetails } = req.body;
-    if (!amount || !methodId) {
-      return res.status(400).json({ message: "Amount and payment method required" });
-    }
+import { v4 as uuidv4 } from "uuid"; // npm i uuid
 
-    const method = await PaymentMethod.findById(methodId);
-    if (!method || !method.isVisible) {
-      return res.status(404).json({ message: "Payment method not found" });
-    }
+// Inside addFunds function
+const reference = uuidv4(); // unique reference
 
-    if (Number(amount) < method.minDeposit) {
-      return res.status(400).json({ message: `Minimum deposit for this method is ${method.minDeposit}` });
-    }
+const transaction = {
+  type: "Deposit",
+  amount: Number(amount),
+  status: "Pending", // wait for webhook to confirm
+  method: method.name,
+  details: paymentDetails || {},
+  reference, // <-- add reference
+  note: "Waiting for payment confirmation...",
+};
+
+wallet.transactions.push(transaction);
+await wallet.save();
 
     // ✅ BLOCK MANUAL DEPOSIT FROM CREDITING WALLET
     if (method.type === "manual") {

@@ -59,7 +59,7 @@ export const handlePaystackWebhook = async (req, res) => {
     console.log("🔥 Paystack Webhook Hit");
     console.log("Headers:", req.headers);
     console.log("Body:", req.body);
-    
+
     const hash = crypto
       .createHmac("sha512", process.env.PAYSTACK_SECRET_KEY)
       .update(JSON.stringify(req.body))
@@ -70,9 +70,7 @@ export const handlePaystackWebhook = async (req, res) => {
     }
 
     const event = req.body;
-    if (event.event !== "charge.success") {
-      return res.status(200).send("Event ignored");
-    }
+    if (event.event !== "charge.success") return res.status(200).send("Event ignored");
 
     const { reference } = event.data;
     const transaction = await Transaction.findOne({ reference });
@@ -91,13 +89,30 @@ export const handlePaystackWebhook = async (req, res) => {
       return res.status(400).send("Verification failed");
     }
 
-    const wallet = await Wallet.findOne({ user: transaction.user });
+    // ✅ Ensure wallet exists
+    let wallet = await Wallet.findOne({ user: transaction.user });
+    if (!wallet) {
+      wallet = await Wallet.create({ user: transaction.user, balance: 0, transactions: [] });
+    }
+
+    // ✅ Add transaction to wallet
+    wallet.transactions.push({
+      type: "Deposit",
+      amount: transaction.amount,
+      status: "Completed",
+      reference: transaction.reference,
+      note: "Paystack deposit",
+      details: event.data,
+    });
+
     wallet.balance += transaction.amount;
     await wallet.save();
 
+    // ✅ Update transaction status
     transaction.status = "Completed";
     await transaction.save();
 
+    // ✅ Emit updated wallet
     req.app.get("io").emit("wallet:update", {
       userId: transaction.user,
       balance: wallet.balance,

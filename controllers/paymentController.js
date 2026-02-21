@@ -1,13 +1,13 @@
-const axios = require("axios");
-const crypto = require("crypto");
-const Transaction = require("../models/Transaction");
-const Wallet = require("../models/Wallet");
+import axios from "axios";
+import crypto from "crypto";
+import Transaction from "../models/Transaction.js";
+import Wallet from "../models/Wallet.js";
 
 
 // ===============================
-// 1️⃣ INITIALIZE PAYSTACK PAYMENT
+// INITIALIZE PAYSTACK
 // ===============================
-exports.initializePaystack = async (req, res) => {
+export const initializePaystack = async (req, res) => {
   try {
     const { amount } = req.body;
 
@@ -17,13 +17,10 @@ exports.initializePaystack = async (req, res) => {
 
     const user = req.user;
 
-    // Convert to kobo
     const amountInKobo = amount * 100;
-
     const reference = `MP-${Date.now()}-${user._id}`;
 
-    // Create pending transaction
-    const transaction = await Transaction.create({
+    await Transaction.create({
       user: user._id,
       reference,
       amount,
@@ -31,7 +28,6 @@ exports.initializePaystack = async (req, res) => {
       type: "Deposit"
     });
 
-    // Initialize Paystack
     const response = await axios.post(
       "https://api.paystack.co/transaction/initialize",
       {
@@ -53,17 +49,16 @@ exports.initializePaystack = async (req, res) => {
     });
 
   } catch (error) {
-    console.error("Paystack Initialize Error:", error.response?.data || error.message);
+    console.error("Initialize Error:", error.response?.data || error.message);
     return res.status(500).json({ message: "Payment initialization failed" });
   }
 };
 
 
-
 // ===============================
-// 2️⃣ PAYSTACK WEBHOOK HANDLER
+// WEBHOOK HANDLER
 // ===============================
-exports.handlePaystackWebhook = async (req, res) => {
+export const handlePaystackWebhook = async (req, res) => {
   try {
     const hash = crypto
       .createHmac("sha512", process.env.PAYSTACK_SECRET_KEY)
@@ -80,11 +75,7 @@ exports.handlePaystackWebhook = async (req, res) => {
       return res.status(200).send("Event ignored");
     }
 
-    const { reference, amount, status } = event.data;
-
-    if (status !== "success") {
-      return res.status(200).send("Payment not successful");
-    }
+    const { reference } = event.data;
 
     const transaction = await Transaction.findOne({ reference });
 
@@ -96,7 +87,6 @@ exports.handlePaystackWebhook = async (req, res) => {
       return res.status(200).send("Already processed");
     }
 
-    // Verify transaction server-to-server
     const verify = await axios.get(
       `https://api.paystack.co/transaction/verify/${reference}`,
       {
@@ -113,7 +103,6 @@ exports.handlePaystackWebhook = async (req, res) => {
       return res.status(400).send("Verification failed");
     }
 
-    // Update wallet
     const wallet = await Wallet.findOne({ user: transaction.user });
 
     wallet.balance += transaction.amount;
@@ -126,6 +115,6 @@ exports.handlePaystackWebhook = async (req, res) => {
 
   } catch (error) {
     console.error("Webhook Error:", error.message);
-    return res.status(500).send("Webhook processing failed");
+    return res.status(500).send("Webhook failed");
   }
 };

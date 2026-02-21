@@ -28,9 +28,6 @@ export const addFunds = async (req, res) => {
       });
     }
 
-    // Get or create wallet
-    let wallet = await Wallet.findOne({ user: req.user.id });
-    if (!wallet) wallet = await Wallet.create({ user: req.user.id, transactions: [] });
 
 
 

@@ -22,10 +22,10 @@ export const initializePaystack = async (req, res) => {
     }
 
     // 🔥 Get method from DB
-    const method = await PaymentMethod.findById(method);
-    if (!method || !method.isVisible) {
-      return res.status(404).json({ message: "Payment method not found" });
-    }
+    const paymentMethod = await PaymentMethod.findOne({ name: method, isVisible: true });
+    if (!paymentMethod) {
+   return res.status(404).json({ message: "Payment method not found" });
+}
 
     // 🔒 Minimum deposit enforcement
     if (Number(amount) < method.minDeposit) {

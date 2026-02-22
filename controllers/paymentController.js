@@ -2,6 +2,7 @@ import axios from "axios";
 import crypto from "crypto";
 import Transaction from "../models/Transaction.js";
 import Wallet from "../models/Wallet.js";
+import PaymentMethod from "../models/PaymentMethod.js";
 
 // ===============================
 // CONFIG

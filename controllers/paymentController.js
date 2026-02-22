@@ -11,17 +11,22 @@ const USD_TO_KES_RATE = 130; // 🔥 Change this anytime if rate changes
 // ===============================
 // INITIALIZE PAYSTACK
 // ===============================
+
 export const initializePaystack = async (req, res) => {
   try {
-    const { amount, method } = req.body;
+    const { amount, methodId } = req.body;
 
-    if (!amount || amount <= 0 || !method) {
+    if (!amount || amount <= 0 || !methodId) {
       return res.status(400).json({ message: "Invalid amount or method" });
     }
 
-    const user = req.user;
+    // 🔥 Get method from DB
+    const method = await PaymentMethod.findById(methodId);
+    if (!method || !method.isVisible) {
+      return res.status(404).json({ message: "Payment method not found" });
+    }
 
-    // 🔹 Minimum deposit check
+    // 🔒 Minimum deposit enforcement
     if (Number(amount) < method.minDeposit) {
       return res.status(400).json({
         message: `Minimum deposit for this method is ${method.minDeposit} USD`,
@@ -29,26 +34,20 @@ export const initializePaystack = async (req, res) => {
     }
 
     const user = req.user;
-
-    // 💰 User enters USD
     const usdAmount = Number(amount);
 
-    // 🔥 Convert USD → KES for Paystack
     const kesAmount = usdAmount * USD_TO_KES_RATE;
-
-    // Paystack expects amount in kobo (KES * 100)
     const amountInKobo = Math.round(kesAmount * 100);
 
     const reference = `MP-${Date.now()}-${user._id}`;
 
-    // Save transaction in USD (not KES)
     await Transaction.create({
       user: user._id,
       reference,
-      amount: usdAmount, // ✅ store USD in DB
+      amount: usdAmount,
       status: "Pending",
       type: "Deposit",
-      method,
+      method: method.name,
     });
 
     const response = await axios.post(
@@ -56,7 +55,7 @@ export const initializePaystack = async (req, res) => {
       {
         email: user.email,
         amount: amountInKobo,
-        currency: "KES", // ✅ ALWAYS KES
+        currency: "KES",
         reference,
         callback_url: `${process.env.FRONTEND_URL}/payment/success`,
       },
@@ -73,12 +72,12 @@ export const initializePaystack = async (req, res) => {
       reference,
       message: "Payment initialized successfully",
     });
+
   } catch (error) {
     console.error("Initialize Error:", error.response?.data || error.message);
     return res.status(500).json({ message: "Payment initialization failed" });
   }
 };
-
 // ===============================
 // WEBHOOK HANDLER
 // ===============================

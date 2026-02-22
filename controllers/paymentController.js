@@ -21,6 +21,15 @@ export const initializePaystack = async (req, res) => {
 
     const user = req.user;
 
+    // 🔹 Minimum deposit check
+    if (Number(amount) < method.minDeposit) {
+      return res.status(400).json({
+        message: `Minimum deposit for this method is ${method.minDeposit} USD`,
+      });
+    }
+
+    const user = req.user;
+
     // 💰 User enters USD
     const usdAmount = Number(amount);
 

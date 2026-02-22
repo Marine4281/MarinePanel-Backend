@@ -24,13 +24,13 @@ export const initializePaystack = async (req, res) => {
     // 🔥 Get method from DB
     const paymentMethod = await PaymentMethod.findOne({ name: method, isVisible: true });
     if (!paymentMethod) {
-   return res.status(404).json({ message: "Payment method not found" });
-}
+      return res.status(404).json({ message: "Payment method not found" });
+    }
 
     // 🔒 Minimum deposit enforcement
-    if (Number(amount) < method.minDeposit) {
+    if (Number(amount) < paymentMethod.minDeposit) {
       return res.status(400).json({
-        message: `Minimum deposit for this method is ${method.minDeposit} USD`,
+        message: `Minimum deposit for this method is ${paymentMethod.minDeposit} USD`,
       });
     }
 
@@ -42,13 +42,14 @@ export const initializePaystack = async (req, res) => {
 
     const reference = `MP-${Date.now()}-${user._id}`;
 
+    // ✅ Use paymentMethod.name here
     await Transaction.create({
       user: user._id,
       reference,
       amount: usdAmount,
       status: "Pending",
       type: "Deposit",
-      method: method.name,
+      method: paymentMethod.name,
     });
 
     const response = await axios.post(
@@ -73,12 +74,12 @@ export const initializePaystack = async (req, res) => {
       reference,
       message: "Payment initialized successfully",
     });
-
   } catch (error) {
     console.error("Initialize Error:", error.response?.data || error.message);
     return res.status(500).json({ message: "Payment initialization failed" });
   }
 };
+
 // ===============================
 // WEBHOOK HANDLER
 // ===============================

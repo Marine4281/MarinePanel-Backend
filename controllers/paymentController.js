@@ -15,14 +15,14 @@ const USD_TO_KES_RATE = 130; // 🔥 Change this anytime if rate changes
 
 export const initializePaystack = async (req, res) => {
   try {
-    const { amount, methodId } = req.body;
+    const { amount, method } = req.body;
 
     if (!amount || amount <= 0 || !methodId) {
       return res.status(400).json({ message: "Invalid amount or method" });
     }
 
     // 🔥 Get method from DB
-    const method = await PaymentMethod.findById(methodId);
+    const method = await PaymentMethod.findById(method);
     if (!method || !method.isVisible) {
       return res.status(404).json({ message: "Payment method not found" });
     }

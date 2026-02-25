@@ -58,23 +58,10 @@ export const createOrder = async (req, res) => {
       return res.status(400).json({ message: "Insufficient balance" });
     }
 
-    // ================= CREATE LOCAL ORDER =================
-    const order = await Order.create({
-      orderId: "ORD-" + uuidv4().slice(0, 8), // ✅ human-readable Order ID
-      userId: req.user._id,
-      category,
-      service,
-      link,
-      quantity,
-      charge: finalCharge,
-      status: "pending",
+    // ================= SEND ORDER TO PROVIDER FIRST =================
+    let providerOrderId;
+    let providerResponseData;
 
-      provider: serviceData.provider,
-      providerApiUrl: serviceData.providerApiUrl,
-      providerServiceId: serviceData.providerServiceId,
-    });
-
-    // ================= SEND ORDER TO PROVIDER =================
     try {
       const providerResponse = await axios.post(
         serviceData.providerApiUrl,
@@ -88,26 +75,39 @@ export const createOrder = async (req, res) => {
         { timeout: 15000 }
       );
 
-      if (providerResponse?.data?.order) {
-        order.providerOrderId = providerResponse.data.order;
-        order.providerStatus = "processing";
-      } else {
-        order.providerStatus = "pending";
+      providerResponseData = providerResponse.data;
+
+      if (!providerResponseData?.order) {
+        return res
+          .status(500)
+          .json({ message: "Failed to create order with provider" });
       }
 
-      order.providerResponse = providerResponse.data;
-      await order.save();
+      providerOrderId = providerResponseData.order;
     } catch (providerError) {
-      order.status = "failed";
-      order.providerStatus = "failed";
-      order.errorMessage =
-        providerError.response?.data || providerError.message;
-      await order.save();
-
       return res.status(500).json({
-        message: "Order failed to reach provider",
+        message:
+          providerError.response?.data || "Order failed to reach provider",
       });
     }
+
+    // ================= CREATE ORDER IN DB =================
+    const order = await Order.create({
+      orderId: "ORD-" + uuidv4().slice(0, 8), // ✅ human-readable Order ID
+      userId: req.user._id,
+      category,
+      service,
+      link,
+      quantity,
+      charge: finalCharge,
+      status: "pending",
+      provider: serviceData.provider,
+      providerApiUrl: serviceData.providerApiUrl,
+      providerServiceId: serviceData.providerServiceId,
+      providerOrderId, // ✅ Required field now included
+      providerStatus: "processing",
+      providerResponse: providerResponseData,
+    });
 
     // ================= WALLET DEDUCTION =================
     const transaction = {
@@ -146,7 +146,7 @@ export const createOrder = async (req, res) => {
       transaction,
     });
   } catch (error) {
-    console.error(error);
+    console.error("Create Order Error:", error);
     res.status(500).json({ message: "Order failed" });
   }
 };

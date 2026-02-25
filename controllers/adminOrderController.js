@@ -54,11 +54,10 @@ export const getAllOrders = async (req, res) => {
 
       const userIds = users.map((u) => u._id);
 
-      const orQueries = [{ userId: { $in: userIds } }];
+      const orQueries = [];
 
-      if (mongoose.Types.ObjectId.isValid(search))
-        orQueries.push({ _id: search });
-
+      if (userIds.length > 0) orQueries.push({ userId: { $in: userIds } });
+      if (mongoose.Types.ObjectId.isValid(search)) orQueries.push({ _id: search });
       orQueries.push({ orderId: { $regex: search, $options: "i" } });
 
       orderQuery = { $or: orQueries };
@@ -67,13 +66,40 @@ export const getAllOrders = async (req, res) => {
     const totalOrders = await Order.countDocuments(orderQuery);
     const totalPages = Math.ceil(totalOrders / limitNum);
 
+    // Use lean() so populate returns plain objects
     const ordersRaw = await Order.find(orderQuery)
-      .populate("userId", "email balance")
+      .populate({ path: "userId", select: "email balance", options: { lean: true } })
       .sort({ createdAt: -1 })
       .skip((pageNum - 1) * limitNum)
-      .limit(limitNum);
+      .limit(limitNum)
+      .lean();
 
-    const orders = ordersRaw.map(formatOrder);
+    // Format orders safely
+    const orders = ordersRaw.map((order) => ({
+      _id: order._id,
+      orderId: order.orderId,
+      service: order.service,
+      link: order.link,
+      quantity: order.quantity,
+      quantityDelivered: order.quantityDelivered || 0,
+      charge: order.charge,
+      status: order.status,
+      providerStatus: order.providerStatus,
+      createdAt: order.createdAt,
+      user: order.userId
+        ? {
+            _id: order.userId._id,
+            email: order.userId.email,
+            username: order.userId.email?.split("@")[0] || "",
+            balance: order.userId.balance || 0,
+          }
+        : {
+            _id: null,
+            email: "Unknown",
+            username: "",
+            balance: 0,
+          },
+    }));
 
     res.json({ orders, totalPages });
   } catch (err) {

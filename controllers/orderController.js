@@ -228,9 +228,9 @@ export const previewOrder = async (req, res) => {
     res.json({
       service,
       quantity,
-      baseCharge: baseCharge.toFixed(2),
+      baseCharge: baseCharge.toFixed(4),
       commissionPercent,
-      finalCharge: finalCharge.toFixed(2),
+      finalCharge: finalCharge.toFixed(4),
     });
   } catch (error) {
     console.error(error);

@@ -26,23 +26,15 @@ const orderSchema = new mongoose.Schema(
     quantity: { type: Number, required: true },
     charge: { type: Number, required: true },
 
-    // ✅ REQUIRED for progress bar & admin UI
+    // Quantity delivered (for progress bar & admin UI)
     quantityDelivered: {
       type: Number,
       default: 0,
     },
 
-    // Order lifecycle
+    // 🔥 Internal normalized status (NO ENUM — avoids crashes)
     status: {
       type: String,
-      enum: [
-        "pending",
-        "processing",
-        "completed",
-        "cancelled",
-        "failed",
-        "refunded",
-      ],
       default: "pending",
       index: true,
     },
@@ -51,22 +43,34 @@ const orderSchema = new mongoose.Schema(
     provider: { type: String, default: "" },
     providerApiUrl: { type: String, default: "" },
     providerServiceId: { type: String, default: "" },
-    providerOrderId: { type: String, default: "" },
 
+    // 🔥 IMPORTANT: Required for webhook matching
+    providerOrderId: {
+      type: String,
+      required: true,
+      index: true,
+    },
+
+    // 🔥 Raw provider status (NO ENUM — supports unlimited providers)
     providerStatus: {
       type: String,
-      enum: ["pending", "processing", "completed", "failed"],
       default: "pending",
     },
 
-    providerResponse: { type: Object, default: null },
+    providerResponse: {
+      type: Object,
+      default: null,
+    },
 
     // Error handling
-    errorMessage: { type: String, default: "" },
+    errorMessage: {
+      type: String,
+      default: "",
+    },
   },
   {
     timestamps: true,
-    strict: true, // keep schema enforcement (good practice)
+    strict: true,
   }
 );
 

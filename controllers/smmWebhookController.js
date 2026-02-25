@@ -1,4 +1,4 @@
-import Order from "../models/orderModel.js";
+import Order from "../models/Order.js";
 
 /**
  * Universal provider status normalizer

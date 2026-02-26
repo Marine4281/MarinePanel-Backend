@@ -23,6 +23,8 @@ import paymentRoutes from "./routes/paymentRoutes.js";
 
 // ← NEW: Admin Orders Route
 import adminOrderRoutes from "./routes/adminOrderRoutes.js";
+import adminUserOrdersRoutes from "./routes/adminUserOrders.js";
+
 
 dotenv.config();
 const app = express();
@@ -81,5 +83,6 @@ app.use("/api/admin/payment-methods", adminPaymentMethodRoutes);
 
 // ← NEW: Admin Orders
 app.use("/api/admin/orders", adminOrderRoutes);
+app.use("/api/admin/user-orders", adminUserOrdersRoutes);
 
 export default app;

@@ -74,6 +74,13 @@ export const updateOrderStatus = async (req, res) => {
     if (!order)
       return res.status(404).json({ message: "Order not found" });
 
+    // 🚫 LOCK ORDER IF ALREADY REFUNDED
+    if (order.status === "refunded") {
+      return res.status(400).json({
+        message: "Cannot modify a refunded order",
+      });
+    }
+
     order.status = status;
 
     if (status === "completed") {
@@ -101,7 +108,7 @@ export const updateOrderStatus = async (req, res) => {
 };
 
 /* ======================================================
-   REFUND ORDER
+   REFUND ORDER (FULLY PROTECTED)
 ====================================================== */
 export const refundOrder = async (req, res) => {
   try {
@@ -111,8 +118,19 @@ export const refundOrder = async (req, res) => {
     if (!order)
       return res.status(404).json({ message: "Order not found" });
 
-    if (order.status === "refunded")
-      return res.status(400).json({ message: "Already refunded" });
+    // 🚫 Prevent double refund
+    if (order.status === "refunded") {
+      return res.status(400).json({
+        message: "Order already refunded",
+      });
+    }
+
+    // 🚫 Optional: prevent refund if completed
+    if (order.status === "completed") {
+      return res.status(400).json({
+        message: "Cannot refund completed order",
+      });
+    }
 
     let wallet = await Wallet.findOne({ user: order.userId._id });
 
@@ -124,11 +142,11 @@ export const refundOrder = async (req, res) => {
       });
     }
 
+    // 💰 Add refund transaction
     wallet.transactions.push({
       type: "Refund",
       amount: order.charge,
       status: "Completed",
-      date: new Date(),
       note: `Refund for Order ${order.orderId}`,
     });
 
@@ -136,6 +154,7 @@ export const refundOrder = async (req, res) => {
 
     await wallet.save();
 
+    // ✅ Mark order as refunded
     order.status = "refunded";
     await order.save();
 

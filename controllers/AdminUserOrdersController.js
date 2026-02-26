@@ -41,7 +41,6 @@ export const getUserOrders = async (req, res) => {
       orders,
       totalPages: Math.ceil(total / limitNum),
     });
-
   } catch (error) {
     console.error("Get Orders Error:", error);
     res.status(500).json({ message: "Failed to fetch orders" });
@@ -49,7 +48,7 @@ export const getUserOrders = async (req, res) => {
 };
 
 /* ======================================================
-   UPDATE ORDER STATUS (Manual Control)
+   UPDATE ORDER STATUS (Safe Manual Control)
 ====================================================== */
 export const updateOrderStatus = async (req, res) => {
   try {
@@ -68,21 +67,28 @@ export const updateOrderStatus = async (req, res) => {
       return res.status(400).json({ message: "Invalid status" });
     }
 
-    const order = await Order.findById(req.params.id)
-      .populate("userId", "email balance");
+    const order = await Order.findById(req.params.id);
 
     if (!order)
       return res.status(404).json({ message: "Order not found" });
 
-    // 🚫 LOCK ORDER IF ALREADY REFUNDED
+    // 🚫 Cannot modify refunded
     if (order.status === "refunded") {
       return res.status(400).json({
         message: "Cannot modify a refunded order",
       });
     }
 
+    // 🚫 Prevent completed → other states
+    if (order.status === "completed" && status !== "completed") {
+      return res.status(400).json({
+        message: "Completed order cannot be modified",
+      });
+    }
+
     order.status = status;
 
+    // Auto adjust progress if completed
     if (status === "completed") {
       order.quantityDelivered = order.quantity;
     }
@@ -100,10 +106,90 @@ export const updateOrderStatus = async (req, res) => {
     }
 
     res.json({ message: "Status updated", order });
-
   } catch (error) {
     console.error("Update Status Error:", error);
     res.status(500).json({ message: "Failed to update status" });
+  }
+};
+
+/* ======================================================
+   UPDATE ORDER PROGRESS (ADMIN MANUAL)
+====================================================== */
+export const updateOrderProgress = async (req, res) => {
+  try {
+    const { quantityDelivered } = req.body;
+
+    const order = await Order.findById(req.params.id);
+
+    if (!order)
+      return res.status(404).json({ message: "Order not found" });
+
+    // 🚫 Lock refunded
+    if (order.status === "refunded") {
+      return res.status(400).json({
+        message: "Cannot edit refunded order",
+      });
+    }
+
+    // 🚫 Lock completed
+    if (order.status === "completed") {
+      return res.status(400).json({
+        message: "Completed order cannot be edited",
+      });
+    }
+
+    const delivered = Number(quantityDelivered);
+
+    if (isNaN(delivered) || delivered < 0) {
+      return res.status(400).json({
+        message: "Invalid quantity",
+      });
+    }
+
+    // 🚫 Cannot exceed total quantity
+    if (delivered > order.quantity) {
+      return res.status(400).json({
+        message: "Delivered cannot exceed total quantity",
+      });
+    }
+
+    // 🚫 Prevent reducing already delivered
+    if (delivered < order.quantityDelivered) {
+      return res.status(400).json({
+        message: "Cannot reduce delivered quantity",
+      });
+    }
+
+    order.quantityDelivered = delivered;
+
+    // Auto complete if fully delivered
+    if (delivered === order.quantity) {
+      order.status = "completed";
+    } else if (delivered > 0) {
+      order.status = "processing";
+    }
+
+    await order.save();
+
+    const io = req.app.get("io");
+
+    if (io) {
+      io.emit("order:update", {
+        _id: order._id,
+        status: order.status,
+        quantityDelivered: order.quantityDelivered,
+      });
+    }
+
+    res.json({
+      message: "Progress updated",
+      order,
+    });
+  } catch (error) {
+    console.error("Update Progress Error:", error);
+    res.status(500).json({
+      message: "Failed to update progress",
+    });
   }
 };
 
@@ -125,10 +211,17 @@ export const refundOrder = async (req, res) => {
       });
     }
 
-    // 🚫 Optional: prevent refund if completed
+    // 🚫 Prevent refund if completed
     if (order.status === "completed") {
       return res.status(400).json({
         message: "Cannot refund completed order",
+      });
+    }
+
+    // 🚫 Prevent refund if already partially delivered
+    if (order.quantityDelivered > 0) {
+      return res.status(400).json({
+        message: "Cannot refund order with delivered quantity",
       });
     }
 
@@ -154,7 +247,6 @@ export const refundOrder = async (req, res) => {
 
     await wallet.save();
 
-    // ✅ Mark order as refunded
     order.status = "refunded";
     await order.save();
 
@@ -164,6 +256,7 @@ export const refundOrder = async (req, res) => {
       io.emit("order:update", {
         _id: order._id,
         status: "refunded",
+        quantityDelivered: order.quantityDelivered,
       });
 
       io.emit("wallet:update", {
@@ -173,7 +266,6 @@ export const refundOrder = async (req, res) => {
     }
 
     res.json({ message: "Refund successful" });
-
   } catch (error) {
     console.error("Refund Error:", error);
     res.status(500).json({ message: "Refund failed" });

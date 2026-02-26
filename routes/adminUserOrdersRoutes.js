@@ -3,7 +3,7 @@ import {
   getUserOrders,
   updateOrderStatus,
   refundOrder,
-} from "../controllers/adminUserOrdersController.js";
+} from "../controllers/AdminUserOrdersController.js";
 
 const router = express.Router();
 

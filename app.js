@@ -23,7 +23,7 @@ import paymentRoutes from "./routes/paymentRoutes.js";
 
 // ← NEW: Admin Orders Route
 import adminOrderRoutes from "./routes/adminOrderRoutes.js";
-import adminUserOrdersRoutes from "./routes/adminUserOrders.js";
+import adminUserOrdersRoutes from "./routes/adminUserOrdersRoutes.js";
 
 
 dotenv.config();

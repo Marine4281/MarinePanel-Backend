@@ -20,18 +20,27 @@ const server = http.createServer(app);
 export const io = new Server(server, {
   cors: {
     origin: (origin, callback) => {
-      // allow requests with no origin (like Postman)
+      // allow requests with no origin (Postman, server-side)
       if (!origin) return callback(null, true);
 
-      // allow production frontend + Vercel preview URLs
-      if (
-        origin === "https://marinepanel.online" || // ✅ include https://
-        /\.vercel\.app$/.test(origin)
-      ) {
-        callback(null, true);
+      // whitelist allowed domains
+      const allowedOrigins = [
+        "https://marinepanel.online",
+        "http://marinepanel.online",
+        "https://www.marinepanel.online",
+        "http://www.marinepanel.online",
+      ];
+
+      // allow Vercel preview URLs
+      if (/\.vercel\.app$/.test(origin)) {
+        return callback(null, true);
+      }
+
+      if (allowedOrigins.includes(origin)) {
+        return callback(null, true);
       } else {
         console.log("Blocked by Socket.IO CORS:", origin);
-        callback(new Error("Not allowed by CORS")); // block other origins
+        return callback(new Error("Not allowed by CORS"));
       }
     },
     methods: ["GET", "POST"],

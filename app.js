@@ -56,7 +56,7 @@ credentials: true,
 })
 );
 
-/* Body parser /
+/* Body parser */
 app.use(express.json()); // ✅ Important! This avoids req.body undefined
 app.use(morgan("dev"));
 / Health check */

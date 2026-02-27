@@ -54,6 +54,21 @@ export const register = async (req, res) => {
       phone: user.phone,
       country: user.country,
       token: generateToken(user._id),
+
+      // ✅ Set cookie for cross-site usage
+    res.cookie("token", token, {
+      httpOnly: true,
+      secure: true,       // HTTPS required
+      sameSite: "none",   // allows cross-site (Vercel → Render)
+      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+    });
+
+    res.status(201).json({
+      _id: user._id,
+      email: user.email,
+      phone: user.phone,
+      country: user.country,
+      token, // optional to still send in JSON
     });
   } catch (error) {
     console.error(error);
@@ -82,6 +97,22 @@ export const login = async (req, res) => {
       country: user.country,
       isAdmin: user.isAdmin,
       token: generateToken(user._id),
+
+      // ✅ Set cookie
+    res.cookie("token", token, {
+      httpOnly: true,
+      secure: true,
+      sameSite: "none",
+      maxAge: 7 * 24 * 60 * 60 * 1000,
+    });
+
+    res.json({
+      _id: user._id,
+      email: user.email,
+      phone: user.phone,
+      country: user.country,
+      isAdmin: user.isAdmin,
+      token, // optional
     });
   } catch (error) {
     console.error(error);

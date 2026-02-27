@@ -7,7 +7,7 @@ import PaymentMethod from "../models/PaymentMethod.js";
 // ===============================
 // CONFIG
 // ===============================
-const USD_TO_KES_RATE = 130; // 🔥 Change this anytime if rate changes
+const USD_TO_KES_RATE = 135; // 🔥 Change this anytime if rate changes
 
 // ===============================
 // INITIALIZE PAYSTACK

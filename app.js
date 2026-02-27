@@ -5,6 +5,7 @@ import cors from "cors";
 import helmet from "helmet";
 import morgan from "morgan";
 import rateLimit from "express-rate-limit";
+import cookieParser from "cookie-parser";
 
 // Routes
 import authRoutes from "./routes/authRoutes.js";
@@ -64,8 +65,12 @@ app.get("/", (req, res) => {
 res.json({ status: "Marine backend running" });
 });
 
-/* CORS preflight /
+/* CORS preflight */
 app.options(/./, cors());
+
+/* Cookies routes */
+app.use(cookieParser());
+
 
 /* Public routes */
 app.use("/api/auth", authRoutes);

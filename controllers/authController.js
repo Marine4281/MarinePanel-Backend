@@ -9,7 +9,6 @@ import Wallet from "../models/Wallet.js";
 const generateToken = (id) => {
   return jwt.sign({ id }, process.env.JWT_SECRET, { expiresIn: "7d" });
 };
-
 // ======================= REGISTER =======================
 export const register = async (req, res) => {
   try {
@@ -20,14 +19,9 @@ export const register = async (req, res) => {
     }
 
     // Check if user exists
-    const userExists = await User.findOne({
-      $or: [{ email }, { phone }],
-    });
-
+    const userExists = await User.findOne({ $or: [{ email }, { phone }] });
     if (userExists) {
-      return res
-        .status(400)
-        .json({ message: "User with email or phone already exists" });
+      return res.status(400).json({ message: "User with email or phone already exists" });
     }
 
     // Hash password
@@ -42,20 +36,13 @@ export const register = async (req, res) => {
       password: hashedPassword,
     });
 
-    // ✅ CREATE WALLET (ONLY ONCE)
-    await Wallet.create({
-      user: user._id,
-      balance: 0,
-    });
+    // Create wallet
+    await Wallet.create({ user: user._id, balance: 0 });
 
-    res.status(201).json({
-      _id: user._id,
-      email: user.email,
-      phone: user.phone,
-      country: user.country,
-      token: generateToken(user._id),
+    // Generate token
+    const token = generateToken(user._id);
 
-      // ✅ Set cookie for cross-site usage
+    // ✅ Set cookie
     res.cookie("token", token, {
       httpOnly: true,
       secure: true,       // HTTPS required
@@ -63,13 +50,15 @@ export const register = async (req, res) => {
       maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
     });
 
+    // ✅ Send response
     res.status(201).json({
       _id: user._id,
       email: user.email,
       phone: user.phone,
       country: user.country,
-      token, // optional to still send in JSON
+      token, // optional
     });
+
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: "Server error" });
@@ -80,7 +69,6 @@ export const register = async (req, res) => {
 export const login = async (req, res) => {
   try {
     const { email, password } = req.body;
-
     if (!email || !password)
       return res.status(400).json({ message: "Email and password required" });
 
@@ -90,15 +78,9 @@ export const login = async (req, res) => {
     const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) return res.status(401).json({ message: "Invalid credentials" });
 
-    res.json({
-      _id: user._id,
-      email: user.email,
-      phone: user.phone,
-      country: user.country,
-      isAdmin: user.isAdmin,
-      token: generateToken(user._id),
+    const token = generateToken(user._id);
 
-      // ✅ Set cookie
+    // ✅ Set cookie
     res.cookie("token", token, {
       httpOnly: true,
       secure: true,
@@ -106,14 +88,16 @@ export const login = async (req, res) => {
       maxAge: 7 * 24 * 60 * 60 * 1000,
     });
 
+    // ✅ Send response
     res.json({
       _id: user._id,
       email: user.email,
       phone: user.phone,
       country: user.country,
       isAdmin: user.isAdmin,
-      token, // optional
+      token,
     });
+
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: "Server error" });

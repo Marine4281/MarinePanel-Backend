@@ -1,101 +1,299 @@
 // controllers/AdminService.js
-import Service from "../models/Service.js";
 
-/**
- * GET /api/admin/services
- * Get all services
- */
+import Service from "../models/Service.js";
+import { clearCache } from "../utils/cache.js";
+
+/* =========================================================
+   GET ALL SERVICES (ADMIN)
+========================================================= */
 export const getAllServices = async (req, res) => {
   try {
-    const services = await Service.find().sort({ createdAt: -1 });
+    const services = await Service.find()
+      .sort({ createdAt: -1 })
+      .lean();
+
     res.json(services);
   } catch (err) {
-    res.status(500).json({ message: "Failed to fetch services" });
+    console.error("GET SERVICES ERROR:", err);
+    res.status(500).json({
+      message: "Failed to fetch services",
+      error: err.message,
+    });
   }
 };
 
-/**
- * POST /api/admin/services
- * Add a new service
- */
+/* =========================================================
+   ADD SERVICE
+========================================================= */
 export const addService = async (req, res) => {
   try {
-    // If new service is marked default, unset default for other services in same category
-    if (req.body.isDefault && req.body.category) {
+    const {
+      category,
+      platform,
+      name,
+      provider,
+      rate,
+      min,
+      max,
+      isDefault,
+      isDefaultCategoryGlobal,
+      isDefaultCategoryPlatform,
+
+      // FREE SETTINGS (matching frontend)
+      isFree,
+      freeQuantity,
+      cooldownHours,
+      
+    } = req.body;
+
+    if (!category || !platform || !name || !provider) {
+      return res.status(400).json({
+        message: "Missing required fields",
+      });
+    }
+
+    let finalRate = rate || 0;
+    let finalMin = min || 1;
+    let finalMax = max || 100000;
+
+    /* ================= FREE SERVICE ================= */
+    /* ================= FREE SERVICE ================= */
+if (isFree) {
+  if (
+    freeQuantity === undefined ||
+    cooldownHours === undefined
+  ) {
+    return res.status(400).json({
+      message: "Free service requires max quantity and cooldown hours",
+    });
+  }
+
+  finalRate = 0;
+  finalMin = 1;
+  finalMax = Number(freeQuantity);
+}
+
+    /* ================= DEFAULT RULES ================= */
+
+    if (isDefault) {
       await Service.updateMany(
-        { category: req.body.category },
-        { isDefault: false }
+        { category },
+        { $set: { isDefault: false } }
       );
     }
 
-    const service = await Service.create(req.body);
+    if (isDefaultCategoryGlobal) {
+      await Service.updateMany(
+        {},
+        { $set: { isDefaultCategoryGlobal: false } }
+      );
+    }
+
+    if (isDefaultCategoryPlatform) {
+      await Service.updateMany(
+        { platform },
+        { $set: { isDefaultCategoryPlatform: false } }
+      );
+    }
+
+    const service = await Service.create({
+      ...req.body,
+      rate: finalRate,
+      min: finalMin,
+      max: finalMax,
+
+      isFree: Boolean(isFree),
+      freeQuantity: isFree ? freeQuantity : 0,
+      cooldownHours: isFree ? cooldownHours : 0,
+      
+    });
+
+    // 🔥 Clear public cache so users see changes instantly
+    clearCache("public_services");
+
     res.status(201).json(service);
+
   } catch (err) {
-    res.status(500).json({ message: "Failed to add service" });
+    console.error("ADD SERVICE ERROR:", err);
+    res.status(500).json({
+      message: "Failed to add service",
+      error: err.message,
+    });
   }
 };
 
-/**
- * PUT /api/admin/services/:id
- * Update a service
- */
+/* =========================================================
+   UPDATE SERVICE
+========================================================= */
 export const updateService = async (req, res) => {
   try {
-    // If updated service is marked default, unset default for other services in same category
-    if (req.body.isDefault && req.body.category) {
+    const {
+      category,
+      platform,
+      isDefault,
+      isDefaultCategoryGlobal,
+      isDefaultCategoryPlatform,
+      isFree,
+      freeQuantity,
+      cooldownHours,
+      
+    } = req.body;
+
+    const service = await Service.findById(req.params.id);
+    if (!service) {
+      return res.status(404).json({ message: "Service not found" });
+    }
+
+    /* ================= DEFAULT RULES ================= */
+
+    if (isDefault) {
       await Service.updateMany(
-        { category: req.body.category, _id: { $ne: req.params.id } },
-        { isDefault: false }
+        { category, _id: { $ne: req.params.id } },
+        { $set: { isDefault: false } }
       );
     }
 
-    const service = await Service.findByIdAndUpdate(
-      req.params.id,
-      req.body,
-      { new: true }
-    );
+    if (isDefaultCategoryGlobal) {
+      await Service.updateMany(
+        { _id: { $ne: req.params.id } },
+        { $set: { isDefaultCategoryGlobal: false } }
+      );
+    }
+
+    if (isDefaultCategoryPlatform) {
+      await Service.updateMany(
+        { platform, _id: { $ne: req.params.id } },
+        { $set: { isDefaultCategoryPlatform: false } }
+      );
+    }
+
+    /* ================= FREE UPDATE ================= */
+
+   /* ================= FREE UPDATE ================= */
+
+if (typeof isFree === "boolean") {
+  service.isFree = isFree;
+
+  if (isFree) {
+    if (
+      freeQuantity === undefined ||
+      cooldownHours === undefined
+    ) {
+      return res.status(400).json({
+        message: "Free service requires max quantity and cooldown hours",
+      });
+    }
+
+    service.rate = 0;
+    service.min = 1;
+    service.max = Number(freeQuantity);
+    service.freeQuantity = Number(freeQuantity);
+    service.cooldownHours = Number(cooldownHours);
+    
+  } else {
+    service.freeQuantity = 0;
+    service.cooldownHours = 0;
+  }
+}
+
+    // Update remaining fields safely
+    Object.keys(req.body).forEach((key) => {
+      if (![
+        "isFree",
+        "freeQuantity",
+        "cooldownHours",
+      ].includes(key)) {
+        service[key] = req.body[key];
+      }
+    });
+
+    await service.save();
+
+    // 🔥 Clear public cache
+    clearCache("public_services");
 
     res.json(service);
+
   } catch (err) {
-    res.status(500).json({ message: "Failed to update service" });
+    console.error("UPDATE SERVICE ERROR:", err);
+    res.status(500).json({
+      message: "Failed to update service",
+      error: err.message,
+    });
   }
 };
 
-/**
- * DELETE /api/admin/services/:id
- * Delete a service
- */
+/* =========================================================
+   DELETE SERVICE
+========================================================= */
 export const deleteService = async (req, res) => {
   try {
-    await Service.findByIdAndDelete(req.params.id);
+    const deleted = await Service.findByIdAndDelete(req.params.id);
+
+    if (!deleted) {
+      return res.status(404).json({ message: "Service not found" });
+    }
+
+    // 🔥 Clear public cache
+    clearCache("public_services");
+
     res.json({ message: "Service deleted" });
+
   } catch (err) {
-    res.status(500).json({ message: "Failed to delete service" });
+    console.error("DELETE SERVICE ERROR:", err);
+    res.status(500).json({
+      message: "Failed to delete service",
+      error: err.message,
+    });
   }
 };
 
-/**
- * GET /api/admin/services/categories
- * Fetch unique categories
- */
+/* =========================================================
+   GET UNIQUE CATEGORIES
+========================================================= */
 export const getCategories = async (req, res) => {
   try {
     const categories = await Service.distinct("category");
     res.json(categories);
   } catch (err) {
-    res.status(500).json({ message: "Failed to fetch categories" });
+    res.status(500).json({
+      message: "Failed to fetch categories",
+      error: err.message,
+    });
   }
 };
 
-/**
- * GET /api/admin/services/providers
- * Fetch unique providers
- */
+/* =========================================================
+   GET UNIQUE PROVIDERS
+========================================================= */
 export const getProviders = async (req, res) => {
   try {
     const providers = await Service.distinct("provider");
     res.json(providers);
   } catch (err) {
-    res.status(500).json({ message: "Failed to fetch providers" });
+    res.status(500).json({
+      message: "Failed to fetch providers",
+      error: err.message,
+    });
+  }
+};
+
+export const toggleServiceStatus = async (req, res) => {
+  try {
+    const service = await Service.findById(req.params.id);
+
+    if (!service) {
+      return res.status(404).json({ message: "Service not found" });
+    }
+
+    service.status = !service.status;
+    await service.save();
+
+    res.json({
+      message: `Service ${service.status ? "shown" : "hidden"} successfully`,
+      status: service.status,
+    });
+  } catch (error) {
+    res.status(500).json({ message: "Failed to update status" });
   }
 };

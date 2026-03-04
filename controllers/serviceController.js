@@ -1,54 +1,38 @@
-import Order from "../models/Order.js";
-import User from "../models/User.js";
+// controllers/serviceController.js
+
 import Service from "../models/Service.js";
+import { getCache, setCache } from "../utils/cache.js";
 
-// ------------------------
-// Place a new order
-// ------------------------
-export const placeOrder = async (req, res) => {
-  try {
-    const { userId, category, service, link, quantity, charge } = req.body;
-
-    if (!userId || !category || !service || !link || !quantity || !charge) {
-      return res.status(400).json({ message: "All fields are required" });
-    }
-
-    const user = await User.findById(userId);
-    if (!user) return res.status(404).json({ message: "User not found" });
-
-    if (user.balance < charge) {
-      return res.status(400).json({ message: "Insufficient balance" });
-    }
-
-    // Deduct balance
-    user.balance -= charge;
-    await user.save();
-
-    // Create order
-    const order = await Order.create({ userId, category, service, link, quantity, charge });
-    res.status(201).json(order);
-
-  } catch (error) {
-    res.status(500).json({ message: "Server error" });
-  }
-};
-
-// ------------------------
-// Get all services for users (public)
-// ------------------------
+/* =========================================================
+   GET PUBLIC SERVICES (CACHED)
+   - Only active services
+   - Clears automatically when admin updates
+========================================================= */
 export const getServicesPublic = async (req, res) => {
   try {
-    const { category } = req.query;
-    let services;
+    const cacheKey = "public_services";
 
-    if (category) {
-      services = await Service.find({ category, status: true });
-    } else {
-      services = await Service.find({ status: true });
+    // 🔥 1️⃣ Check cache first
+    const cached = getCache(cacheKey);
+    if (cached) {
+      return res.status(200).json(cached);
     }
 
+    // 🔥 2️⃣ Fetch from DB if not cached
+    const services = await Service.find({ status: true })
+      .sort({ createdAt: -1 })
+      .lean();
+
+    // 🔥 3️⃣ Store in cache for 5 minutes
+    setCache(cacheKey, services, 300);
+
     res.status(200).json(services);
+
   } catch (error) {
-    res.status(500).json({ message: "Server error" });
+    console.error("GET PUBLIC SERVICES ERROR:", error);
+    res.status(500).json({
+      message: "Failed to fetch services",
+      error: error.message,
+    });
   }
 };

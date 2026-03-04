@@ -2,21 +2,29 @@ import Order from "../models/Order.js";
 import Wallet from "../models/Wallet.js";
 import User from "../models/User.js";
 import Settings from "../models/Settings.js";
-import AdminService from "../models/Service.js";
+import Service from "../models/Service.js";
 import axios from "axios";
-import { v4 as uuidv4 } from "uuid"; // ✅ for readable order IDs
+import { v4 as uuidv4 } from "uuid";
+import mongoose from "mongoose";
 
-// Helper to calculate balance
+// ================= HELPER =================
 const calculateBalance = (transactions = []) =>
   transactions.reduce((acc, t) => acc + (t.amount || 0), 0);
 
-// ================= CREATE ORDER =================
+/* =========================================================
+   CREATE ORDER (Enterprise + Cooldown Free Support)
+========================================================= */
 export const createOrder = async (req, res) => {
   try {
     const { category, service, link, quantity } = req.body;
 
     if (!category || !service || !link || !quantity) {
       return res.status(400).json({ message: "All fields are required" });
+    }
+
+    const qty = Number(quantity);
+    if (qty <= 0) {
+      return res.status(400).json({ message: "Invalid quantity" });
     }
 
     const user = await User.findById(req.user._id);
@@ -31,36 +39,119 @@ export const createOrder = async (req, res) => {
       });
     }
 
-    const serviceData = await AdminService.findOne({
+    const serviceData = await Service.findOne({
       name: service,
       status: true,
     });
+
     if (!serviceData)
       return res.status(404).json({ message: "Service not found" });
 
-    // ================= COMMISSION =================
-    let settings = await Settings.findOne();
-    if (!settings) {
-      settings = await Settings.create({ commission: 50, totalRevenue: 0 });
+    let finalCharge = 0;
+    let baseCharge = 0;
+    let isFreeOrder = false;
+
+    /* ======================================================
+   🔥 FREE SERVICE LOGIC (CUMULATIVE PER USER)
+====================================================== */
+
+if (serviceData.isFree) {
+  isFreeOrder = true;
+
+  const maxPerClaim = serviceData.freeQuantity || 0;
+  const cooldown = serviceData.cooldownHours || 0;
+
+  // 🔒 1️⃣ Max per claim check
+  if (qty > maxPerClaim) {
+    return res.status(400).json({
+      message: `Max free quantity per claim is ${maxPerClaim}`,
+    });
+  }
+
+  // 🔒 2️⃣ Cooldown check
+  if (cooldown > 0) {
+    const lastOrder = await Order.findOne({
+      userId: req.user._id,
+      service,
+      isFreeOrder: true,
+    }).sort({ createdAt: -1 });
+
+    if (lastOrder) {
+      const hoursPassed =
+        (Date.now() - new Date(lastOrder.createdAt)) /
+        (1000 * 60 * 60);
+
+      if (hoursPassed < cooldown) {
+        const remaining = Math.ceil(cooldown - hoursPassed);
+
+        return res.status(400).json({
+          message: `You can claim again in ${remaining} hour(s).`,
+        });
+      }
+    }
+  }
+
+  finalCharge = 0;
+}
+    /* ======================================================
+       💰 PAID SERVICE LOGIC
+    ====================================================== */
+
+    else {
+      if (qty < serviceData.min || qty > serviceData.max) {
+        return res.status(400).json({
+          message: `Quantity must be between ${serviceData.min} and ${serviceData.max}`,
+        });
+      }
+
+      let settings = await Settings.findOne();
+      if (!settings) {
+        settings = await Settings.create({
+          commission: 50,
+          totalRevenue: 0,
+        });
+      }
+
+      const commissionPercent = settings.commission;
+
+      baseCharge = (qty / 1000) * serviceData.rate;
+      finalCharge = baseCharge * (1 + commissionPercent / 100);
+
+      const currentBalance =
+        typeof wallet.balance === "number"
+          ? wallet.balance
+          : calculateBalance(wallet.transactions);
+
+      if (currentBalance < finalCharge) {
+        return res.status(400).json({
+          message: "Insufficient balance",
+        });
+      }
     }
 
-    const commissionPercent = settings.commission;
+    /* ======================================================
+       📦 CREATE ORDER
+    ====================================================== */
 
-    const baseCharge = (quantity / 1000) * serviceData.rate;
-    const finalCharge = baseCharge * (1 + commissionPercent / 100);
+    const order = await Order.create({
+      orderId: "ORD-" + uuidv4().slice(0, 8),
+      userId: req.user._id,
+      category,
+      service,
+      link,
+      quantity: qty,
+      charge: finalCharge,
+      status: "pending",
+      isFreeOrder,
 
-    const currentBalance =
-      typeof wallet.balance === "number"
-        ? wallet.balance
-        : calculateBalance(wallet.transactions);
+      provider: serviceData.provider,
+      providerApiUrl: serviceData.providerApiUrl,
+      providerServiceId: serviceData.providerServiceId,
+    });
 
-    if (currentBalance < finalCharge) {
-      return res.status(400).json({ message: "Insufficient balance" });
-    }
-
-    // ================= SEND ORDER TO PROVIDER FIRST =================
-    let providerOrderId;
-    let providerResponseData;
+    /* ======================================================
+       🚀 SEND TO PROVIDER
+    ====================================================== */
 
     try {
       const providerResponse = await axios.post(
@@ -70,168 +161,140 @@ export const createOrder = async (req, res) => {
           action: "add",
           service: serviceData.providerServiceId,
           link,
-          quantity,
+          quantity: qty,
         },
         { timeout: 15000 }
       );
 
-      providerResponseData = providerResponse.data;
-
-      if (!providerResponseData?.order) {
-        return res
-          .status(500)
-          .json({ message: "Failed to create order with provider" });
+      if (providerResponse?.data?.order) {
+        order.providerOrderId = providerResponse.data.order;
+        order.providerStatus = "processing";
       }
 
-      providerOrderId = providerResponseData.order;
+      order.providerResponse = providerResponse.data;
+      await order.save();
     } catch (providerError) {
+      order.status = "failed";
+      order.providerStatus = "failed";
+      order.errorMessage =
+        providerError.response?.data || providerError.message;
+      await order.save();
+
       return res.status(500).json({
-        message:
-          providerError.response?.data || "Order failed to reach provider",
+        message: "Order failed to reach provider",
       });
     }
 
-    // ================= CREATE ORDER IN DB =================
-    const order = await Order.create({
-      orderId: "ORD-" + uuidv4().slice(0, 8), // ✅ human-readable Order ID
-      userId: req.user._id,
-      category,
-      service,
-      link,
-      quantity,
-      charge: finalCharge,
-      status: "pending",
-      provider: serviceData.provider,
-      providerApiUrl: serviceData.providerApiUrl,
-      providerServiceId: serviceData.providerServiceId,
-      providerOrderId, // ✅ Required field now included
-      providerStatus: "processing",
-      providerResponse: providerResponseData,
-    });
+    /* ======================================================
+       💳 WALLET DEDUCTION (ONLY IF PAID)
+    ====================================================== */
 
-    // ================= WALLET DEDUCTION =================
-    const transaction = {
-      type: "Order",
-      amount: -Number(finalCharge),
-      status: "Completed",
-      note: `Order #${order._id}`,
-      date: new Date(),
-    };
+    if (!isFreeOrder) {
+      const transaction = {
+        type: "Order",
+        amount: -Number(finalCharge),
+        status: "Completed",
+        note: `Order #${order._id}`,
+        date: new Date(),
+      };
 
-    wallet.transactions.push(transaction);
-    wallet.balance = calculateBalance(wallet.transactions);
-    await wallet.save();
+      wallet.transactions.push(transaction);
+      wallet.balance = calculateBalance(wallet.transactions);
+      await wallet.save();
 
-    // Sync User.balance
-    await User.findByIdAndUpdate(req.user._id, { balance: wallet.balance });
-
-    // ================= REVENUE =================
-    const commissionAmount = finalCharge - baseCharge;
-    settings.totalRevenue += commissionAmount;
-    await settings.save();
-
-    // 🔔 Emit Socket.IO update
-    const io = req.app.get("io");
-    if (io) {
-      io.emit("wallet:update", {
-        userId: req.user._id.toString(),
+      await User.findByIdAndUpdate(req.user._id, {
         balance: wallet.balance,
-        transactions: wallet.transactions,
       });
+
+      const settings = await Settings.findOne();
+      const commissionAmount = finalCharge - baseCharge;
+      settings.totalRevenue += commissionAmount;
+      await settings.save();
     }
 
     res.status(201).json({
       order,
       balance: wallet.balance,
-      transaction,
     });
+
   } catch (error) {
-    console.error("Create Order Error:", error);
+    console.error(error);
     res.status(500).json({ message: "Order failed" });
   }
 };
 
-// ================= GET USER ORDERS =================
+/* =========================================================
+   GET MY ORDERS
+========================================================= */
 export const getMyOrders = async (req, res) => {
   try {
     const orders = await Order.find({ userId: req.user._id })
       .sort({ createdAt: -1 })
-      .populate("userId", "email balance"); // ✅ populate user info
+      .lean();
 
-    const wallet = await Wallet.findOne({ user: req.user._id });
-
-    const transactionsMap =
-      wallet?.transactions.reduce((acc, t) => {
-        if (t.note?.includes("#")) {
-          const orderId = t.note.split("#")[1];
-          acc[orderId] = t;
-        }
-        return acc;
-      }, {}) || {};
-
-    const ordersWithTransactions = orders.map((order) => {
-      const transaction = transactionsMap[order._id] || null;
-      return {
-        ...order.toObject(),
-        transaction: transaction
-          ? {
-              date: transaction.date,
-              type: transaction.type,
-              amount: transaction.amount,
-              status: transaction.status,
-              note: transaction.note,
-            }
-          : null,
-        user: {
-          name: order.userId?.email?.split("@")[0] || "N/A",
-          email: order.userId?.email,
-          balance: order.userId?.balance || 0,
-        },
-      };
-    });
-
-    res.json(ordersWithTransactions);
+    res.json(orders);
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: "Failed to fetch orders" });
   }
 };
 
-// ================= PREVIEW ORDER =================
+/* =========================================================
+   PREVIEW ORDER
+========================================================= */
 export const previewOrder = async (req, res) => {
   try {
     const { service, quantity } = req.body;
 
     if (!service || !quantity) {
-      return res
-        .status(400)
-        .json({ message: "Service and quantity are required" });
+      return res.status(400).json({
+        message: "Service and quantity are required",
+      });
     }
 
-    const serviceData = await AdminService.findOne({
+    const qty = Number(quantity);
+
+    const serviceData = await Service.findOne({
       name: service,
       status: true,
     });
+
     if (!serviceData)
       return res.status(404).json({ message: "Service not found" });
 
+    if (serviceData.isFree) {
+      return res.json({
+        service,
+        quantity: qty,
+        baseCharge: 0,
+        commissionPercent: 0,
+        finalCharge: 0,
+        isFree: true,
+      });
+    }
+
     let settings = await Settings.findOne();
     if (!settings) {
-      settings = await Settings.create({ commission: 50, totalRevenue: 0 });
+      settings = await Settings.create({
+        commission: 50,
+        totalRevenue: 0,
+      });
     }
 
     const commissionPercent = settings.commission;
 
-    const baseCharge = (quantity / 1000) * serviceData.rate;
+    const baseCharge = (qty / 1000) * serviceData.rate;
     const finalCharge = baseCharge * (1 + commissionPercent / 100);
 
     res.json({
       service,
-      quantity,
+      quantity: qty,
       baseCharge: baseCharge.toFixed(4),
       commissionPercent,
       finalCharge: finalCharge.toFixed(4),
+      isFree: false,
     });
+
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: "Failed to calculate charge" });

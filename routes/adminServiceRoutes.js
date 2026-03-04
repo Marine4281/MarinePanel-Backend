@@ -4,6 +4,7 @@ import {
   addService,
   updateService,
   deleteService,
+  toggleServiceStatus,
 } from "../controllers/adminServiceControllers.js";
 import { protect } from "../middlewares/authMiddleware.js";
 import { adminOnly } from "../middlewares/adminMiddleware.js";
@@ -15,6 +16,9 @@ router.use(protect, adminOnly);
 
 // GET all services
 router.get("/", getAllServices);
+
+//Toggle visibility 
+router.patch("/:id/toggle", toggleServiceStatus);
 
 // POST add new service
 router.post("/", addService);

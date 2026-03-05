@@ -63,7 +63,26 @@ export const syncProviderOrders = async (io) => {
 
           if (!providerOrder || providerOrder.error) continue;
 
-          const mappedStatus = mapProviderStatus(providerOrder.status);
+          // ===============================================
+          // NORMALIZE PROVIDER STATUS
+          // ===============================================
+          const rawStatus = providerOrder.status || "";
+
+          const normalizedStatus = rawStatus
+            .toLowerCase()
+            .replace(/\s+/g, "")
+            .trim();
+
+          // Map to system status
+          let mappedStatus = mapProviderStatus(normalizedStatus);
+
+          // ===============================================
+          // AUTO COMPLETE CHECK
+          // Some providers keep "processing" but remains = 0
+          // ===============================================
+          if (providerOrder.remains == 0 && mappedStatus === "processing") {
+            mappedStatus = "completed";
+          }
 
           const delivered = calculateDelivered(
             order.quantity,

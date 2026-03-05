@@ -57,6 +57,7 @@ export const updateOrderStatus = async (req, res) => {
     const allowedStatuses = [
       "pending",
       "processing",
+      "partial",
       "completed",
       "failed",
       "cancelled",
@@ -72,23 +73,26 @@ export const updateOrderStatus = async (req, res) => {
     if (!order)
       return res.status(404).json({ message: "Order not found" });
 
-    // 🚫 Cannot modify refunded
     if (order.status === "refunded") {
       return res.status(400).json({
         message: "Cannot modify a refunded order",
       });
     }
 
-    // 🚫 Prevent completed → other states
     if (order.status === "completed" && status !== "completed") {
       return res.status(400).json({
         message: "Completed order cannot be modified",
       });
     }
 
+    if (status === "partial" && order.quantityDelivered === 0) {
+      return res.status(400).json({
+        message: "Partial requires delivered quantity",
+      });
+    }
+
     order.status = status;
 
-    // Auto adjust progress if completed
     if (status === "completed") {
       order.quantityDelivered = order.quantity;
     }
@@ -124,14 +128,12 @@ export const updateOrderProgress = async (req, res) => {
     if (!order)
       return res.status(404).json({ message: "Order not found" });
 
-    // 🚫 Lock refunded
     if (order.status === "refunded") {
       return res.status(400).json({
         message: "Cannot edit refunded order",
       });
     }
 
-    // 🚫 Lock completed
     if (order.status === "completed") {
       return res.status(400).json({
         message: "Completed order cannot be edited",
@@ -146,14 +148,12 @@ export const updateOrderProgress = async (req, res) => {
       });
     }
 
-    // 🚫 Cannot exceed total quantity
     if (delivered > order.quantity) {
       return res.status(400).json({
         message: "Delivered cannot exceed total quantity",
       });
     }
 
-    // 🚫 Prevent reducing already delivered
     if (delivered < order.quantityDelivered) {
       return res.status(400).json({
         message: "Cannot reduce delivered quantity",
@@ -162,7 +162,6 @@ export const updateOrderProgress = async (req, res) => {
 
     order.quantityDelivered = delivered;
 
-    // Auto complete if fully delivered
     if (delivered === order.quantity) {
       order.status = "completed";
     } else if (delivered > 0) {
@@ -204,38 +203,58 @@ export const refundOrder = async (req, res) => {
     if (!order)
       return res.status(404).json({ message: "Order not found" });
 
-    // 🚫 Prevent double refund
+    if (order.isFreeOrder) {
+      return res.status(400).json({
+        message: "Free orders cannot be refunded",
+      });
+    }
+
     if (order.status === "refunded") {
       return res.status(400).json({
         message: "Order already refunded",
       });
     }
 
-    // 🚫 Prevent refund if completed
     if (order.status === "completed") {
       return res.status(400).json({
         message: "Cannot refund completed order",
       });
     }
 
-    // 🚫 Prevent refund if already partially delivered
     if (order.quantityDelivered > 0) {
       return res.status(400).json({
         message: "Cannot refund order with delivered quantity",
       });
     }
 
-    let wallet = await Wallet.findOne({ user: order.userId._id });
+    let wallet = await Wallet.findOne({ userId: order.userId._id });
 
     if (!wallet) {
       wallet = await Wallet.create({
-        user: order.userId._id,
+        userId: order.userId._id,
         balance: 0,
         transactions: [],
       });
     }
 
-    // 💰 Add refund transaction
+    /* ==============================================
+       🔒 REFUND LOCK (PREVENT DOUBLE REFUNDS)
+    ============================================== */
+    const alreadyRefunded = wallet.transactions.find(
+      (tx) =>
+        tx.type === "Refund" &&
+        tx.note === `Refund for Order ${order.orderId}`
+    );
+
+    if (alreadyRefunded) {
+      return res.status(400).json({
+        message: "Refund already processed for this order",
+      });
+    }
+
+    /* ==============================================
+       💰 PROCESS REFUND
+    ============================================== */
     wallet.transactions.push({
       type: "Refund",
       amount: order.charge,

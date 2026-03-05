@@ -20,7 +20,7 @@ export const mapProviderStatus = (providerStatus) => {
   if (status.includes("complete")) return "completed";
 
   // Partial → still processing
-  if (status.includes("partial")) return "processing";
+  if (status.includes("partial")) return "partial";
 
   // Processing / In progress
   if (

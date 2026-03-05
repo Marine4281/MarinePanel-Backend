@@ -5,7 +5,7 @@ import http from "http";
 import { Server } from "socket.io";
 
 /* NEW: Provider sync service */
-import { startProviderStatusSync } from "./services/providerStatusSync.js";
+import { startProviderStatusSync } from "./services /providerStatusSync.js";
 
 dotenv.config();
 

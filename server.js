@@ -4,6 +4,9 @@ import app from "./app.js";
 import http from "http";
 import { Server } from "socket.io";
 
+/* NEW: Provider sync service */
+import { startProviderStatusSync } from "./services/providerStatusSync.js";
+
 dotenv.config();
 
 // Connect to MongoDB
@@ -55,10 +58,20 @@ app.set("io", io);
 io.on("connection", (socket) => {
   console.log("New client connected:", socket.id);
 
+  /* user joins their own room */
+  socket.on("join_user_room", (userId) => {
+    socket.join(userId);
+  });
+
   socket.on("disconnect", () => {
     console.log("Client disconnected:", socket.id);
   });
 });
+
+/* ========================================
+   START PROVIDER ORDER STATUS SYNC
+======================================== */
+startProviderStatusSync(io);
 
 // Start server
 server.listen(PORT, () => console.log(`Server running on port ${PORT}`));

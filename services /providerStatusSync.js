@@ -2,6 +2,7 @@
 
 import Order from "../models/Order.js";
 import Service from "../models/Service.js";
+import Wallet from "../models/Wallet.js";
 import axios from "axios";
 import { mapProviderStatus, calculateDelivered } from "../utils/providerStatusMapper.js";
 
@@ -102,8 +103,60 @@ export const syncProviderOrders = async (io) => {
           }
 
           if (updated) {
+
             order.providerStatus = providerOrder.status;
             String(providerOrder.status).toLowerCase();
+
+            // ===============================================
+            // 💰 REFUND LOGIC
+            // ===============================================
+
+            if (!order.isFreeOrder) {
+
+              // FULL REFUND (FAILED)
+              if (mappedStatus === "failed") {
+
+                const wallet = await Wallet.findOne({ userId: order.userId });
+
+                if (wallet) {
+                  wallet.balance += order.charge;
+
+                  wallet.transactions.push({
+                    type: "refund",
+                    amount: order.charge,
+                    description: `Refund for failed order ${order.orderId}`,
+                    createdAt: new Date(),
+                  });
+
+                  await wallet.save();
+                }
+              }
+
+              // PARTIAL REFUND
+              if (mappedStatus === "partial") {
+
+                const wallet = await Wallet.findOne({ userId: order.userId });
+
+                if (wallet) {
+
+                  const remaining = Number(providerOrder.remains) || 0;
+
+                  const refundAmount =
+                    (remaining / order.quantity) * order.charge;
+
+                  wallet.balance += refundAmount;
+
+                  wallet.transactions.push({
+                    type: "refund",
+                    amount: refundAmount,
+                    description: `Partial refund for order ${order.orderId}`,
+                    createdAt: new Date(),
+                  });
+
+                  await wallet.save();
+                }
+              }
+            }
 
             await order.save();
 
@@ -144,4 +197,3 @@ export const startProviderStatusSync = (io) => {
   // run every 60 seconds
   setInterval(runSync, 60000);
 };
-

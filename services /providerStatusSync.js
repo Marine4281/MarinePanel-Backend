@@ -10,7 +10,6 @@ import { mapProviderStatus, calculateDelivered } from "../utils/providerStatusMa
 // ===============================================
 export const syncProviderOrders = async (io) => {
   try {
-    // 1️⃣ Get all active (not finished) orders
     const activeOrders = await Order.find({
       status: { $in: ["pending", "processing"] },
       providerOrderId: { $ne: "" },
@@ -23,7 +22,6 @@ export const syncProviderOrders = async (io) => {
 
     console.log(`🔄 Checking ${activeOrders.length} active orders...`);
 
-    // 2️⃣ Group orders by provider API URL + API key
     const grouped = {};
 
     for (const order of activeOrders) {
@@ -34,7 +32,6 @@ export const syncProviderOrders = async (io) => {
       grouped[key].push(order);
     }
 
-    // 3️⃣ Process each provider group
     for (const groupKey of Object.keys(grouped)) {
       const orders = grouped[groupKey];
 
@@ -42,10 +39,7 @@ export const syncProviderOrders = async (io) => {
 
       if (!providerApiUrl) continue;
 
-      // Fetch service to get API key
-      const service = await Service.findOne({
-        providerApiUrl,
-      });
+      const service = await Service.findOne({ providerApiUrl });
 
       if (!service?.providerApiKey) continue;
 
@@ -64,7 +58,6 @@ export const syncProviderOrders = async (io) => {
 
         const providerData = response.data;
 
-        // 4️⃣ Loop each order
         for (const order of orders) {
           const providerOrder = providerData[order.providerOrderId];
 
@@ -95,7 +88,7 @@ export const syncProviderOrders = async (io) => {
 
             await order.save();
 
-            // 🔥 REAL-TIME EMIT
+            // 🔥 Real-time update
             if (io) {
               io.to(order.userId.toString()).emit("orderUpdated", {
                 orderId: order._id,
@@ -116,3 +109,19 @@ export const syncProviderOrders = async (io) => {
 };
 
 
+// ===============================================
+// 🚀 START AUTO SYNC LOOP
+// ===============================================
+export const startProviderStatusSync = (io) => {
+  console.log("🚀 Provider order sync started");
+
+  const runSync = async () => {
+    await syncProviderOrders(io);
+  };
+
+  // run immediately
+  runSync();
+
+  // run every 60 seconds
+  setInterval(runSync, 60000);
+};

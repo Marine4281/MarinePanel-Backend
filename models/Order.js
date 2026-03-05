@@ -69,6 +69,11 @@ const orderSchema = new mongoose.Schema(
       default: 0,
     },
 
+    refundProcessed: {
+      type: Boolean,
+      default: false,
+    },
+
     // ===============================
     // 🔄 Order Lifecycle
     // ===============================

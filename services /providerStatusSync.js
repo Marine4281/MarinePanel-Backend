@@ -167,6 +167,8 @@ if (!order.isFreeOrder && !order.refundProcessed) {
     }
   }
 }
+            await order.save();
+
 
             // 🔥 Real-time update
             if (io) {
@@ -205,4 +207,5 @@ export const startProviderStatusSync = (io) => {
   // run every 60 seconds
   setInterval(runSync, 60000);
 };
+
 

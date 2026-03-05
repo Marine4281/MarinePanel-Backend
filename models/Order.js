@@ -74,7 +74,16 @@ const orderSchema = new mongoose.Schema(
     // ===============================
     status: {
       type: String,
+      enum: [
+        "pending",
+        "processing",
+        "completed",
+        "cancelled",
+        "failed",
+        "refunded",
+      ],
       default: "pending",
+      index: true,
     },
 
     // ===============================
@@ -87,7 +96,6 @@ const orderSchema = new mongoose.Schema(
 
     providerStatus: {
       type: String,
-      enum: ["pending", "processing", "completed", "failed"],
       default: "pending",
     },
 

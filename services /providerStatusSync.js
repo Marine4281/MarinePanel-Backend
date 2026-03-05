@@ -108,57 +108,65 @@ export const syncProviderOrders = async (io) => {
             String(providerOrder.status).toLowerCase();
 
             // ===============================================
-            // 💰 REFUND LOGIC
             // ===============================================
+// 💰 REFUND LOGIC
+// ===============================================
 
-            if (!order.isFreeOrder) {
+if (!order.isFreeOrder && !order.refundProcessed) {
 
-              // FULL REFUND (FAILED)
-              if (mappedStatus === "failed") {
+  const wallet = await Wallet.findOne({ userId: order.userId });
 
-                const wallet = await Wallet.findOne({ userId: order.userId });
+  if (wallet) {
 
-                if (wallet) {
-                  wallet.balance += order.charge;
+    // ==============================
+    // FULL REFUND (FAILED)
+    // ==============================
+    if (mappedStatus === "failed") {
 
-                  wallet.transactions.push({
-                    type: "refund",
-                    amount: order.charge,
-                    description: `Refund for failed order ${order.orderId}`,
-                    createdAt: new Date(),
-                  });
+      wallet.balance += order.charge;
 
-                  await wallet.save();
-                }
-              }
+      wallet.transactions.push({
+        type: "refund",
+        amount: order.charge,
+        description: `Refund for failed order ${order.orderId}`,
+        createdAt: new Date(),
+      });
 
-              // PARTIAL REFUND
-              if (mappedStatus === "partial") {
+      order.refundProcessed = true;
 
-                const wallet = await Wallet.findOne({ userId: order.userId });
+      await wallet.save();
+    }
 
-                if (wallet) {
+    // ==============================
+    // PARTIAL REFUND
+    // ==============================
+    if (mappedStatus === "partial") {
 
-                  const remaining = Number(providerOrder.remains) || 0;
+      const remaining = Number(providerOrder.remains) || 0;
 
-                  const refundAmount =
-                    (remaining / order.quantity) * order.charge;
+      if (remaining > 0) {
 
-                  wallet.balance += refundAmount;
+        let refundAmount =
+          (remaining / order.quantity) * order.charge;
 
-                  wallet.transactions.push({
-                    type: "refund",
-                    amount: refundAmount,
-                    description: `Partial refund for order ${order.orderId}`,
-                    createdAt: new Date(),
-                  });
+        refundAmount = Number(refundAmount.toFixed(4));
 
-                  await wallet.save();
-                }
-              }
-            }
+        wallet.balance += refundAmount;
 
-            await order.save();
+        wallet.transactions.push({
+          type: "refund",
+          amount: refundAmount,
+          description: `Partial refund for order ${order.orderId}`,
+          createdAt: new Date(),
+        });
+
+        order.refundProcessed = true;
+
+        await wallet.save();
+      }
+    }
+  }
+}
 
             // 🔥 Real-time update
             if (io) {
@@ -197,3 +205,4 @@ export const startProviderStatusSync = (io) => {
   // run every 60 seconds
   setInterval(runSync, 60000);
 };
+

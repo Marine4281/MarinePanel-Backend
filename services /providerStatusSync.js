@@ -103,7 +103,7 @@ export const syncProviderOrders = async (io) => {
 
           if (updated) {
             order.providerStatus = providerOrder.status;
-            order.providerResponse = providerOrder;
+            String(providerOrder.status).toLowerCase();
 
             await order.save();
 
@@ -144,3 +144,4 @@ export const startProviderStatusSync = (io) => {
   // run every 60 seconds
   setInterval(runSync, 60000);
 };
+

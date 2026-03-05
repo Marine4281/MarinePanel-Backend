@@ -1,5 +1,3 @@
-// services/providerStatusSync.js
-
 import Order from "../models/Order.js";
 import Service from "../models/Service.js";
 import Wallet from "../models/Wallet.js";
@@ -74,12 +72,10 @@ export const syncProviderOrders = async (io) => {
             .replace(/\s+/g, "")
             .trim();
 
-          // Map to system status
           let mappedStatus = mapProviderStatus(normalizedStatus);
 
           // ===============================================
           // AUTO COMPLETE CHECK
-          // Some providers keep "processing" but remains = 0
           // ===============================================
           if (providerOrder.remains == 0 && mappedStatus === "processing") {
             mappedStatus = "completed";
@@ -103,72 +99,74 @@ export const syncProviderOrders = async (io) => {
           }
 
           if (updated) {
-
             order.providerStatus = providerOrder.status;
             String(providerOrder.status).toLowerCase();
 
             // ===============================================
+            // 💰 REFUND LOGIC (SAFE VERSION)
             // ===============================================
-// 💰 REFUND LOGIC
-// ===============================================
+            if (!order.isFreeOrder && !order.refundProcessed) {
 
-if (!order.isFreeOrder && !order.refundProcessed) {
+              let wallet = await Wallet.findOne({ userId: order.userId });
 
-  const wallet = await Wallet.findOne({ userId: order.userId });
+              if (!wallet) {
+                wallet = await Wallet.create({
+                  userId: order.userId,
+                  balance: 0,
+                  transactions: [],
+                });
+              }
 
-  if (wallet) {
+              // ==============================
+              // FULL REFUND (FAILED)
+              // ==============================
+              if (mappedStatus === "failed") {
 
-    // ==============================
-    // FULL REFUND (FAILED)
-    // ==============================
-    if (mappedStatus === "failed") {
+                wallet.balance += order.charge;
 
-      wallet.balance += order.charge;
+                wallet.transactions.push({
+                  type: "Refund",
+                  amount: order.charge,
+                  status: "Completed",
+                  note: `Refund for failed order ${order.orderId}`,
+                });
 
-      wallet.transactions.push({
-        type: "refund",
-        amount: order.charge,
-        description: `Refund for failed order ${order.orderId}`,
-        createdAt: new Date(),
-      });
+                order.refundProcessed = true;
 
-      order.refundProcessed = true;
+                await wallet.save();
+              }
 
-      await wallet.save();
-    }
+              // ==============================
+              // PARTIAL REFUND
+              // ==============================
+              if (mappedStatus === "partial") {
 
-    // ==============================
-    // PARTIAL REFUND
-    // ==============================
-    if (mappedStatus === "partial") {
+                const remaining = Number(providerOrder.remains) || 0;
 
-      const remaining = Number(providerOrder.remains) || 0;
+                if (remaining > 0) {
 
-      if (remaining > 0) {
+                  let refundAmount =
+                    (remaining / order.quantity) * order.charge;
 
-        let refundAmount =
-          (remaining / order.quantity) * order.charge;
+                  refundAmount = Number(refundAmount.toFixed(6));
 
-        refundAmount = Number(refundAmount.toFixed(4));
+                  wallet.balance += refundAmount;
 
-        wallet.balance += refundAmount;
+                  wallet.transactions.push({
+                    type: "Refund",
+                    amount: refundAmount,
+                    status: "Completed",
+                    note: `Partial refund for order ${order.orderId} (${remaining} undelivered)`,
+                  });
 
-        wallet.transactions.push({
-          type: "refund",
-          amount: refundAmount,
-          description: `Partial refund for order ${order.orderId}`,
-          createdAt: new Date(),
-        });
+                  order.refundProcessed = true;
 
-        order.refundProcessed = true;
+                  await wallet.save();
+                }
+              }
+            }
 
-        await wallet.save();
-      }
-    }
-  }
-}
             await order.save();
-
 
             // 🔥 Real-time update
             if (io) {
@@ -207,5 +205,3 @@ export const startProviderStatusSync = (io) => {
   // run every 60 seconds
   setInterval(runSync, 60000);
 };
-
-

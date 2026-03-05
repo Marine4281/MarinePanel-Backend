@@ -14,10 +14,11 @@ const normalizeStatus = (status) => {
 export const mapProviderStatus = (providerStatus) => {
   const status = normalizeStatus(providerStatus);
 
-  if (!status) return "processing";
+  if (!status) return "pending";
 
   // Completed
-  if (status.includes("complete")) return "completed";
+  if (status.includes("Completed")) return "completed";
+  if (status.includes("completed")) return "completed";
 
   // Partial stays processing in your system
   if (status.includes("partial")) return "processing";
@@ -25,19 +26,24 @@ export const mapProviderStatus = (providerStatus) => {
   // In progress / processing
   if (status.includes("progress")) return "processing";
   if (status.includes("process")) return "processing";
+  if (status.includes("processing")) return "processing";
+  if (status.includes("Processing")) return "processing";
+  if (status.includes("In progress")) return "processing";
 
   // Pending
   if (status.includes("pending")) return "pending";
+  if (status.includes("Pending")) return "pending";
 
   // Cancel / Cancelled / Canceled
-  if (status.includes("cancel")) return "failed";
+  if (status.includes("Canceled")) return "failed";
+  if (status.includes("canceled")) return "failed";
 
   // Failed / Error
   if (status.includes("fail")) return "failed";
-  if (status.includes("error")) return "failed";
+  if (status.includes("failed")) return "failed";
 
   // Default fallback
-  return "processing";
+  return "pending";
 };
 
 // ===============================================

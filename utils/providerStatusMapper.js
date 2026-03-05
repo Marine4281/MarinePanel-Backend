@@ -17,7 +17,6 @@ export const mapProviderStatus = (providerStatus) => {
   if (!status) return "pending";
 
   // Completed
-  if (status.includes("Completed")) return "completed";
   if (status.includes("completed")) return "completed";
 
   // Partial stays processing in your system
@@ -25,17 +24,14 @@ export const mapProviderStatus = (providerStatus) => {
 
   // In progress / processing
   if (status.includes("progress")) return "processing";
-  if (status.includes("process")) return "processing";
   if (status.includes("processing")) return "processing";
-  if (status.includes("Processing")) return "processing";
   if (status.includes("In progress")) return "processing";
 
   // Pending
   if (status.includes("pending")) return "pending";
-  if (status.includes("Pending")) return "pending";
 
   // Cancel / Cancelled / Canceled
-  if (status.includes("Canceled")) return "failed";
+  if (status.includes("cancelled")) return "failed";
   if (status.includes("canceled")) return "failed";
 
   // Failed / Error

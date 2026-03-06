@@ -217,11 +217,11 @@ export const refundOrder = async (req, res) => {
       });
     }
 
-    let wallet = await Wallet.findOne({ userId: order.userId._id });
+    let wallet = await Wallet.findOne({ user: order.userId._id });
 
     if (!wallet) {
       wallet = await Wallet.create({
-        userId: order.userId._id,
+        userId: order.user._id,
         balance: 0,
         transactions: [],
       });

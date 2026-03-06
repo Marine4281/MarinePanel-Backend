@@ -107,11 +107,11 @@ export const syncProviderOrders = async (io) => {
             // ===============================================
             if (!order.isFreeOrder && !order.refundProcessed) {
 
-              let wallet = await Wallet.findOne({ user: order.userId });
+              let wallet = await Wallet.findOne({ userId: order.userId });
 
               if (!wallet) {
                 wallet = await Wallet.create({
-                  user: order.userId,
+                  userId: order.userId,
                   balance: 0,
                   transactions: [],
                 });
@@ -203,7 +203,8 @@ export const startProviderStatusSync = (io) => {
   runSync();
 
   // run every 60 seconds
-  setInterval(runSync, 60000);
+  setInterval(runSync, 45000);
 };
+
 
 

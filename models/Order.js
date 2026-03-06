@@ -69,9 +69,11 @@ const orderSchema = new mongoose.Schema(
       default: 0,
     },
 
+    // Prevent double refunds
     refundProcessed: {
       type: Boolean,
       default: false,
+      index: true,
     },
 
     // ===============================
@@ -105,12 +107,18 @@ const orderSchema = new mongoose.Schema(
       default: "pending",
     },
 
-    providerResponse: { type: Object, default: null },
+    providerResponse: {
+      type: Object,
+      default: null,
+    },
 
     // ===============================
     // ❌ Error Handling
     // ===============================
-    errorMessage: { type: String, default: "" },
+    errorMessage: {
+      type: String,
+      default: "",
+    },
   },
   {
     timestamps: true,
@@ -131,6 +139,9 @@ orderSchema.index({ userId: 1, service: 1, isFreeOrder: 1 });
 // Fast admin filters
 orderSchema.index({ status: 1 });
 orderSchema.index({ createdAt: -1 });
+
+// Prevent double refunds
+orderSchema.index({ refundProcessed: 1 });
 
 export default mongoose.models.Order ||
   mongoose.model("Order", orderSchema);

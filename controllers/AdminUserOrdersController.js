@@ -193,10 +193,12 @@ export const updateOrderProgress = async (req, res) => {
 };
 
 /* ======================================================
-   REFUND ORDER (FULLY PROTECTED)
+   REFUND ORDER (FULL / PARTIAL / CUSTOM)
 ====================================================== */
 export const refundOrder = async (req, res) => {
   try {
+    const { type, customAmount } = req.body;
+
     const order = await Order.findById(req.params.id)
       .populate("userId");
 
@@ -209,21 +211,9 @@ export const refundOrder = async (req, res) => {
       });
     }
 
-    if (order.status === "refunded") {
+    if (order.refundProcessed) {
       return res.status(400).json({
-        message: "Order already refunded",
-      });
-    }
-
-    if (order.status === "completed") {
-      return res.status(400).json({
-        message: "Cannot refund completed order",
-      });
-    }
-
-    if (order.quantityDelivered > 0) {
-      return res.status(400).json({
-        message: "Cannot refund order with delivered quantity",
+        message: "Refund already processed",
       });
     }
 
@@ -237,36 +227,68 @@ export const refundOrder = async (req, res) => {
       });
     }
 
-    /* ==============================================
-       🔒 REFUND LOCK (PREVENT DOUBLE REFUNDS)
-    ============================================== */
-    const alreadyRefunded = wallet.transactions.find(
-      (tx) =>
-        tx.type === "Refund" &&
-        tx.note === `Refund for Order ${order.orderId}`
-    );
+    let refundAmount = 0;
 
-    if (alreadyRefunded) {
-      return res.status(400).json({
-        message: "Refund already processed for this order",
-      });
+    /* ==============================================
+       FULL REFUND
+    ============================================== */
+    if (type === "full") {
+      refundAmount = order.charge;
     }
 
     /* ==============================================
-       💰 PROCESS REFUND
+       PARTIAL REFUND (AUTO CALCULATE)
     ============================================== */
+    else if (type === "partial") {
+
+      const remaining = order.quantity - order.quantityDelivered;
+
+      if (remaining <= 0) {
+        return res.status(400).json({
+          message: "Nothing left to refund",
+        });
+      }
+
+      refundAmount =
+        (remaining / order.quantity) * order.charge;
+    }
+
+    /* ==============================================
+       CUSTOM REFUND
+    ============================================== */
+    else if (type === "custom") {
+
+      if (!customAmount || customAmount <= 0) {
+        return res.status(400).json({
+          message: "Invalid custom refund amount",
+        });
+      }
+
+      refundAmount = Number(customAmount);
+    }
+
+    else {
+      return res.status(400).json({
+        message: "Invalid refund type",
+      });
+    }
+
+    refundAmount = Number(refundAmount.toFixed(4));
+
     wallet.transactions.push({
       type: "Refund",
-      amount: order.charge,
+      amount: refundAmount,
       status: "Completed",
       note: `Refund for Order ${order.orderId}`,
     });
 
-    wallet.balance += order.charge;
+    wallet.balance += refundAmount;
 
     await wallet.save();
 
     order.status = "refunded";
+    order.refundProcessed = true;
+
     await order.save();
 
     const io = req.app.get("io");
@@ -284,7 +306,11 @@ export const refundOrder = async (req, res) => {
       });
     }
 
-    res.json({ message: "Refund successful" });
+    res.json({
+      message: "Refund successful",
+      refundAmount,
+    });
+
   } catch (error) {
     console.error("Refund Error:", error);
     res.status(500).json({ message: "Refund failed" });

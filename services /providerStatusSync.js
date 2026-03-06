@@ -107,7 +107,7 @@ export const syncProviderOrders = async (io) => {
             // ===============================================
             if (!order.isFreeOrder && !order.refundProcessed) {
 
-              let wallet = await Wallet.findOne({ userId: order.user });
+              let wallet = await Wallet.findOne({ user: order.userId });
 
               if (!wallet) {
                 wallet = await Wallet.create({
@@ -148,7 +148,7 @@ export const syncProviderOrders = async (io) => {
                   let refundAmount =
                     (remaining / order.quantity) * order.charge;
 
-                  refundAmount = Number(refundAmount.toFixed(6));
+                  refundAmount = Number(refundAmount.toFixed(4));
 
                   wallet.balance += refundAmount;
 
@@ -205,4 +205,5 @@ export const startProviderStatusSync = (io) => {
   // run every 60 seconds
   setInterval(runSync, 60000);
 };
+
 

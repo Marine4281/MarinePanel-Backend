@@ -1,7 +1,21 @@
 // controllers/AdminService.js
 
 import Service from "../models/Service.js";
+import Counter from "../models/Counter.js"; // 🆕 Auto Increment Counter
 import { clearCache } from "../utils/cache.js";
+
+/* =========================================================
+   AUTO INCREMENT SERVICE ID
+========================================================= */
+async function getNextServiceId() {
+  const counter = await Counter.findOneAndUpdate(
+    { id: "serviceId" },
+    { $inc: { seq: 1 } },
+    { new: true, upsert: true }
+  );
+
+  return counter.seq;
+}
 
 /* =========================================================
    GET ALL SERVICES (ADMIN)
@@ -57,7 +71,6 @@ export const addService = async (req, res) => {
     let finalMax = max || 100000;
 
     /* ================= FREE SERVICE ================= */
-    /* ================= FREE SERVICE ================= */
 if (isFree) {
   if (
     freeQuantity === undefined ||
@@ -96,8 +109,12 @@ if (isFree) {
       );
     }
 
+    /* 🆕 Generate Service ID */
+    const serviceId = await getNextServiceId();
+
     const service = await Service.create({
       ...req.body,
+      serviceId, // 🆕 Human readable ID
       rate: finalRate,
       min: finalMin,
       max: finalMax,
@@ -168,8 +185,6 @@ export const updateService = async (req, res) => {
     }
 
     /* ================= FREE UPDATE ================= */
-
-   /* ================= FREE UPDATE ================= */
 
 if (typeof isFree === "boolean") {
   service.isFree = isFree;

@@ -21,7 +21,7 @@ import paymentMethodRoutes from "./routes/paymentMethodRoutes.js";
 import adminPaymentMethodRoutes from "./routes/adminPaymentMethodRoutes.js";
 import smmWebhookRoutes from "./routes/smmWebhookRoutes.js";
 import paymentRoutes from "./routes/paymentRoutes.js";
-import commissionRoutes from "./routes/commission.js";
+import commissionRoutes from "./routes/commissionRoutes.js";
 
 // ← NEW: Admin Orders Route
 import adminOrderRoutes from "./routes/adminOrderRoutes.js";

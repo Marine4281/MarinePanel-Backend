@@ -2,6 +2,13 @@ import mongoose from "mongoose";
 
 const serviceSchema = new mongoose.Schema(
   {
+    // 🆔 Human Readable Service ID (Auto Increment)
+    serviceId: {
+      type: Number,
+      unique: true,
+      index: true,
+    },
+
     // 🔵 Platform (TikTok, Instagram, YouTube...)
     platform: {
       type: String,
@@ -116,8 +123,6 @@ const serviceSchema = new mongoose.Schema(
       type: Boolean,
       default: true,
     },
-    
-    
 
     // ⭐ Default Service inside Category
     isDefault: {

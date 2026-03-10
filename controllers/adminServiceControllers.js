@@ -1,11 +1,11 @@
 // controllers/AdminService.js
 
 import Service from "../models/Service.js";
-import Counter from "../models/Counter.js"; // 🆕 Auto Increment Counter
+import Counter from "../models/Counter.js";
 import { clearCache } from "../utils/cache.js";
 
 /* =========================================================
-   AUTO INCREMENT SERVICE ID
+AUTO INCREMENT SERVICE ID
 ========================================================= */
 async function getNextServiceId() {
   const counter = await Counter.findOneAndUpdate(
@@ -18,7 +18,7 @@ async function getNextServiceId() {
 }
 
 /* =========================================================
-   GET ALL SERVICES (ADMIN)
+GET ALL SERVICES (ADMIN)
 ========================================================= */
 export const getAllServices = async (req, res) => {
   try {
@@ -27,6 +27,7 @@ export const getAllServices = async (req, res) => {
       .lean();
 
     res.json(services);
+
   } catch (err) {
     console.error("GET SERVICES ERROR:", err);
     res.status(500).json({
@@ -37,7 +38,88 @@ export const getAllServices = async (req, res) => {
 };
 
 /* =========================================================
-   ADD SERVICE
+IMPORT SERVICE FROM PROVIDER
+========================================================= */
+export const importService = async (req, res) => {
+  try {
+    const {
+      name,
+      category,
+      description,
+      rate,
+      min,
+      max,
+      providerServiceId,
+      providerApiUrl,
+      providerApiKey,
+      provider,
+      platform
+    } = req.body;
+
+    if (!name || !category || !providerServiceId) {
+      return res.status(400).json({
+        message: "Missing required fields for import",
+      });
+    }
+
+    // Prevent duplicate provider services
+    const existing = await Service.findOne({
+      providerServiceId,
+      providerApiUrl,
+    });
+
+    if (existing) {
+      return res.status(400).json({
+        message: "Service already imported",
+      });
+    }
+
+    const serviceId = await getNextServiceId();
+
+    const service = await Service.create({
+      serviceId,
+
+      name,
+      category,
+      platform: platform || "General",
+
+      description: description || "",
+
+      rate: Number(rate) || 0,
+      min: Number(min) || 1,
+      max: Number(max) || 100000,
+
+      provider: provider || "Custom Provider",
+
+      providerServiceId,
+      providerApiUrl,
+      providerApiKey,
+
+      status: true,
+
+      isFree: false,
+      freeQuantity: 0,
+      cooldownHours: 0,
+    });
+
+    clearCache("public_services");
+
+    res.status(201).json({
+      message: "Service imported successfully",
+      service,
+    });
+
+  } catch (err) {
+    console.error("IMPORT SERVICE ERROR:", err);
+    res.status(500).json({
+      message: "Failed to import service",
+      error: err.message,
+    });
+  }
+};
+
+/* =========================================================
+ADD SERVICE
 ========================================================= */
 export const addService = async (req, res) => {
   try {
@@ -49,15 +131,15 @@ export const addService = async (req, res) => {
       rate,
       min,
       max,
+      description,
       isDefault,
       isDefaultCategoryGlobal,
       isDefaultCategoryPlatform,
 
-      // FREE SETTINGS (matching frontend)
       isFree,
       freeQuantity,
       cooldownHours,
-      
+
     } = req.body;
 
     if (!category || !platform || !name || !provider) {
@@ -71,20 +153,21 @@ export const addService = async (req, res) => {
     let finalMax = max || 100000;
 
     /* ================= FREE SERVICE ================= */
-if (isFree) {
-  if (
-    freeQuantity === undefined ||
-    cooldownHours === undefined
-  ) {
-    return res.status(400).json({
-      message: "Free service requires max quantity and cooldown hours",
-    });
-  }
 
-  finalRate = 0;
-  finalMin = 1;
-  finalMax = Number(freeQuantity);
-}
+    if (isFree) {
+      if (
+        freeQuantity === undefined ||
+        cooldownHours === undefined
+      ) {
+        return res.status(400).json({
+          message: "Free service requires max quantity and cooldown hours",
+        });
+      }
+
+      finalRate = 0;
+      finalMin = 1;
+      finalMax = Number(freeQuantity);
+    }
 
     /* ================= DEFAULT RULES ================= */
 
@@ -109,12 +192,14 @@ if (isFree) {
       );
     }
 
-    /* 🆕 Generate Service ID */
     const serviceId = await getNextServiceId();
 
     const service = await Service.create({
       ...req.body,
-      serviceId, // 🆕 Human readable ID
+      serviceId,
+
+      description: description || "",
+
       rate: finalRate,
       min: finalMin,
       max: finalMax,
@@ -122,10 +207,8 @@ if (isFree) {
       isFree: Boolean(isFree),
       freeQuantity: isFree ? freeQuantity : 0,
       cooldownHours: isFree ? cooldownHours : 0,
-      
     });
 
-    // 🔥 Clear public cache so users see changes instantly
     clearCache("public_services");
 
     res.status(201).json(service);
@@ -140,10 +223,11 @@ if (isFree) {
 };
 
 /* =========================================================
-   UPDATE SERVICE
+UPDATE SERVICE
 ========================================================= */
 export const updateService = async (req, res) => {
   try {
+
     const {
       category,
       platform,
@@ -153,10 +237,10 @@ export const updateService = async (req, res) => {
       isFree,
       freeQuantity,
       cooldownHours,
-      
     } = req.body;
 
     const service = await Service.findById(req.params.id);
+
     if (!service) {
       return res.status(404).json({ message: "Service not found" });
     }
@@ -186,32 +270,31 @@ export const updateService = async (req, res) => {
 
     /* ================= FREE UPDATE ================= */
 
-if (typeof isFree === "boolean") {
-  service.isFree = isFree;
+    if (typeof isFree === "boolean") {
+      service.isFree = isFree;
 
-  if (isFree) {
-    if (
-      freeQuantity === undefined ||
-      cooldownHours === undefined
-    ) {
-      return res.status(400).json({
-        message: "Free service requires max quantity and cooldown hours",
-      });
+      if (isFree) {
+        if (
+          freeQuantity === undefined ||
+          cooldownHours === undefined
+        ) {
+          return res.status(400).json({
+            message: "Free service requires max quantity and cooldown hours",
+          });
+        }
+
+        service.rate = 0;
+        service.min = 1;
+        service.max = Number(freeQuantity);
+        service.freeQuantity = Number(freeQuantity);
+        service.cooldownHours = Number(cooldownHours);
+
+      } else {
+        service.freeQuantity = 0;
+        service.cooldownHours = 0;
+      }
     }
 
-    service.rate = 0;
-    service.min = 1;
-    service.max = Number(freeQuantity);
-    service.freeQuantity = Number(freeQuantity);
-    service.cooldownHours = Number(cooldownHours);
-    
-  } else {
-    service.freeQuantity = 0;
-    service.cooldownHours = 0;
-  }
-}
-
-    // Update remaining fields safely
     Object.keys(req.body).forEach((key) => {
       if (![
         "isFree",
@@ -224,7 +307,6 @@ if (typeof isFree === "boolean") {
 
     await service.save();
 
-    // 🔥 Clear public cache
     clearCache("public_services");
 
     res.json(service);
@@ -239,17 +321,17 @@ if (typeof isFree === "boolean") {
 };
 
 /* =========================================================
-   DELETE SERVICE
+DELETE SERVICE
 ========================================================= */
 export const deleteService = async (req, res) => {
   try {
+
     const deleted = await Service.findByIdAndDelete(req.params.id);
 
     if (!deleted) {
       return res.status(404).json({ message: "Service not found" });
     }
 
-    // 🔥 Clear public cache
     clearCache("public_services");
 
     res.json({ message: "Service deleted" });
@@ -264,7 +346,7 @@ export const deleteService = async (req, res) => {
 };
 
 /* =========================================================
-   GET UNIQUE CATEGORIES
+GET UNIQUE CATEGORIES
 ========================================================= */
 export const getCategories = async (req, res) => {
   try {
@@ -279,7 +361,7 @@ export const getCategories = async (req, res) => {
 };
 
 /* =========================================================
-   GET UNIQUE PROVIDERS
+GET UNIQUE PROVIDERS
 ========================================================= */
 export const getProviders = async (req, res) => {
   try {
@@ -293,8 +375,12 @@ export const getProviders = async (req, res) => {
   }
 };
 
+/* =========================================================
+TOGGLE SERVICE STATUS
+========================================================= */
 export const toggleServiceStatus = async (req, res) => {
   try {
+
     const service = await Service.findById(req.params.id);
 
     if (!service) {
@@ -308,6 +394,7 @@ export const toggleServiceStatus = async (req, res) => {
       message: `Service ${service.status ? "shown" : "hidden"} successfully`,
       status: service.status,
     });
+
   } catch (error) {
     res.status(500).json({ message: "Failed to update status" });
   }

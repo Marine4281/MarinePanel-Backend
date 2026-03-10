@@ -26,6 +26,7 @@ import commissionRoutes from "./routes/commissionRoutes.js";
 // ← NEW: Admin Orders Route
 import adminOrderRoutes from "./routes/adminOrderRoutes.js";
 import adminUserOrdersRoutes from "./routes/adminUserOrdersRoutes.js";
+import providerRoutes from "./routes/providerRoutes.js";
 
 dotenv.config();
 const app = express();
@@ -59,7 +60,8 @@ credentials: true,
 );
 
 /* Body parser */
-app.use(express.json()); // ✅ Important! This avoids req.body undefined
+app.use(express.json({ limit: "50mb" }));
+app.use(express.urlencoded({ limit: "50mb", extended: true }));
 app.use(morgan("dev"));
 / Health check */
 app.get("/", (req, res) => {
@@ -90,6 +92,7 @@ app.use("/api/admin/users", adminUserRoutes);
 app.use("/api/admin/services", adminServiceRoutes); // ✅ admin-only service routes
 app.use("/api/admin/settings", adminSettingsRoutes);
 app.use("/api/admin/payment-methods", adminPaymentMethodRoutes);
+app.use("/api/provider", providerRoutes);
 
 // ← NEW: Admin Orders
 app.use("/api/admin/orders", adminOrderRoutes);

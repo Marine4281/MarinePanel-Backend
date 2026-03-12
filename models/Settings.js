@@ -2,10 +2,40 @@ import mongoose from "mongoose";
 
 const settingsSchema = new mongoose.Schema(
   {
-    commission: { type: Number, default: 50 }, // Default 50%
-    totalRevenue: { type: Number, default: 0 }, // Total revenue counter
+    // Admin commission percentage
+    commission: {
+      type: Number,
+      default: 50, // 50%
+    },
+
+    // Platform total revenue
+    totalRevenue: {
+      type: Number,
+      default: 0,
+    },
+
+    // Reseller activation fee
+    resellerActivationFee: {
+      type: Number,
+      default: 25,
+    },
+
+    // Minimum reseller withdraw amount
+    resellerWithdrawMin: {
+      type: Number,
+      default: 10,
+    },
+
+    // Platform domain used for reseller subdomains
+    platformDomain: {
+      type: String,
+      default: "marinepanel.online",
+    },
   },
-  { timestamps: true }
+  {
+    timestamps: true,
+  }
 );
 
-export default mongoose.models.Settings || mongoose.model("Settings", settingsSchema);
+export default mongoose.models.Settings ||
+  mongoose.model("Settings", settingsSchema);

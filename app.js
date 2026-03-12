@@ -23,6 +23,15 @@ import smmWebhookRoutes from "./routes/smmWebhookRoutes.js";
 import paymentRoutes from "./routes/paymentRoutes.js";
 import commissionRoutes from "./routes/commissionRoutes.js";
 
+//Reseller Routes
+import resellerRoutes from "./routes/resellerRoutes.js";
+import { detectResellerDomain } from "./middlewares/resellerDomainMiddleware.js";
+import brandingRoutes from "./routes/brandingRoutes.js";
+import resellerGuideRoutes from "./routes/resellerGuideRoutes.js";
+import resellerServiceRoutes from "./routes/resellerServiceRoutes.js";
+import endUserRoutes from "./routes/endUserRoutes.js";
+
+
 // ← NEW: Admin Orders Route
 import adminOrderRoutes from "./routes/adminOrderRoutes.js";
 import adminUserOrdersRoutes from "./routes/adminUserOrdersRoutes.js";
@@ -85,6 +94,14 @@ app.use("/api/payment-methods", paymentMethodRoutes);
 app.use("/api/smm", smmWebhookRoutes);
 app.use("/api/payment", paymentRoutes);
 app.use("/api/settings", commissionRoutes);
+
+//Reseller Routes
+app.use("/api/reseller", resellerRoutes);
+app.use("/api/branding", brandingRoutes);
+app.use("/api/reseller-guides", resellerGuideRoutes);
+app.use("/api/reseller/services", resellerServiceRoutes);
+app.use("/api/end-users", endUserRoutes);
+
 
 /* Admin routes */
 app.use("/api/admin", adminRoutes);

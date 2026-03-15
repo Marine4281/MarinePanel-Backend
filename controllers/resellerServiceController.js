@@ -2,11 +2,9 @@ import Service from "../models/Service.js";
 import User from "../models/User.js";
 import ResellerService from "../models/ResellerService.js";
 
-/*
---------------------------------
-Get all services for reseller
---------------------------------
-*/
+/* =========================================================
+   GET ALL SERVICES FOR RESELLER
+========================================================= */
 export const getResellerServices = async (req, res) => {
   try {
     const reseller = await User.findById(req.user._id);
@@ -15,7 +13,7 @@ export const getResellerServices = async (req, res) => {
     // Fetch only active services
     const services = await Service.find({ status: true }).lean();
 
-    // Get per-reseller overrides for visibility
+    // Fetch per-reseller visibility overrides
     const resellerOverrides = await ResellerService.find({ resellerId: reseller._id }).lean();
     const overridesMap = {};
     resellerOverrides.forEach(r => {
@@ -23,16 +21,14 @@ export const getResellerServices = async (req, res) => {
     });
 
     const formattedServices = services.map(s => {
-      const providerPrice = Number(s.price || 0);
-      const adminCommission = Number(s.commission || 0);
+      // Use admin rate first, fallback to provider price
+      const baseRate = Number(s.rate ?? s.price ?? 0);
+      const providerPrice = Number(s.price ?? 0);
 
-      // System rate = provider price + admin commission
-      const systemRate = providerPrice * (1 + adminCommission / 100);
+      // Reseller final price
+      const finalPrice = baseRate * (1 + resellerCommission / 100);
 
-      // Reseller rate = system rate + reseller commission
-      const finalPrice = systemRate * (1 + resellerCommission / 100);
-
-      // Apply reseller-specific visibility override if it exists
+      // Visibility override
       const override = overridesMap[s._id.toString()];
       const visible = override ? override.visible : s.visible ?? true;
 
@@ -43,7 +39,7 @@ export const getResellerServices = async (req, res) => {
         category: s.category || "General",
         visible,                // Reseller-specific visibility
         price: providerPrice,   // Provider price
-        rate: systemRate,       // System rate (users see)
+        rate: baseRate,         // System rate (users see)
         finalPrice,             // Reseller price
         min: Number(s.min ?? 1),
         max: Number(s.max ?? 100000),
@@ -61,27 +57,21 @@ export const getResellerServices = async (req, res) => {
   }
 };
 
-/*
---------------------------------
-Update service visibility (per reseller)
---------------------------------
-*/
+/* =========================================================
+   UPDATE SERVICE VISIBILITY (PER RESELLER)
+========================================================= */
 export const updateServiceVisibility = async (req, res) => {
   try {
     const { serviceId, visible } = req.body;
     const resellerId = req.user._id;
 
-    // Upsert per-reseller visibility record
     const record = await ResellerService.findOneAndUpdate(
       { resellerId, serviceId },
       { visible },
       { upsert: true, new: true }
     );
 
-    res.json({
-      message: "Visibility updated for reseller",
-      record
-    });
+    res.json({ message: "Visibility updated for reseller", record });
 
   } catch (error) {
     console.error("UPDATE RESELLER VISIBILITY ERROR:", error);
@@ -89,11 +79,9 @@ export const updateServiceVisibility = async (req, res) => {
   }
 };
 
-/*
---------------------------------
-Update service name or category (global)
---------------------------------
-*/
+/* =========================================================
+   UPDATE SERVICE NAME OR CATEGORY (GLOBAL)
+========================================================= */
 export const updateServiceName = async (req, res) => {
   try {
     const { serviceId, newName, newCategoryName } = req.body;
@@ -106,7 +94,6 @@ export const updateServiceName = async (req, res) => {
     if (newCategoryName) service.category = newCategoryName;
 
     await service.save();
-
     res.json({ message: "Service updated", service });
 
   } catch (error) {
@@ -115,11 +102,9 @@ export const updateServiceName = async (req, res) => {
   }
 };
 
-/*
---------------------------------
-Set reseller commission
---------------------------------
-*/
+/* =========================================================
+   SET RESELLER COMMISSION
+========================================================= */
 export const setResellerCommission = async (req, res) => {
   try {
     const commissionNumber = Number(req.body.commission);

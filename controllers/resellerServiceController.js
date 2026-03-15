@@ -10,19 +10,21 @@ export const getResellerServices = async (req, res) => {
   try {
 
     const reseller = await User.findById(req.user._id);
+
     const commission = Number(reseller?.resellerCommissionRate || 0);
 
     const services = await Service.find().lean();
 
     const formattedServices = services.map((s) => {
 
-      // Use RATE because your admin controller saves rate
-      const baseRate = parseFloat(s.rate ?? 0);
+      // System rate (this already includes admin commission)
+      const systemRate = Number(s.rate || s.price || 0);
 
-      // Commission calculation
-      const finalPrice = baseRate + (baseRate * commission / 100);
+      // Reseller price calculation
+      const finalPrice = systemRate * (1 + commission / 100);
 
       return {
+
         _id: s._id,
         serviceId: s.serviceId || s._id,
 
@@ -31,14 +33,14 @@ export const getResellerServices = async (req, res) => {
 
         visible: s.visible ?? true,
 
-        // Important fields for frontend
-        rate: baseRate,
-        price: baseRate,
-
-        finalPrice: finalPrice,
+        // Pricing fields
+        price: Number(s.price || 0),   // provider price
+        rate: systemRate,              // system price users see
+        finalPrice: finalPrice,        // reseller selling price
 
         min: Number(s.min ?? 1),
         max: Number(s.max ?? 100000)
+
       };
 
     });
@@ -49,10 +51,13 @@ export const getResellerServices = async (req, res) => {
     });
 
   } catch (error) {
+
     console.error(error);
+
     res.status(500).json({
       message: "Failed to fetch services"
     });
+
   }
 };
 
@@ -64,6 +69,7 @@ Update service visibility
 --------------------------------
 */
 export const updateServiceVisibility = async (req, res) => {
+
   try {
 
     const { serviceId, visible } = req.body;
@@ -93,6 +99,7 @@ export const updateServiceVisibility = async (req, res) => {
     });
 
   }
+
 };
 
 
@@ -103,13 +110,14 @@ Update service name or category
 --------------------------------
 */
 export const updateServiceName = async (req, res) => {
+
   try {
 
     const { serviceId, newName, newCategoryName } = req.body;
 
-    if (!serviceId && !newCategoryName) {
+    if (!serviceId) {
       return res.status(400).json({
-        message: "Invalid update request"
+        message: "Service ID required"
       });
     }
 
@@ -145,6 +153,7 @@ export const updateServiceName = async (req, res) => {
     });
 
   }
+
 };
 
 
@@ -155,6 +164,7 @@ Set reseller commission
 --------------------------------
 */
 export const setResellerCommission = async (req, res) => {
+
   try {
 
     const { commission } = req.body;
@@ -193,4 +203,5 @@ export const setResellerCommission = async (req, res) => {
     });
 
   }
+
 };

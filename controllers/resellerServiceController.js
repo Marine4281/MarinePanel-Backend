@@ -21,12 +21,11 @@ export const getResellerServices = async (req, res) => {
     });
 
     const formattedServices = services.map(s => {
-      // Use admin rate first, fallback to provider price
-      const baseRate = Number(s.rate ?? s.price ?? 0);
-      const providerPrice = Number(s.price ?? 0);
+      // Strictly use s.rate for system rate
+      const systemRate = Number(s.rate || 0);
 
       // Reseller final price
-      const finalPrice = baseRate * (1 + resellerCommission / 100);
+      const finalPrice = systemRate * (1 + resellerCommission / 100);
 
       // Visibility override
       const override = overridesMap[s._id.toString()];
@@ -37,10 +36,9 @@ export const getResellerServices = async (req, res) => {
         serviceId: s.serviceId || s._id,
         name: s.name,
         category: s.category || "General",
-        visible,                // Reseller-specific visibility
-        price: providerPrice,   // Provider price
-        rate: baseRate,         // System rate (users see)
-        finalPrice,             // Reseller price
+        visible,        // Reseller-specific visibility
+        rate: systemRate, // System rate (users see)
+        finalPrice,     // Reseller price
         min: Number(s.min ?? 1),
         max: Number(s.max ?? 100000),
       };

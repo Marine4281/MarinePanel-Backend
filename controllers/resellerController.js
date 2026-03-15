@@ -175,7 +175,8 @@ Reseller Dashboard
 */
 export const getResellerDashboard = async (req, res) => {
   try {
-    const resellerId = req.user._id;
+    // Use req.reseller if available (subdomain)
+    const resellerId = req.reseller?._id || req.user._id;
 
     const usersCount = await User.countDocuments({
       resellerOwner: resellerId,
@@ -209,7 +210,6 @@ export const getResellerDashboard = async (req, res) => {
 
   } catch (error) {
     console.error(error);
-
     res.status(500).json({
       message: "Failed to load dashboard",
     });

@@ -55,7 +55,6 @@ max: 100,                 // limit each IP
 
 /* Middlewares */
 app.use(
-app.use(
   cors({
     origin: (origin, callback) => {
 
@@ -81,7 +80,7 @@ app.use(
 app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ limit: "50mb", extended: true }));
 app.use(morgan("dev"));
-/ Health check */
+/* Health check */
 app.get("/", (req, res) => {
 res.json({ status: "Marine backend running" });
 });
@@ -91,6 +90,9 @@ app.options(/./, cors());
 
 /* Cookies routes */
 app.use(cookieParser());
+
+/* Detect reseller subdomain */
+app.use(detectResellerDomain);
 
 
 /* Public routes */

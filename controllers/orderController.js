@@ -12,7 +12,7 @@ const calculateBalance = (transactions = []) =>
   transactions.reduce((acc, t) => acc + (t.amount || 0), 0);
 
 /* =========================================================
-   CREATE ORDER (Enterprise + Cooldown Free Support)
+CREATE ORDER (Enterprise + Cooldown Free Support)
 ========================================================= */
 export const createOrder = async (req, res) => {
   try {
@@ -23,9 +23,7 @@ export const createOrder = async (req, res) => {
     }
 
     const qty = Number(quantity);
-    if (qty <= 0) {
-      return res.status(400).json({ message: "Invalid quantity" });
-    }
+    if (qty <= 0) return res.status(400).json({ message: "Invalid quantity" });
 
     const user = await User.findById(req.user._id);
     if (!user) return res.status(404).json({ message: "User not found" });
@@ -39,13 +37,8 @@ export const createOrder = async (req, res) => {
       });
     }
 
-    const serviceData = await Service.findOne({
-      name: service,
-      status: true,
-    });
-
-    if (!serviceData)
-      return res.status(404).json({ message: "Service not found" });
+    const serviceData = await Service.findOne({ name: service, status: true });
+    if (!serviceData) return res.status(404).json({ message: "Service not found" });
 
     let finalCharge = 0;
     let baseCharge = 0;
@@ -53,63 +46,56 @@ export const createOrder = async (req, res) => {
     let isFreeOrder = false;
 
     /* ======================================================
-   🔥 FREE SERVICE LOGIC (CUMULATIVE PER USER)
-====================================================== */
+       🔥 FREE SERVICE LOGIC
+    ===================================================== */
+    if (serviceData.isFree) {
+      isFreeOrder = true;
 
-if (serviceData.isFree) {
-  isFreeOrder = true;
+      const maxPerClaim = serviceData.freeQuantity || 0;
+      const cooldown = serviceData.cooldownHours || 0;
 
-  const maxPerClaim = serviceData.freeQuantity || 0;
-  const cooldown = serviceData.cooldownHours || 0;
-
-  // 🔒 1️⃣ Max per claim check
-  if (qty > maxPerClaim) {
-    return res.status(400).json({
-      message: `Max free quantity per claim is ${maxPerClaim}`,
-    });
-  }
-
-  // 🔒 2️⃣ Cooldown check
-  if (cooldown > 0) {
-    const lastOrder = await Order.findOne({
-      userId: req.user._id,
-      service,
-      isFreeOrder: true,
-    }).sort({ createdAt: -1 });
-
-    if (lastOrder) {
-      const hoursPassed =
-        (Date.now() - new Date(lastOrder.createdAt)) /
-        (1000 * 60 * 60);
-
-      if (hoursPassed < cooldown) {
-        const remaining = Math.ceil(cooldown - hoursPassed);
-
+      if (qty > maxPerClaim)
         return res.status(400).json({
-          message: `You can claim again in ${remaining} hour(s).`,
+          message: `Max free quantity per claim is ${maxPerClaim}`,
         });
-      }
-    }
-  }
 
-  finalCharge = 0;
-}
+      if (cooldown > 0) {
+        const lastOrder = await Order.findOne({
+          userId: req.user._id,
+          service,
+          isFreeOrder: true,
+        }).sort({ createdAt: -1 });
+
+        if (lastOrder) {
+          const hoursPassed =
+            (Date.now() - new Date(lastOrder.createdAt)) / (1000 * 60 * 60);
+          if (hoursPassed < cooldown) {
+            const remaining = Math.ceil(cooldown - hoursPassed);
+            return res.status(400).json({
+              message: `You can claim again in ${remaining} hour(s).`,
+            });
+          }
+        }
+      }
+
+      finalCharge = 0;
+    }
+
     /* ======================================================
        💰 PAID SERVICE LOGIC
-    ====================================================== */
-
+    ===================================================== */
     else {
-      if (qty < serviceData.min || qty > serviceData.max) {
+      if (qty < serviceData.min || qty > serviceData.max)
         return res.status(400).json({
           message: `Quantity must be between ${serviceData.min} and ${serviceData.max}`,
         });
-      }
 
       let settings = await Settings.findOne();
       if (!settings) {
         settings = await Settings.create({
           commission: 50,
           totalRevenue: 0,
+          defaultResellerCommission: 50,
         });
       }
 
@@ -126,26 +112,28 @@ if (serviceData.isFree) {
       // -------------------- RESELLER COMMISSION --------------------
       if (user.resellerOwner) {
         const reseller = await User.findById(user.resellerOwner);
-        const resellerRate = reseller?.commissionRate || settings.defaultResellerCommission || 10;
+        const resellerRate =
+          reseller?.commissionRate || settings.defaultResellerCommission || 50; // default 50%
         resellerCommission = baseCharge * (resellerRate / 100);
-           }
+
+        // Add commission to resellerWallet
+        reseller.resellerWallet = (reseller.resellerWallet || 0) + resellerCommission;
+        await reseller.save();
+      }
 
       if (currentBalance < finalCharge) {
-        return res.status(400).json({
-          message: "Insufficient balance",
-        });
+        return res.status(400).json({ message: "Insufficient balance" });
       }
     }
 
     /* ======================================================
        📦 CREATE ORDER
-    ====================================================== */
-
+    ===================================================== */
     const order = await Order.create({
       orderId: "ORD-" + uuidv4().slice(0, 8),
       userId: req.user._id,
-      resellerOwner: user.resellerOwner || null, // 🔥 Save reseller owner
-      resellerCommission,      
+      resellerOwner: user.resellerOwner || null, // Save reseller owner
+      resellerCommission,
       category,
       service,
       link,
@@ -153,7 +141,6 @@ if (serviceData.isFree) {
       charge: finalCharge,
       status: "pending",
       isFreeOrder,
-
       provider: serviceData.provider,
       providerApiUrl: serviceData.providerApiUrl,
       providerServiceId: serviceData.providerServiceId,
@@ -161,8 +148,7 @@ if (serviceData.isFree) {
 
     /* ======================================================
        🚀 SEND TO PROVIDER
-    ====================================================== */
-
+    ===================================================== */
     try {
       const providerResponse = await axios.post(
         serviceData.providerApiUrl,
@@ -186,19 +172,15 @@ if (serviceData.isFree) {
     } catch (providerError) {
       order.status = "failed";
       order.providerStatus = "failed";
-      order.errorMessage =
-        providerError.response?.data || providerError.message;
+      order.errorMessage = providerError.response?.data || providerError.message;
       await order.save();
 
-      return res.status(500).json({
-        message: "Order failed to reach provider",
-      });
+      return res.status(500).json({ message: "Order failed to reach provider" });
     }
 
     /* ======================================================
        💳 WALLET DEDUCTION (ONLY IF PAID)
-    ====================================================== */
-
+    ===================================================== */
     if (!isFreeOrder) {
       const transaction = {
         type: "Order",
@@ -222,30 +204,10 @@ if (serviceData.isFree) {
       await settings.save();
     }
 
-    res.status(201).json({
-      order,
-      balance: wallet.balance,
-    });
-
+    res.status(201).json({ order, balance: wallet.balance });
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: "Order failed" });
-  }
-};
-
-/* =========================================================
-   GET MY ORDERS
-========================================================= */
-export const getMyOrders = async (req, res) => {
-  try {
-    const orders = await Order.find({ userId: req.user._id })
-      .sort({ createdAt: -1 })
-      .lean();
-
-    res.json(orders);
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: "Failed to fetch orders" });
   }
 };
 

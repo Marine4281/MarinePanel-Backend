@@ -49,6 +49,7 @@ export const createOrder = async (req, res) => {
 
     let finalCharge = 0;
     let baseCharge = 0;
+    let resellerCommission = 0;
     let isFreeOrder = false;
 
     /* ======================================================
@@ -122,6 +123,13 @@ if (serviceData.isFree) {
           ? wallet.balance
           : calculateBalance(wallet.transactions);
 
+      // -------------------- RESELLER COMMISSION --------------------
+      if (user.resellerOwner) {
+        const reseller = await User.findById(user.resellerOwner);
+        const resellerRate = reseller?.commissionRate || settings.defaultResellerCommission || 10;
+        resellerCommission = baseCharge * (resellerRate / 100);
+           }
+
       if (currentBalance < finalCharge) {
         return res.status(400).json({
           message: "Insufficient balance",
@@ -136,6 +144,8 @@ if (serviceData.isFree) {
     const order = await Order.create({
       orderId: "ORD-" + uuidv4().slice(0, 8),
       userId: req.user._id,
+      resellerOwner: user.resellerOwner || null, // 🔥 Save reseller owner
+      resellerCommission,      
       category,
       service,
       link,

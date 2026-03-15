@@ -6,7 +6,8 @@ const BASE_DOMAIN = "marinepanel.online";
 
 export const detectResellerDomain = async (req, res, next) => {
   try {
-    const host = req.headers.host;
+
+    const host = req.headers["x-reseller-domain"] || req.headers.host;
     if (!host) return next();
 
     let reseller = null;
@@ -14,6 +15,7 @@ export const detectResellerDomain = async (req, res, next) => {
     // 1️⃣ SUBDOMAIN SUPPORT
     if (host.endsWith(BASE_DOMAIN)) {
       const subdomain = host.split(".")[0];
+
       if (subdomain && subdomain !== "www" && subdomain !== BASE_DOMAIN) {
         reseller = await User.findOne({
           brandSlug: subdomain,
@@ -31,7 +33,9 @@ export const detectResellerDomain = async (req, res, next) => {
     }
 
     // SAVE INTO REQUEST
-    if (reseller) req.reseller = reseller;
+    if (reseller) {
+      req.reseller = reseller;
+    }
 
     next();
 

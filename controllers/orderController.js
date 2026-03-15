@@ -211,6 +211,22 @@ export const createOrder = async (req, res) => {
   }
 };
 
+
+/* =========================================================
+   GET MY ORDERS
+========================================================= */
+export const getMyOrders = async (req, res) => {
+  try {
+    const orders = await Order.find({ userId: req.user._id })
+      .sort({ createdAt: -1 })
+      .lean();
+
+    res.json(orders);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "Failed to fetch orders" });
+  }
+};
 /* =========================================================
    PREVIEW ORDER
 ========================================================= */

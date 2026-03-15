@@ -2,7 +2,6 @@ import Service from "../models/Service.js";
 import User from "../models/User.js";
 import ResellerService from "../models/ResellerService.js";
 
-
 /*
 --------------------------------
 Get all services for reseller
@@ -10,211 +9,71 @@ Get all services for reseller
 */
 export const getResellerServices = async (req, res) => {
   try {
-
     const reseller = await User.findById(req.user._id);
+    const resellerCommission = Number(reseller?.resellerCommissionRate || 0);
 
-    const commission = Number(reseller?.resellerCommissionRate || 0);
+    // Get all active services
+    const services = await Service.find({ status: true }).lean();
 
-    const services = await Service.find().lean();
+    // Get per-reseller overrides
+    const resellerOverrides = await ResellerService.find({ resellerId: reseller._id }).lean();
+    const overridesMap = {};
+    resellerOverrides.forEach((r) => {
+      overridesMap[r.serviceId.toString()] = r;
+    });
 
     const formattedServices = services.map((s) => {
+      const providerPrice = Number(s.price || 0);
+      const adminCommission = Number(s.commission || 0);
 
-      // System rate (this already includes admin commission)
-      const systemRate = Number(s.rate || s.price || 0);
+      // System rate = provider price + admin commission
+      const systemRate = providerPrice * (1 + adminCommission / 100);
 
-      // Reseller price calculation
-      const finalPrice = systemRate * (1 + commission / 100);
+      // Reseller rate = system rate + reseller commission
+      const finalPrice = systemRate * (1 + resellerCommission / 100);
+
+      // Check if reseller has overridden visibility
+      const override = overridesMap[s._id.toString()];
+      const visible = override ? override.visible : s.visible ?? true;
 
       return {
-
         _id: s._id,
         serviceId: s.serviceId || s._id,
-
         name: s.name,
         category: s.category || "General",
-
-        visible: s.visible ?? true,
-
-        // Pricing fields
-        price: Number(s.price || 0),   // provider price
-        rate: systemRate,              // system price users see
-        finalPrice: finalPrice,        // reseller selling price
-
+        visible,               // Reseller-specific visibility
+        price: providerPrice,  // provider price
+        rate: systemRate,      // system price users see
+        finalPrice,            // reseller price
         min: Number(s.min ?? 1),
         max: Number(s.max ?? 100000)
-
       };
-
     });
 
     res.json({
       services: formattedServices,
-      commission
+      commission: resellerCommission
     });
 
   } catch (error) {
-
-    console.error(error);
-
+    console.error("GET RESELLER SERVICES ERROR:", error);
     res.status(500).json({
       message: "Failed to fetch services"
     });
-
   }
 };
 
-
-
 /*
 --------------------------------
-Update service visibility
+Update service visibility (per reseller)
 --------------------------------
 */
 export const updateServiceVisibility = async (req, res) => {
-
   try {
-
     const { serviceId, visible } = req.body;
-
-    const service = await Service.findById(serviceId);
-
-    if (!service) {
-      return res.status(404).json({
-        message: "Service not found"
-      });
-    }
-
-    service.visible = visible;
-
-    await service.save();
-
-    res.json({
-      message: "Service visibility updated"
-    });
-
-  } catch (error) {
-
-    console.error(error);
-
-    res.status(500).json({
-      message: "Failed to update service visibility"
-    });
-
-  }
-
-};
-
-
-
-/*
---------------------------------
-Update service name or category
---------------------------------
-*/
-export const updateServiceName = async (req, res) => {
-
-  try {
-
-    const { serviceId, newName, newCategoryName } = req.body;
-
-    if (!serviceId) {
-      return res.status(400).json({
-        message: "Service ID required"
-      });
-    }
-
-    const service = await Service.findById(serviceId);
-
-    if (!service) {
-      return res.status(404).json({
-        message: "Service not found"
-      });
-    }
-
-    if (newName) {
-      service.name = newName;
-    }
-
-    if (newCategoryName) {
-      service.category = newCategoryName;
-    }
-
-    await service.save();
-
-    res.json({
-      message: "Service updated",
-      service
-    });
-
-  } catch (error) {
-
-    console.error(error);
-
-    res.status(500).json({
-      message: "Failed to update service"
-    });
-
-  }
-
-};
-
-
-
-/*
---------------------------------
-Set reseller commission
---------------------------------
-*/
-export const setResellerCommission = async (req, res) => {
-
-  try {
-
-    const { commission } = req.body;
-
-    const commissionNumber = Number(commission);
-
-    if (commissionNumber < 0) {
-      return res.status(400).json({
-        message: "Commission cannot be negative"
-      });
-    }
-
-    const reseller = await User.findById(req.user._id);
-
-    if (!reseller) {
-      return res.status(404).json({
-        message: "Reseller not found"
-      });
-    }
-
-    reseller.resellerCommissionRate = commissionNumber;
-
-    await reseller.save();
-
-    res.json({
-      message: "Commission updated",
-      commission: commissionNumber
-    });
-
-  } catch (error) {
-
-    console.error(error);
-
-    res.status(500).json({
-      message: "Failed to set commission"
-    });
-
-  }
-
-};
-
-export const updateServiceVisibility = async (req, res) => {
-  try {
-
-    const { serviceId, visible } = req.body;
-
     const resellerId = req.user._id;
 
+    // Upsert per-reseller visibility
     const record = await ResellerService.findOneAndUpdate(
       { resellerId, serviceId },
       { visible },
@@ -222,17 +81,71 @@ export const updateServiceVisibility = async (req, res) => {
     );
 
     res.json({
-      message: "Visibility updated",
+      message: "Visibility updated for reseller",
       record
     });
 
   } catch (error) {
-
-    console.error(error);
-
+    console.error("UPDATE RESELLER VISIBILITY ERROR:", error);
     res.status(500).json({
       message: "Failed to update visibility"
     });
+  }
+};
 
+/*
+--------------------------------
+Update service name or category (global)
+--------------------------------
+*/
+export const updateServiceName = async (req, res) => {
+  try {
+    const { serviceId, newName, newCategoryName } = req.body;
+
+    if (!serviceId) {
+      return res.status(400).json({ message: "Service ID required" });
+    }
+
+    const service = await Service.findById(serviceId);
+    if (!service) return res.status(404).json({ message: "Service not found" });
+
+    if (newName) service.name = newName;
+    if (newCategoryName) service.category = newCategoryName;
+
+    await service.save();
+
+    res.json({ message: "Service updated", service });
+
+  } catch (error) {
+    console.error("UPDATE SERVICE ERROR:", error);
+    res.status(500).json({ message: "Failed to update service" });
+  }
+};
+
+/*
+--------------------------------
+Set reseller commission
+--------------------------------
+*/
+export const setResellerCommission = async (req, res) => {
+  try {
+    const { commission } = req.body;
+    const commissionNumber = Number(commission);
+
+    if (commissionNumber < 0) {
+      return res.status(400).json({ message: "Commission cannot be negative" });
+    }
+
+    const reseller = await User.findById(req.user._id);
+    if (!reseller) return res.status(404).json({ message: "Reseller not found" });
+
+    reseller.resellerCommissionRate = commissionNumber;
+    await reseller.save();
+
+    res.json({ message: "Commission updated", commission: commissionNumber });
+
+  } catch (error) {
+    console.error("SET RESELLER COMMISSION ERROR:", error);
+    res.status(500).json({ message: "Failed to set commission" });
   }
 };

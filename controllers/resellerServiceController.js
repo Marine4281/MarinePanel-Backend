@@ -6,154 +6,201 @@ import ResellerService from "../models/ResellerService.js";
 GET ALL SERVICES FOR RESELLER
 ========================================================= */
 export const getResellerServices = async (req, res) => {
-try {
-const reseller = await User.findById(req.user._id);
-const resellerCommission = Number(reseller?.resellerCommissionRate || 0);
+  try {
+    const reseller = await User.findById(req.user._id);
 
-// Fetch only active services
-const services = await Service.find({ status: true }).lean();
+    if (!reseller) {
+      return res.status(404).json({
+        message: "Reseller not found",
+      });
+    }
 
-// Fetch reseller visibility overrides
-const resellerOverrides = await ResellerService.find({
-  resellerId: reseller._id,
-}).lean();
+    const resellerCommission = Number(reseller.resellerCommissionRate || 0);
 
-const overridesMap = {};
-resellerOverrides.forEach((r) => {
-  overridesMap[r.serviceId.toString()] = r;
-});
+    // Fetch only active services
+    const services = await Service.find({ status: true }).lean();
 
-const formattedServices = services.map((s) => {
-  // Admin commission included in normal rate
-  const adminCommission = Number(s.commission || 0);  // e.g., 10% admin fee
-  const providerRate = Number(s.rate || 0);           // raw provider rate
+    // Fetch reseller overrides
+    const resellerOverrides = await ResellerService.find({
+      resellerId: reseller._id,
+    }).lean();
 
-  // Normal rate = provider rate + admin commission
-  const normalRate = providerRate * (1 + adminCommission / 100);
+    const overridesMap = {};
 
-  // Reseller rate = normal rate + reseller commission
-  const resellerRate = normalRate * (1 + resellerCommission / 100);
+    resellerOverrides.forEach((r) => {
+      overridesMap[r.serviceId.toString()] = r;
+    });
 
-  // Visibility override
-  const override = overridesMap[s._id.toString()];
-  const visible = override ? override.visible : s.visible ?? true;
+    const formattedServices = services.map((s) => {
+      // Admin-adjusted system rate (normal users see this)
+      const systemRate = Number(s.rate || 0);
 
-  return {
-    _id: s._id,
-    serviceId: s.serviceId || s._id,
-    name: s.name,
-    category: s.category || "General",
-    visible,
+      // Apply reseller commission
+      const resellerRate =
+        systemRate + (systemRate * resellerCommission) / 100;
 
-    // Normal system rate all users see
-    systemRate: normalRate,
+      // Visibility override
+      const override = overridesMap[s._id.toString()];
 
-    // Reseller selling price
-    resellerRate,
+      const visible =
+        override && override.visible !== undefined
+          ? override.visible
+          : s.visible ?? true;
 
-    min: Number(s.min ?? 1),
-    max: Number(s.max ?? 100000),
-  };
-});
-res.json({
-  services: formattedServices,
-  commission: resellerCommission,
-});
+      return {
+        _id: s._id,
+        serviceId: s.serviceId || s._id,
+        name: s.name,
+        category: s.category || "General",
 
-} catch (error) {
-console.error("GET RESELLER SERVICES ERROR:", error);
-res.status(500).json({ message: "Failed to fetch services" });
-}
+        visible,
+
+        // system price (admin price)
+        systemRate,
+
+        // reseller selling price
+        resellerRate,
+
+        // IMPORTANT: frontend usually reads "rate"
+        rate: resellerRate,
+        price: resellerRate,
+
+        min: Number(s.min ?? 1),
+        max: Number(s.max ?? 100000),
+      };
+    });
+
+    res.json({
+      services: formattedServices,
+      commission: resellerCommission,
+    });
+  } catch (error) {
+    console.error("GET RESELLER SERVICES ERROR:", error);
+
+    res.status(500).json({
+      message: "Failed to fetch services",
+    });
+  }
 };
 
 /* =========================================================
 UPDATE SERVICE VISIBILITY (PER RESELLER)
 ========================================================= */
 export const updateServiceVisibility = async (req, res) => {
-try {
-const { serviceId, visible } = req.body;
-const resellerId = req.user._id;
+  try {
+    const { serviceId, visible } = req.body;
 
-const record = await ResellerService.findOneAndUpdate(
-  { resellerId, serviceId },
-  { visible },
-  { upsert: true, new: true }
-);
+    const resellerId = req.user._id;
 
-res.json({
-  message: "Visibility updated for reseller",
-  record,
-});
+    if (!serviceId) {
+      return res.status(400).json({
+        message: "Service ID required",
+      });
+    }
 
-} catch (error) {
-console.error("UPDATE RESELLER VISIBILITY ERROR:", error);
-res.status(500).json({ message: "Failed to update visibility" });
-}
+    const record = await ResellerService.findOneAndUpdate(
+      { resellerId, serviceId },
+      { visible },
+      {
+        upsert: true,
+        new: true,
+        setDefaultsOnInsert: true,
+      }
+    );
+
+    res.json({
+      message: "Visibility updated for reseller",
+      record,
+    });
+  } catch (error) {
+    console.error("UPDATE RESELLER VISIBILITY ERROR:", error);
+
+    res.status(500).json({
+      message: "Failed to update visibility",
+    });
+  }
 };
 
 /* =========================================================
 UPDATE SERVICE NAME OR CATEGORY (GLOBAL)
 ========================================================= */
 export const updateServiceName = async (req, res) => {
-try {
-const { serviceId, newName, newCategoryName } = req.body;
+  try {
+    const { serviceId, newName, newCategoryName } = req.body;
 
-if (!serviceId) {
-  return res.status(400).json({ message: "Service ID required" });
-}
+    if (!serviceId) {
+      return res.status(400).json({
+        message: "Service ID required",
+      });
+    }
 
-const service = await Service.findById(serviceId);
+    const service = await Service.findById(serviceId);
 
-if (!service) {
-  return res.status(404).json({ message: "Service not found" });
-}
+    if (!service) {
+      return res.status(404).json({
+        message: "Service not found",
+      });
+    }
 
-if (newName) service.name = newName;
-if (newCategoryName) service.category = newCategoryName;
+    if (newName) service.name = newName;
 
-await service.save();
+    if (newCategoryName) service.category = newCategoryName;
 
-res.json({
-  message: "Service updated",
-  service,
-});
+    await service.save();
 
-} catch (error) {
-console.error("UPDATE SERVICE ERROR:", error);
-res.status(500).json({ message: "Failed to update service" });
-}
+    res.json({
+      message: "Service updated",
+      service,
+    });
+  } catch (error) {
+    console.error("UPDATE SERVICE ERROR:", error);
+
+    res.status(500).json({
+      message: "Failed to update service",
+    });
+  }
 };
 
 /* =========================================================
 SET RESELLER COMMISSION
 ========================================================= */
 export const setResellerCommission = async (req, res) => {
-try {
-const commissionNumber = Number(req.body.commission);
+  try {
+    const commissionNumber = Number(req.body.commission);
 
-if (commissionNumber < 0) {
-  return res.status(400).json({
-    message: "Commission cannot be negative",
-  });
-}
+    if (isNaN(commissionNumber)) {
+      return res.status(400).json({
+        message: "Commission must be a number",
+      });
+    }
 
-const reseller = await User.findById(req.user._id);
+    if (commissionNumber < 0) {
+      return res.status(400).json({
+        message: "Commission cannot be negative",
+      });
+    }
 
-if (!reseller) {
-  return res.status(404).json({ message: "Reseller not found" });
-}
+    const reseller = await User.findById(req.user._id);
 
-reseller.resellerCommissionRate = commissionNumber;
+    if (!reseller) {
+      return res.status(404).json({
+        message: "Reseller not found",
+      });
+    }
 
-await reseller.save();
+    reseller.resellerCommissionRate = commissionNumber;
 
-res.json({
-  message: "Commission updated",
-  commission: commissionNumber,
-});
+    await reseller.save();
 
-} catch (error) {
-console.error("SET RESELLER COMMISSION ERROR:", error);
-res.status(500).json({ message: "Failed to set commission" });
-}
+    res.json({
+      message: "Commission updated",
+      commission: commissionNumber,
+    });
+  } catch (error) {
+    console.error("SET RESELLER COMMISSION ERROR:", error);
+
+    res.status(500).json({
+      message: "Failed to set commission",
+    });
+  }
 };

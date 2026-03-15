@@ -24,6 +24,12 @@ export const getEndUserDashboard = async (req, res) => {
     // Get user orders
     const orders = await Order.find({ user: userId }).sort({ createdAt: -1 });
 
+    // Determine reseller (either via req.reseller or user.resellerOwner)
+    let reseller = req.reseller || null;
+    if (!reseller && user.resellerOwner) {
+      reseller = await User.findById(user.resellerOwner);
+    }
+
     res.json({
       user: {
         name: user.name || user.email,
@@ -31,7 +37,14 @@ export const getEndUserDashboard = async (req, res) => {
         balance: wallet?.balance || 0,
       },
       orders: orders || [],
-      reseller: user.resellerOwner || null,
+      reseller: reseller
+        ? {
+            _id: reseller._id,
+            brandName: reseller.brandName,
+            logo: reseller.logo,
+            themeColor: reseller.themeColor,
+          }
+        : null,
     });
   } catch (error) {
     console.error("End User Dashboard error:", error);
@@ -46,28 +59,19 @@ Get Reseller Branding for End User
 */
 export const getResellerBranding = async (req, res) => {
   try {
-    const user = await User.findById(req.user._id);
+    // 1️⃣ Use req.reseller if visiting a subdomain
+    let reseller = req.reseller || null;
 
-    if (!user) {
-      return res.status(404).json({ message: "User not found" });
+    // 2️⃣ Fallback to user's resellerOwner if logged in
+    if (!reseller && req.user?.resellerOwner) {
+      reseller = await User.findById(req.user.resellerOwner);
     }
 
-    // If user has a resellerOwner, use reseller branding
-    if (user.resellerOwner) {
-      const reseller = await User.findById(user.resellerOwner);
-
-      return res.json({
-        brandName: reseller?.brandName || "MarinePanel",
-        logo: reseller?.logo || null,
-        themeColor: reseller?.themeColor || "#ff6b00",
-      });
-    }
-
-    // Default branding
+    // Return branding
     res.json({
-      brandName: "MarinePanel",
-      logo: null,
-      themeColor: "#ff6b00",
+      brandName: reseller?.brandName || "MarinePanel",
+      logo: reseller?.logo || null,
+      themeColor: reseller?.themeColor || "#ff6b00",
     });
   } catch (error) {
     console.error("Get Reseller Branding error:", error);

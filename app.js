@@ -55,18 +55,26 @@ max: 100,                 // limit each IP
 
 /* Middlewares */
 app.use(
-cors({
-origin: [
-"https://marinepanel.online",
-"http://marinepanel.online",
-"https://www.marinepanel.online",
-"http://www.marinepanel.online",
-".marinepanel.online ",
-// production
-/.vercel.app$/, // all Vercel previews
-],
-credentials: true,
-})
+app.use(
+  cors({
+    origin: (origin, callback) => {
+
+      if (!origin) return callback(null, true);
+
+      if (
+        origin.endsWith(".marinepanel.online") ||
+        origin === "https://marinepanel.online" ||
+        origin === "http://marinepanel.online" ||
+        /\.vercel\.app$/.test(origin)
+      ) {
+        return callback(null, true);
+      }
+
+      console.log("Blocked by CORS:", origin);
+      callback(new Error("Not allowed by CORS"));
+    },
+    credentials: true,
+  })
 );
 
 /* Body parser */

@@ -12,17 +12,17 @@ export const getResellerServices = async (req, res) => {
     const reseller = await User.findById(req.user._id);
     const resellerCommission = Number(reseller?.resellerCommissionRate || 0);
 
-    // Get all active services
+    // Fetch only active services
     const services = await Service.find({ status: true }).lean();
 
-    // Get per-reseller overrides
+    // Get per-reseller overrides for visibility
     const resellerOverrides = await ResellerService.find({ resellerId: reseller._id }).lean();
     const overridesMap = {};
-    resellerOverrides.forEach((r) => {
+    resellerOverrides.forEach(r => {
       overridesMap[r.serviceId.toString()] = r;
     });
 
-    const formattedServices = services.map((s) => {
+    const formattedServices = services.map(s => {
       const providerPrice = Number(s.price || 0);
       const adminCommission = Number(s.commission || 0);
 
@@ -32,7 +32,7 @@ export const getResellerServices = async (req, res) => {
       // Reseller rate = system rate + reseller commission
       const finalPrice = systemRate * (1 + resellerCommission / 100);
 
-      // Check if reseller has overridden visibility
+      // Apply reseller-specific visibility override if it exists
       const override = overridesMap[s._id.toString()];
       const visible = override ? override.visible : s.visible ?? true;
 
@@ -41,12 +41,12 @@ export const getResellerServices = async (req, res) => {
         serviceId: s.serviceId || s._id,
         name: s.name,
         category: s.category || "General",
-        visible,               // Reseller-specific visibility
-        price: providerPrice,  // provider price
-        rate: systemRate,      // system price users see
-        finalPrice,            // reseller price
+        visible,                // Reseller-specific visibility
+        price: providerPrice,   // Provider price
+        rate: systemRate,       // System rate (users see)
+        finalPrice,             // Reseller price
         min: Number(s.min ?? 1),
-        max: Number(s.max ?? 100000)
+        max: Number(s.max ?? 100000),
       };
     });
 
@@ -57,9 +57,7 @@ export const getResellerServices = async (req, res) => {
 
   } catch (error) {
     console.error("GET RESELLER SERVICES ERROR:", error);
-    res.status(500).json({
-      message: "Failed to fetch services"
-    });
+    res.status(500).json({ message: "Failed to fetch services" });
   }
 };
 
@@ -73,7 +71,7 @@ export const updateServiceVisibility = async (req, res) => {
     const { serviceId, visible } = req.body;
     const resellerId = req.user._id;
 
-    // Upsert per-reseller visibility
+    // Upsert per-reseller visibility record
     const record = await ResellerService.findOneAndUpdate(
       { resellerId, serviceId },
       { visible },
@@ -87,9 +85,7 @@ export const updateServiceVisibility = async (req, res) => {
 
   } catch (error) {
     console.error("UPDATE RESELLER VISIBILITY ERROR:", error);
-    res.status(500).json({
-      message: "Failed to update visibility"
-    });
+    res.status(500).json({ message: "Failed to update visibility" });
   }
 };
 
@@ -101,10 +97,7 @@ Update service name or category (global)
 export const updateServiceName = async (req, res) => {
   try {
     const { serviceId, newName, newCategoryName } = req.body;
-
-    if (!serviceId) {
-      return res.status(400).json({ message: "Service ID required" });
-    }
+    if (!serviceId) return res.status(400).json({ message: "Service ID required" });
 
     const service = await Service.findById(serviceId);
     if (!service) return res.status(404).json({ message: "Service not found" });
@@ -129,12 +122,8 @@ Set reseller commission
 */
 export const setResellerCommission = async (req, res) => {
   try {
-    const { commission } = req.body;
-    const commissionNumber = Number(commission);
-
-    if (commissionNumber < 0) {
-      return res.status(400).json({ message: "Commission cannot be negative" });
-    }
+    const commissionNumber = Number(req.body.commission);
+    if (commissionNumber < 0) return res.status(400).json({ message: "Commission cannot be negative" });
 
     const reseller = await User.findById(req.user._id);
     if (!reseller) return res.status(404).json({ message: "Reseller not found" });

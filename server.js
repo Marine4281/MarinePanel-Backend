@@ -32,6 +32,7 @@ export const io = new Server(server, {
         "http://marinepanel.online",
         "https://www.marinepanel.online",
         "http://www.marinepanel.online",
+        ".marinepanel.online",
       ];
 
       // allow Vercel preview URLs

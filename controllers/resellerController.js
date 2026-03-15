@@ -348,7 +348,6 @@ export const updateBranding = async (req, res) => {
 //Branding
 export const getBranding = async (req, res) => {
   try {
-
     if (!req.reseller) {
       return res.json({
         brandName: "MarinePanel",
@@ -360,7 +359,7 @@ export const getBranding = async (req, res) => {
     const reseller = req.reseller;
 
     res.json({
-      brandName: reseller.brandName,
+      brandName: reseller.brandName || "MarinePanel",
       logo: reseller.logo || null,
       themeColor: reseller.themeColor || "#ff6b00"
     });

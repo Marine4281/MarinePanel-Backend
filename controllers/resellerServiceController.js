@@ -1,5 +1,7 @@
 import Service from "../models/Service.js";
 import User from "../models/User.js";
+import ResellerService from "../models/ResellerService.js";
+
 
 /*
 --------------------------------
@@ -204,4 +206,33 @@ export const setResellerCommission = async (req, res) => {
 
   }
 
+};
+
+export const updateServiceVisibility = async (req, res) => {
+  try {
+
+    const { serviceId, visible } = req.body;
+
+    const resellerId = req.user._id;
+
+    const record = await ResellerService.findOneAndUpdate(
+      { resellerId, serviceId },
+      { visible },
+      { upsert: true, new: true }
+    );
+
+    res.json({
+      message: "Visibility updated",
+      record
+    });
+
+  } catch (error) {
+
+    console.error(error);
+
+    res.status(500).json({
+      message: "Failed to update visibility"
+    });
+
+  }
 };

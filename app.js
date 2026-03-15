@@ -61,6 +61,7 @@ origin: [
 "http://marinepanel.online",
 "https://www.marinepanel.online",
 "http://www.marinepanel.online",
+".marinepanel.online ",
 // production
 /.vercel.app$/, // all Vercel previews
 ],

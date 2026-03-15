@@ -24,11 +24,15 @@ resellerOverrides.forEach((r) => {
 });
 
 const formattedServices = services.map((s) => {
-  // System rate already includes admin commission
-  const systemRate = Number(s.rate || 0);
+  // Admin commission included in normal rate
+  const adminCommission = Number(s.commission || 0);  // e.g., 10% admin fee
+  const providerRate = Number(s.rate || 0);           // raw provider rate
 
-  // Reseller selling price
-  const finalPrice = systemRate * (1 + resellerCommission / 100);
+  // Normal rate = provider rate + admin commission
+  const normalRate = providerRate * (1 + adminCommission / 100);
+
+  // Reseller rate = normal rate + reseller commission
+  const resellerRate = normalRate * (1 + resellerCommission / 100);
 
   // Visibility override
   const override = overridesMap[s._id.toString()];
@@ -41,17 +45,16 @@ const formattedServices = services.map((s) => {
     category: s.category || "General",
     visible,
 
-    // System price (what reseller sees)
-    rate: systemRate,
+    // Normal system rate all users see
+    systemRate: normalRate,
 
-    // Price reseller sells to customers
-    finalPrice,
+    // Reseller selling price
+    resellerRate,
 
     min: Number(s.min ?? 1),
     max: Number(s.max ?? 100000),
   };
 });
-
 res.json({
   services: formattedServices,
   commission: resellerCommission,

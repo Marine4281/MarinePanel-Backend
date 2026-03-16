@@ -1,6 +1,7 @@
 import Service from "../models/Service.js";
 import User from "../models/User.js";
 import ResellerService from "../models/ResellerService.js";
+import Settings from "../models/Settings.js";
 
 /* =========================================================
 GET ALL SERVICES FOR RESELLER
@@ -17,8 +18,14 @@ export const getResellerServices = async (req, res) => {
 
     const resellerCommission = Number(reseller.resellerCommissionRate || 0);
 
-    // Fetch only active services
-    const services = await Service.find({ status: true }).lean();
+    // Get admin commission once
+    const settings = await Settings.findOne();
+    const adminCommission = Number(settings?.commission || 0);
+
+    // Fetch active services (optimized query)
+    const services = await Service.find({ status: true })
+      .select("name rate min max category visible serviceId")
+      .lean();
 
     // Fetch reseller overrides
     const resellerOverrides = await ResellerService.find({
@@ -32,22 +39,16 @@ export const getResellerServices = async (req, res) => {
     });
 
     const formattedServices = services.map((s) => {
-      
-      // Provider rate from service
       const providerRate = Number(s.rate || 0);
 
-      // Admin commission
-      const settings = await Settings.findOne();
-      const adminCommission = Number(settings?.commission || 0);
+      // Admin-adjusted system rate (normal users see this)
+      const systemRate =
+        providerRate + (providerRate * adminCommission) / 100;
 
-     // Calculate system rate (same as normal services)
-     const systemRate =
-       providerRate + (providerRate * adminCommission) / 100;
+      // Apply reseller commission
+      const resellerRate =
+        systemRate + (systemRate * resellerCommission) / 100;
 
-    // Apply reseller commission
-    const resellerRate =
-      systemRate + (systemRate * resellerCommission) / 100;
-      // Visibility override
       const override = overridesMap[s._id.toString()];
 
       const visible =
@@ -63,13 +64,13 @@ export const getResellerServices = async (req, res) => {
 
         visible,
 
-        // system price (admin price)
+        // Admin system price
         systemRate,
 
-        // reseller selling price
+        // Reseller selling price
         resellerRate,
 
-        // IMPORTANT: frontend usually reads "rate"
+        // Used by some frontend components
         rate: resellerRate,
         price: resellerRate,
 
@@ -82,6 +83,7 @@ export const getResellerServices = async (req, res) => {
       services: formattedServices,
       commission: resellerCommission,
     });
+
   } catch (error) {
     console.error("GET RESELLER SERVICES ERROR:", error);
 
@@ -120,6 +122,7 @@ export const updateServiceVisibility = async (req, res) => {
       message: "Visibility updated for reseller",
       record,
     });
+
   } catch (error) {
     console.error("UPDATE RESELLER VISIBILITY ERROR:", error);
 
@@ -151,7 +154,6 @@ export const updateServiceName = async (req, res) => {
     }
 
     if (newName) service.name = newName;
-
     if (newCategoryName) service.category = newCategoryName;
 
     await service.save();
@@ -160,6 +162,7 @@ export const updateServiceName = async (req, res) => {
       message: "Service updated",
       service,
     });
+
   } catch (error) {
     console.error("UPDATE SERVICE ERROR:", error);
 
@@ -204,6 +207,7 @@ export const setResellerCommission = async (req, res) => {
       message: "Commission updated",
       commission: commissionNumber,
     });
+
   } catch (error) {
     console.error("SET RESELLER COMMISSION ERROR:", error);
 

@@ -1,29 +1,31 @@
 // controllers/brandingController.js
 
-import User from "../models/User.js";
+import Settings from "../models/Settings.js";
 
-/**
- * Get Branding
- * Priority:
- * 1) Domain reseller (white label site)
- * 2) Logged in reseller (dashboard)
- * 3) Default platform branding
- */
+/*
+--------------------------------
+Get Branding
+--------------------------------
+Priority:
+1) Domain reseller
+2) Logged reseller
+3) Platform settings
+*/
 
 export const getBranding = async (req, res) => {
   try {
 
     /*
     --------------------------------
-    1️⃣ Domain Branding (Highest Priority)
+    1️⃣ Domain Branding
     --------------------------------
     */
 
     if (req.brand) {
       return res.json({
-        brandName: req.brand.brandName || "Reseller Panel",
+        brandName: req.brand.brandName || null,
         logo: req.brand.logo || null,
-        themeColor: req.brand.themeColor || "#ff6b00",
+        themeColor: req.brand.themeColor || null,
         domain: req.brand.domain || null,
       });
     }
@@ -36,9 +38,9 @@ export const getBranding = async (req, res) => {
 
     if (req.user && req.user.isReseller) {
       return res.json({
-        brandName: req.user.brandName || "Reseller Panel",
+        brandName: req.user.brandName || null,
         logo: req.user.logo || null,
-        themeColor: req.user.themeColor || "#ff6b00",
+        themeColor: req.user.themeColor || null,
         domain: req.user.resellerDomain || null,
       });
     }
@@ -49,11 +51,13 @@ export const getBranding = async (req, res) => {
     --------------------------------
     */
 
+    const settings = await Settings.findOne();
+
     return res.json({
-      brandName: "Reseller Panel",
-      logo: null,
-      themeColor: "#ff6b00",
-      domain: null,
+      brandName: settings?.platformName || null,
+      logo: settings?.logo || null,
+      themeColor: settings?.themeColor || null,
+      domain: settings?.platformDomain || null,
     });
 
   } catch (error) {

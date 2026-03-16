@@ -1,3 +1,4 @@
+//controllers/brandingController.js
 import User from "../models/User.js";
 
 export const getBranding = async (req, res) => {
@@ -26,7 +27,7 @@ export const getBranding = async (req, res) => {
     return res.json({
       brandName: "MarinePanel",
       logo: null,
-      themeColor: "#2563eb",
+      themeColor: "#f97316",
       domain: "marinepanel.online",
     });
   } catch (error) {

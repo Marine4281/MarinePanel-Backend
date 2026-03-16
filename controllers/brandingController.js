@@ -1,3 +1,4 @@
+//controllers/brandingController.js
 import User from "../models/User.js";
 
 /*

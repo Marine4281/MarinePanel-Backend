@@ -32,13 +32,21 @@ export const getResellerServices = async (req, res) => {
     });
 
     const formattedServices = services.map((s) => {
-      // Admin-adjusted system rate (normal users see this)
-      const systemRate = Number(s.rate || 0);
+      
+      // Provider rate from service
+      const providerRate = Number(s.rate || 0);
 
-      // Apply reseller commission
-      const resellerRate =
-        systemRate + (systemRate * resellerCommission) / 100;
+      // Admin commission
+      const settings = await Settings.findOne();
+      const adminCommission = Number(settings?.commission || 0);
 
+     // Calculate system rate (same as normal services)
+     const systemRate =
+       providerRate + (providerRate * adminCommission) / 100;
+
+    // Apply reseller commission
+    const resellerRate =
+      systemRate + (systemRate * resellerCommission) / 100;
       // Visibility override
       const override = overridesMap[s._id.toString()];
 

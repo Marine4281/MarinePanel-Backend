@@ -1,4 +1,5 @@
-//controllers/resellerController.js
+// controllers/resellerController.js
+
 import User from "../models/User.js";
 import Order from "../models/Order.js";
 import Settings from "../models/Settings.js";
@@ -120,14 +121,16 @@ export const activateReseller = async (req, res) => {
     user.brandName = brandName;
     user.brandSlug = slug;
     user.resellerDomain = finalDomain;
+    user.themeColor = "#ff6b00";
     user.resellerActivatedAt = new Date();
 
-// Deduct Activation Fee & Log Transaction
+    // Deduct Activation Fee & Log Transaction
     wallet.balance -= activationFee;
+
     wallet.transactions.push({
-      type: "Withdrawal",              
-      amount: -activationFee,      
-      status: "Completed",        
+      type: "Withdrawal",
+      amount: -activationFee,
+      status: "Completed",
       description: "Reseller panel activation fee",
       date: new Date(),
     });
@@ -141,11 +144,16 @@ export const activateReseller = async (req, res) => {
       activationFee,
       remainingBalance: wallet.balance,
     });
+
   } catch (error) {
     console.error("Activate reseller error:", error);
-    res.status(500).json({ message: "Failed to activate reseller" });
+
+    res.status(500).json({
+      message: "Failed to activate reseller",
+    });
   }
 };
+
 /*
 --------------------------------
 Get Reseller Activation Fee
@@ -176,7 +184,7 @@ Reseller Dashboard
 */
 export const getResellerDashboard = async (req, res) => {
   try {
-    // Use req.reseller if available (subdomain)
+
     const resellerId = req.reseller?._id || req.user._id;
 
     const usersCount = await User.countDocuments({
@@ -211,6 +219,7 @@ export const getResellerDashboard = async (req, res) => {
 
   } catch (error) {
     console.error(error);
+
     res.status(500).json({
       message: "Failed to load dashboard",
     });
@@ -272,22 +281,33 @@ Withdraw Earnings
 */
 export const withdrawResellerFunds = async (req, res) => {
   try {
+
     const { amount } = req.body;
+
     const settings = await Settings.findOne();
     const minWithdraw = settings?.resellerWithdrawMin || 10;
 
     const user = await User.findById(req.user._id);
     const wallet = await Wallet.findOne({ user: user._id });
 
-    if (amount < minWithdraw) return res.status(400).json({ message: `Minimum withdraw is $${minWithdraw}` });
-    if (amount > (user.resellerWallet || 0)) return res.status(400).json({ message: "Insufficient balance" });
+    if (amount < minWithdraw) {
+      return res.status(400).json({
+        message: `Minimum withdraw is $${minWithdraw}`,
+      });
+    }
 
-    // Deduct from resellerWallet
+    if (amount > (user.resellerWallet || 0)) {
+      return res.status(400).json({
+        message: "Insufficient balance",
+      });
+    }
+
     user.resellerWallet -= amount;
+
     await user.save();
 
-    // Log transaction in Wallet
     if (wallet) {
+
       wallet.transactions.push({
         type: "Withdrawal",
         amount: amount,
@@ -295,7 +315,9 @@ export const withdrawResellerFunds = async (req, res) => {
         description: "Reseller funds withdrawal",
         date: new Date(),
       });
+
       wallet.balance -= amount;
+
       await wallet.save();
     }
 
@@ -303,31 +325,40 @@ export const withdrawResellerFunds = async (req, res) => {
       message: "Withdraw request submitted",
       remainingBalance: user.resellerWallet,
     });
+
   } catch (error) {
     console.error(error);
-    res.status(500).json({ message: "Withdraw failed" });
+
+    res.status(500).json({
+      message: "Withdraw failed",
+    });
   }
 };
-
 
 /*
 --------------------------------
 Update Branding
 --------------------------------
 */
-exports.updateBranding = async (req, res) => {
+export const updateBranding = async (req, res) => {
   try {
+
     const user = req.user;
 
-    const {
-      brandName,
-      logo,
-      themeColor
-    } = req.body;
+    const { brandName, logo, themeColor } = req.body;
 
-    if (brandName !== undefined) user.brandName = brandName;
-    if (logo !== undefined) user.logo = logo;
-    if (themeColor !== undefined) user.themeColor = themeColor;
+    if (brandName !== undefined) {
+      user.brandName = brandName;
+      user.brandSlug = brandName.toLowerCase().replace(/[^a-z0-9]/g, "");
+    }
+
+    if (logo !== undefined) {
+      user.logo = logo;
+    }
+
+    if (themeColor !== undefined) {
+      user.themeColor = themeColor;
+    }
 
     await user.save();
 
@@ -340,6 +371,9 @@ exports.updateBranding = async (req, res) => {
 
   } catch (error) {
     console.error(error);
-    res.status(500).json({ message: "Branding update failed" });
+
+    res.status(500).json({
+      message: "Branding update failed",
+    });
   }
 };

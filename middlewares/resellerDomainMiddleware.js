@@ -1,5 +1,4 @@
 // middleware/resellerDomainMiddleware.js
-
 import User from "../models/User.js";
 
 const BASE_DOMAIN = "marinepanel.online";
@@ -18,6 +17,13 @@ export const detectResellerDomain = async (req, res, next) => {
 
     if (!host) {
       console.log("No host header detected. Skipping reseller detection.");
+      // Attach default branding
+      req.brand = {
+        brandName: "Marine Panel",
+        logo: null,
+        themeColor: "#0f172a",
+        domain: BASE_DOMAIN,
+      };
       console.log("------ Detection End ------\n");
       return next();
     }
@@ -36,6 +42,13 @@ export const detectResellerDomain = async (req, res, next) => {
     // Skip main domain requests
     if (host === BASE_DOMAIN) {
       console.log("Main platform domain detected. No reseller.");
+      // Attach default branding
+      req.brand = {
+        brandName: "Marine Panel",
+        logo: null,
+        themeColor: "#0f172a",
+        domain: BASE_DOMAIN,
+      };
       console.log("------ Detection End ------\n");
       return next();
     }
@@ -87,17 +100,37 @@ export const detectResellerDomain = async (req, res, next) => {
     // =========================
     if (reseller) {
       req.reseller = reseller;
+      // Attach dynamic branding info for white-labeling
+      req.brand = {
+        brandName: reseller.brandName || reseller.brandSlug,
+        logo: reseller.logo || null,
+        themeColor: reseller.themeColor || "#0f172a",
+        domain: reseller.resellerDomain || `${reseller.brandSlug}.${BASE_DOMAIN}`,
+      };
       console.log("Reseller attached to request:", reseller._id);
     } else {
-      console.log("No reseller detected for this request.");
+      // Default branding if no reseller matched
+      req.brand = {
+        brandName: "Marine Panel",
+        logo: null,
+        themeColor: "#0f172a",
+        domain: BASE_DOMAIN,
+      };
+      console.log("No reseller detected for this request. Using default branding.");
     }
 
     console.log("------ Detection End ------\n");
-
     next();
 
   } catch (error) {
     console.error("❌ Reseller domain detection error:", error);
+    // fallback branding
+    req.brand = {
+      brandName: "Marine Panel",
+      logo: null,
+      themeColor: "#0f172a",
+      domain: BASE_DOMAIN,
+    };
     next();
   }
 };

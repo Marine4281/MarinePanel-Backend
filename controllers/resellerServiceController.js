@@ -22,7 +22,7 @@ export const getResellerServices = async (req, res) => {
     const settings = await Settings.findOne();
     const adminCommission = Number(settings?.commission || 0);
 
-    // Fetch active services (optimized query)
+    // Fetch active services
     const services = await Service.find({ status: true })
       .select("name rate min max category visible serviceId")
       .lean();
@@ -33,19 +33,19 @@ export const getResellerServices = async (req, res) => {
     }).lean();
 
     const overridesMap = {};
-
     resellerOverrides.forEach((r) => {
       overridesMap[r.serviceId.toString()] = r;
     });
 
     const formattedServices = services.map((s) => {
+
       const providerRate = Number(s.rate || 0);
 
-      // Admin-adjusted system rate (normal users see this)
+      // Admin-adjusted price (normal users see this)
       const systemRate =
         providerRate + (providerRate * adminCommission) / 100;
 
-      // Apply reseller commission
+      // Reseller selling price
       const resellerRate =
         systemRate + (systemRate * resellerCommission) / 100;
 
@@ -64,15 +64,14 @@ export const getResellerServices = async (req, res) => {
 
         visible,
 
-        // Admin system price
+        // Provider cost
+        providerRate,
+
+        // System price (admin adjusted)
         systemRate,
 
         // Reseller selling price
         resellerRate,
-
-        // Used by some frontend components
-        rate: resellerRate,
-        price: resellerRate,
 
         min: Number(s.min ?? 1),
         max: Number(s.max ?? 100000),
@@ -92,6 +91,7 @@ export const getResellerServices = async (req, res) => {
     });
   }
 };
+
 
 /* =========================================================
 UPDATE SERVICE VISIBILITY (PER RESELLER)
@@ -132,6 +132,7 @@ export const updateServiceVisibility = async (req, res) => {
   }
 };
 
+
 /* =========================================================
 UPDATE SERVICE NAME OR CATEGORY (GLOBAL)
 ========================================================= */
@@ -171,6 +172,7 @@ export const updateServiceName = async (req, res) => {
     });
   }
 };
+
 
 /* =========================================================
 SET RESELLER COMMISSION

@@ -1,3 +1,4 @@
+//models/ResellerService.js
 import mongoose from "mongoose";
 
 const resellerServiceSchema = new mongoose.Schema({

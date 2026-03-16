@@ -315,34 +315,31 @@ export const withdrawResellerFunds = async (req, res) => {
 Update Branding
 --------------------------------
 */
-export const updateBranding = async (req, res) => {
+exports.updateBranding = async (req, res) => {
   try {
+    const user = req.user;
 
-    const { logo, themeColor } = req.body;
+    const {
+      brandName,
+      logo,
+      themeColor
+    } = req.body;
 
-    const user = await User.findById(req.user._id);
-
-    if (!user.isReseller) {
-      return res.status(403).json({
-        message: "Not a reseller",
-      });
-    }
-
+    if (brandName !== undefined) user.brandName = brandName;
     if (logo !== undefined) user.logo = logo;
     if (themeColor !== undefined) user.themeColor = themeColor;
 
     await user.save();
 
     res.json({
-      message: "Branding updated",
+      message: "Branding updated successfully",
+      brandName: user.brandName,
+      logo: user.logo,
+      themeColor: user.themeColor,
     });
 
   } catch (error) {
     console.error(error);
-
-    res.status(500).json({
-      message: "Failed to update branding",
-    });
+    res.status(500).json({ message: "Branding update failed" });
   }
 };
-

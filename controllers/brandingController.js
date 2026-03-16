@@ -1,16 +1,7 @@
 // controllers/brandingController.js
 
 import Settings from "../models/Settings.js";
-
-/*
---------------------------------
-Get Branding
---------------------------------
-Priority:
-1) Domain reseller
-2) Logged reseller
-3) Platform settings
-*/
+import Reseller from "../models/Reseller.js";
 
 export const getBranding = async (req, res) => {
   try {
@@ -23,26 +14,34 @@ export const getBranding = async (req, res) => {
 
     if (req.brand) {
       return res.json({
-        brandName: req.brand.brandName || null,
+        brandName: req.brand.brandName || "Reseller Panel",
         logo: req.brand.logo || null,
-        themeColor: req.brand.themeColor || null,
-        domain: req.brand.domain || null,
+        themeColor: req.brand.themeColor || "#16a34a", // default green
+        domain: req.brand.domain || req.brand.subdomain || null,
       });
     }
 
     /*
     --------------------------------
-    2️⃣ Logged-in Reseller Dashboard
+    2️⃣ Logged Reseller Dashboard
     --------------------------------
     */
 
-    if (req.user && req.user.isReseller) {
-      return res.json({
-        brandName: req.user.brandName || null,
-        logo: req.user.logo || null,
-        themeColor: req.user.themeColor || null,
-        domain: req.user.resellerDomain || null,
-      });
+    if (req.user?.isReseller) {
+
+      const reseller = await Reseller.findOne({
+        owner: req.user._id
+      }).lean();
+
+      if (reseller) {
+        return res.json({
+          brandName: reseller.brandName || "Reseller Panel",
+          logo: reseller.logo || null,
+          themeColor: reseller.themeColor || "#16a34a",
+          domain: reseller.domain || reseller.subdomain || null,
+        });
+      }
+
     }
 
     /*
@@ -51,13 +50,13 @@ export const getBranding = async (req, res) => {
     --------------------------------
     */
 
-    const settings = await Settings.findOne();
+    const settings = await Settings.findOne().lean();
 
     return res.json({
-      brandName: settings?.platformName || null,
+      brandName: settings?.platformName || "MarinePanel",
       logo: settings?.logo || null,
-      themeColor: settings?.themeColor || null,
-      domain: settings?.platformDomain || null,
+      themeColor: settings?.themeColor || "#2563eb",
+      domain: settings?.platformDomain || "marinepanel.online",
     });
 
   } catch (error) {

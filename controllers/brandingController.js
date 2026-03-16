@@ -9,13 +9,13 @@ Get Branding for Domain
 
 export const getBranding = async (req, res) => {
   try {
-    // reseller detected from middleware
-    const reseller = req.reseller;
+    // Use dynamic brand info from middleware
+    const brand = req.brand;
 
-    // Default main branding
-    if (!reseller) {
+    if (!brand) {
+      // fallback
       return res.json({
-        brandName: "MarinePanel",
+        brandName: "Marine Panel",
         logo: null,
         themeColor: "#0f172a",
         domain: "marinepanel.online",
@@ -23,11 +23,11 @@ export const getBranding = async (req, res) => {
     }
 
     res.json({
-      brandName: reseller.brandName || "MarinePanel",
-      logo: reseller.logo || null,
-      themeColor: reseller.themeColor || "#0f172a",
-      domain: reseller.customDomain || `${reseller.brandSlug}.marinepanel.online`,
-      resellerId: reseller._id,
+      brandName: brand.brandName,
+      logo: brand.logo,
+      themeColor: brand.themeColor,
+      domain: brand.domain,
+      resellerId: req.reseller?._id || null,
     });
 
   } catch (error) {

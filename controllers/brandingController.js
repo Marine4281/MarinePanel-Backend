@@ -1,36 +1,39 @@
+//controllers/brandingController.js
 import User from "../models/User.js";
+
+/*
+--------------------------------
+Get Branding for Domain
+--------------------------------
+*/
 
 export const getBranding = async (req, res) => {
   try {
-    if (req.brand) {
+    // Use dynamic brand info from middleware
+    const brand = req.brand;
+
+    if (!brand) {
+      // fallback
       return res.json({
-        brandName: req.brand.resellerBrand || "Reseller Panel",
-        logo: req.brand.logo || null,
-        themeColor: req.brand.themeColor || "#16a34a",
-        domain: req.brand.resellerDomain || null,
+        brandName: "Marine Panel",
+        logo: null,
+        themeColor: "#0f172a",
+        domain: "marinepanel.online",
       });
     }
 
-    if (req.user?.isReseller) {
-      return res.json({
-        brandName: req.user.resellerBrand || req.user.brandName || "Reseller Panel",
-        logo: req.user.logo || null,
-        themeColor: req.user.themeColor || "#16a34a",
-        domain: req.user.resellerDomain || null,
-      });
-    }
-
-    // Optional: if neither is present, you can return a hardcoded default
-    return res.json({
-      brandName: "MarinePanel",
-      logo: null,
-      themeColor: "#2563eb",
-      domain: "marinepanel.online",
+    res.json({
+      brandName: brand.brandName,
+      logo: brand.logo,
+      themeColor: brand.themeColor,
+      domain: brand.domain,
+      resellerId: req.reseller?._id || null,
     });
+
   } catch (error) {
-    console.error("Branding error:", error);
+    console.error(error);
     res.status(500).json({
-      message: "Branding load failed",
+      message: "Failed to load branding",
     });
   }
 };

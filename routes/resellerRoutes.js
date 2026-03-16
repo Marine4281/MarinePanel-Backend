@@ -1,3 +1,4 @@
+//routes/resellerRoutes.js
 import express from "express";
 import {
   activateReseller,

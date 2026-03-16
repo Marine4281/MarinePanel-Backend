@@ -49,21 +49,39 @@ const userSchema = new mongoose.Schema(
     --------------------------------
     */
 
-    // If user activated reseller panel
     isReseller: {
       type: Boolean,
       default: false,
       index: true,
     },
 
-    // Brand name
-    resellerBrand: {
+    // Branding fields (used everywhere)
+    brandName: {
       type: String,
       default: null,
       trim: true,
     },
 
-    // Subdomain
+    brandSlug: {
+      type: String,
+      default: null,
+      trim: true,
+      index: true,
+    },
+
+    logo: {
+      type: String,
+      default: null,
+      trim: true,
+    },
+
+    themeColor: {
+      type: String,
+      default: "#ff6b00",
+      trim: true,
+    },
+
+    // Subdomain and custom domain
     resellerDomain: {
       type: String,
       default: null,
@@ -71,7 +89,6 @@ const userSchema = new mongoose.Schema(
       index: true,
     },
 
-    // Optional custom domain
     resellerCustomDomain: {
       type: String,
       default: null,
@@ -120,7 +137,6 @@ const userSchema = new mongoose.Schema(
     --------------------------------
     */
 
-    // If user belongs to a reseller
     resellerOwner: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
@@ -150,10 +166,13 @@ const userSchema = new mongoose.Schema(
 );
 
 /*
+--------------------------------
 Indexes for fast reseller queries
+--------------------------------
 */
 userSchema.index({ resellerOwner: 1 });
 userSchema.index({ resellerDomain: 1 });
+userSchema.index({ brandSlug: 1 });
 
 const User = mongoose.model("User", userSchema);
 

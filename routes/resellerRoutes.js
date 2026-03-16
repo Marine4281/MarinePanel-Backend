@@ -6,7 +6,6 @@ import {
   getResellerUsers,
   getResellerOrders,
   withdrawResellerFunds,
-  getBranding,
   updateBranding,
 } from "../controllers/resellerController.js";
 
@@ -58,12 +57,6 @@ Withdraw Earnings
 */
 router.post("/withdraw", protect, withdrawResellerFunds);
 
-/*
---------------------------------
-Get Branding (for landing page)
---------------------------------
-*/
-router.get("/branding", getBranding); // no auth needed for public landing
 
 /*
 --------------------------------

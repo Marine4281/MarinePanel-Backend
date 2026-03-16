@@ -1,18 +1,26 @@
 // routes/brandingRoutes.js
+
 import express from "express";
-import { getBranding, updateBranding } from "../controllers/brandController.js";
-import { detectResellerDomain } from "../middleware/resellerDomainMiddleware.js";
-import { protect } from "../middleware/authMiddleware.js";
+import { getBranding } from "../controllers/brandingController.js";
+import { updateBranding } from "../controllers/resellerController.js";
+import { protect } from "../middlewares/authMiddleware.js";
 
 const router = express.Router();
 
-// Detect reseller first
-router.use(detectResellerDomain);
+/*
+--------------------------------
+Get Branding (Public)
+Used by frontend to detect
+brand name, logo, theme color
+--------------------------------
+*/
+router.get("/", getBranding);
 
-// Fetch branding
-router.get("/", protect, getBranding);
-
-// Update branding (reseller logged in)
+/*
+--------------------------------
+Update Branding (Reseller Only)
+--------------------------------
+*/
 router.patch("/", protect, updateBranding);
 
 export default router;

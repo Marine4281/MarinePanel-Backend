@@ -1,3 +1,4 @@
+//controllers/resellerController.js
 import User from "../models/User.js";
 import Order from "../models/Order.js";
 import Settings from "../models/Settings.js";
@@ -345,27 +346,3 @@ export const updateBranding = async (req, res) => {
   }
 };
 
-//Branding
-export const getBranding = async (req, res) => {
-  try {
-    if (!req.reseller) {
-      return res.json({
-        brandName: "MarinePanel",
-        logo: null,
-        themeColor: "#ff6b00"
-      });
-    }
-
-    const reseller = req.reseller;
-
-    res.json({
-      brandName: reseller.brandName || "MarinePanel",
-      logo: reseller.logo || null,
-      themeColor: reseller.themeColor || "#ff6b00"
-    });
-
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: "Failed to fetch branding" });
-  }
-};

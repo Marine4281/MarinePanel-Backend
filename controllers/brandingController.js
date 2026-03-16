@@ -1,34 +1,46 @@
 //controllers/brandingController.js
-import User from "../models/User.js";
+const User = require("../models/User");
 
-/*
---------------------------------
-Get Branding for Domain
---------------------------------
-*/
+/**
+ * Get Branding
+ * Priority:
+ * 1) Logged in reseller (dashboard)
+ * 2) Domain reseller (public white label)
+ * 3) Default platform branding
+ */
 
-export const getBranding = async (req, res) => {
+exports.getBranding = async (req, res) => {
   try {
-    const brand = req.brand; // <-- always comes from middleware
-
-    if (!brand) {
+    // 1️⃣ Dashboard branding (logged reseller)
+    if (req.user && req.user.isReseller) {
       return res.json({
-        brandName: "MarinePanel",
-        logo: null,
-        themeColor: "#0f172a",
-        domain: "marinepanel.online",
+        brandName: req.user.brandName || "Reseller Panel",
+        logo: req.user.logo || null,
+        themeColor: req.user.themeColor || "#0f172a",
+        domain: req.user.resellerDomain || null,
       });
     }
 
-    res.json({
-      brandName: brand.brandName,   // <-- use brandName from req.brand
-      logo: brand.logo,
-      themeColor: brand.themeColor,
-      domain: brand.domain,
-      resellerId: req.reseller?._id || null,
+    // 2️⃣ Domain branding (public white label)
+    if (req.brand) {
+      return res.json({
+        brandName: req.brand.brandName || "Reseller Panel",
+        logo: req.brand.logo || null,
+        themeColor: req.brand.themeColor || "#0f172a",
+        domain: req.brand.domain || null,
+      });
+    }
+
+    // 3️⃣ Fallback
+    return res.json({
+      brandName: "Reseller Panel",
+      logo: null,
+      themeColor: "#0f172a",
+      domain: null,
     });
+
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: "Failed to load branding" });
+    console.error("Branding error:", error);
+    res.status(500).json({ message: "Branding load failed" });
   }
 };

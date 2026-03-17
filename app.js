@@ -126,4 +126,60 @@ app.use("/api/provider", providerRoutes);
 app.use("/api/admin/orders", adminOrderRoutes);
 app.use("/api/admin/user-orders", adminUserOrdersRoutes);
 
+/* ========================================
+   SERVE FRONTEND + INJECT BRANDING
+======================================== */
+app.get("*", async (req, res) => {
+  try {
+    const host = req.headers.host;
+
+    let branding = {
+      brandName: "MarinePanel",
+      logo: null,
+      themeColor: "#f97316",
+      domain: "marinepanel.online",
+    };
+
+    // Detect reseller (subdomain or custom domain)
+    const slug = host.split(".")[0];
+
+    if (slug && slug !== "www" && slug !== "marinepanel") {
+      const reseller = await Reseller.findOne({ slug });
+
+      if (reseller) {
+        branding = {
+          brandName: reseller.brandName,
+          logo: reseller.logo,
+          themeColor: reseller.themeColor,
+          domain: reseller.domain,
+        };
+      }
+    }
+
+    // Read built frontend (Vite dist folder)
+    const filePath = path.resolve("dist", "index.html");
+    let html = fs.readFileSync(filePath, "utf-8");
+
+    // Inject branding BEFORE sending to browser
+    html = html.replace(
+      "</head>",
+      `
+      <script>
+        window.__BRANDING__ = ${JSON.stringify(branding)};
+        document.documentElement.style.setProperty("--theme-color", "${branding.themeColor}");
+        document.title = "${branding.brandName}";
+      </script>
+      </head>
+      `
+    );
+
+    res.send(html);
+  } catch (err) {
+    console.error("Branding injection error:", err);
+    res.status(500).send("Server error");
+  }
+});
+
 export default app;
+
+

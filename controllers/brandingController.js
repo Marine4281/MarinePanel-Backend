@@ -1,19 +1,14 @@
-//controllers/brandingController.js
+// controllers/brandingController.js
 import User from "../models/User.js";
 
 export const getBranding = async (req, res) => {
   try {
-    // Priority 1: req.brand (from subdomain or custom domain)
-    if (req.brand) {
-      return res.json({
-        brandName: req.brand.brandName || "Reseller Panel",
-        logo: req.brand.logo || null,
-        themeColor: req.brand.themeColor || "#16a34a",
-        domain: req.brand.domain || null,
-      });
-    }
-
-    // Priority 2: req.user (logged-in reseller)
+    /*
+    --------------------------------
+    Priority 1: Logged-in reseller
+    Ensures reseller dashboard always shows correct branding
+    --------------------------------
+    */
     if (req.user?.isReseller) {
       return res.json({
         brandName: req.user.brandName || "Reseller Panel",
@@ -23,7 +18,26 @@ export const getBranding = async (req, res) => {
       });
     }
 
-    // Default platform branding
+    /*
+    --------------------------------
+    Priority 2: Subdomain / custom domain (req.brand)
+    For end users visiting reseller links
+    --------------------------------
+    */
+    if (req.brand) {
+      return res.json({
+        brandName: req.brand.brandName || "Reseller Panel",
+        logo: req.brand.logo || null,
+        themeColor: req.brand.themeColor || "#16a34a",
+        domain: req.brand.domain || null,
+      });
+    }
+
+    /*
+    --------------------------------
+    Default platform branding
+    --------------------------------
+    */
     return res.json({
       brandName: "MarinePanel",
       logo: null,

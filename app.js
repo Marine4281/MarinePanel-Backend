@@ -6,6 +6,9 @@ import helmet from "helmet";
 import morgan from "morgan";
 import rateLimit from "express-rate-limit";
 import cookieParser from "cookie-parser";
+import fs from "fs";
+import path from "path";
+import { fileURLToPath } from "url";
 
 // Routes
 import authRoutes from "./routes/authRoutes.js";
@@ -36,6 +39,9 @@ import endUserRoutes from "./routes/endUserRoutes.js";
 import adminOrderRoutes from "./routes/adminOrderRoutes.js";
 import adminUserOrdersRoutes from "./routes/adminUserOrdersRoutes.js";
 import providerRoutes from "./routes/providerRoutes.js";
+
+// User model for branding
+import User from "./models/User.js";
 
 dotenv.config();
 const app = express();
@@ -126,4 +132,65 @@ app.use("/api/provider", providerRoutes);
 app.use("/api/admin/orders", adminOrderRoutes);
 app.use("/api/admin/user-orders", adminUserOrdersRoutes);
 
+
+/* ========================================
+   SERVE FRONTEND + INJECT BRANDING
+======================================== */
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+app.use(express.static(path.join(__dirname, "dist")));
+
+// Catch-all route for React + dynamic branding
+app.use(async (req, res) => {
+  try {
+    const host = req.headers.host;
+
+    let branding = {
+      brandName: "MarinePanel",
+      logo: null,
+      themeColor: "#f97316",
+      domain: "marinepanel.online",
+    };
+
+    const parts = host.split(".");
+    let slug = host.includes("marinepanel.online") && parts.length > 2 ? parts[0] : host;
+
+    if (slug && slug !== "www" && slug !== "marinepanel") {
+      const user = await User.findOne({
+        $or: [
+          { brandSlug: slug },
+          { resellerDomain: host },
+          { resellerCustomDomain: host }
+        ],
+        isReseller: true
+      });
+
+      if (user) {
+        branding = {
+          brandName: user.brandName || branding.brandName,
+          logo: user.logo || branding.logo,
+          themeColor: user.themeColor || branding.themeColor,
+          domain: user.resellerDomain || user.resellerCustomDomain || host
+        };
+      }
+    }
+
+    const filePath = path.join(__dirname, "dist", "index.html");
+    let html = fs.readFileSync(filePath, "utf-8");
+
+    html = html.replace(
+      "</head>",
+      `<script>
+        window.__BRANDING__ = ${JSON.stringify(branding)};
+        document.documentElement.style.setProperty("--theme-color", "${branding.themeColor}");
+        document.title = "${branding.brandName}";
+      </script></head>`
+    );
+
+    res.send(html);
+  } catch (err) {
+    console.error("Branding injection error:", err);
+    res.status(500).send("Server error");
+  }
+});
 export default app;

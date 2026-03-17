@@ -1,30 +1,35 @@
 // controllers/serviceController.js
 
 import Service from "../models/Service.js";
+import Settings from "../models/Settings.js";
+import ResellerService from "../models/ResellerService.js";
 import { getCache, setCache } from "../utils/cache.js";
 
 /* =========================================================
-   GET PUBLIC SERVICES (CACHED)
-   - Only active services
-   - Clears automatically when admin updates
+   GET PUBLIC SERVICES (SMART)
+   - Detects reseller domain
+   - Applies reseller pricing if needed
 ========================================================= */
 export const getServicesPublic = async (req, res) => {
   try {
     /*
-    --------------------------------
-    If request is from reseller domain
-    --------------------------------
+    ========================================================
+    🟢 CASE 1: Request is from reseller domain
+    ========================================================
     */
     if (req.reseller) {
       const reseller = req.reseller;
 
       const resellerCommission = Number(reseller.resellerCommissionRate || 0);
 
+      // Get admin commission
       const settings = await Settings.findOne();
       const adminCommission = Number(settings?.commission || 0);
 
+      // Get services
       const services = await Service.find({ status: true }).lean();
 
+      // Get reseller overrides
       const resellerOverrides = await ResellerService.find({
         resellerId: reseller._id,
       }).lean();
@@ -34,59 +39,69 @@ export const getServicesPublic = async (req, res) => {
         overridesMap[r.serviceId.toString()] = r;
       });
 
-      const formatted = services.map((s) => {
-        const providerRate = Number(s.rate || 0);
+      const formattedServices = services
+        .map((s) => {
+          const providerRate = Number(s.rate || 0);
 
-        const systemRate =
-          providerRate + (providerRate * adminCommission) / 100;
+          // Admin price
+          const systemRate =
+            providerRate + (providerRate * adminCommission) / 100;
 
-        const resellerRate =
-          systemRate + (systemRate * resellerCommission) / 100;
+          // Reseller price
+          const resellerRate =
+            systemRate + (systemRate * resellerCommission) / 100;
 
-        const override = overridesMap[s._id.toString()];
+          const override = overridesMap[s._id.toString()];
 
-        const visible =
-          override && override.visible !== undefined
-            ? override.visible
-            : s.visible ?? true;
+          const visible =
+            override && override.visible !== undefined
+              ? override.visible
+              : s.visible ?? true;
 
-        return {
-          _id: s._id,
-          serviceId: s.serviceId || s._id,
-          name: s.name,
-          category: s.category || "General",
-          visible,
-          price: resellerRate, // 👈 IMPORTANT (final price)
-          min: Number(s.min ?? 1),
-          max: Number(s.max ?? 100000),
-        };
-      });
+          return {
+            _id: s._id,
+            serviceId: s.serviceId || s._id,
+            name: s.name,
+            category: s.category || "General",
+            visible,
+            price: resellerRate, // ✅ FINAL PRICE FOR USER
+            min: Number(s.min ?? 1),
+            max: Number(s.max ?? 100000),
+          };
+        })
+        .filter((s) => s.visible); // hide disabled services
 
-      return res.json(formatted);
+      return res.status(200).json(formattedServices);
     }
 
     /*
-    --------------------------------
-    Normal public (main panel)
-    --------------------------------
+    ========================================================
+    🔵 CASE 2: Normal public (main panel)
+    ========================================================
     */
     const cacheKey = "public_services";
 
+    // 1️⃣ Check cache
     const cached = getCache(cacheKey);
-    if (cached) return res.status(200).json(cached);
+    if (cached) {
+      return res.status(200).json(cached);
+    }
 
+    // 2️⃣ Fetch from DB
     const services = await Service.find({ status: true })
       .sort({ createdAt: -1 })
       .lean();
 
+    // 3️⃣ Cache for 5 minutes
     setCache(cacheKey, services, 300);
 
-    res.status(200).json(services);
+    return res.status(200).json(services);
 
   } catch (error) {
     console.error("GET PUBLIC SERVICES ERROR:", error);
     res.status(500).json({
       message: "Failed to fetch services",
+      error: error.message,
     });
   }
 };

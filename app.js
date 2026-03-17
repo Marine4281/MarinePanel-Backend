@@ -125,10 +125,18 @@ app.use("/api/provider", providerRoutes);
 // ← NEW: Admin Orders
 app.use("/api/admin/orders", adminOrderRoutes);
 app.use("/api/admin/user-orders", adminUserOrdersRoutes);
-
 /* ========================================
    SERVE FRONTEND + INJECT BRANDING
 ======================================== */
+import fs from "fs";
+import path from "path";
+import { fileURLToPath } from "url";
+import Reseller from "./models/Reseller.js";
+
+// Fix __dirname for ES modules
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
 app.get("*", async (req, res) => {
   try {
     const host = req.headers.host;
@@ -140,11 +148,25 @@ app.get("*", async (req, res) => {
       domain: "marinepanel.online",
     };
 
-    // Detect reseller (subdomain or custom domain)
-    const slug = host.split(".")[0];
+    // 🔥 Better reseller detection
+    const parts = host.split(".");
+
+    let slug = null;
+
+    if (host.includes("marinepanel.online")) {
+      // subdomain
+      if (parts.length > 2) {
+        slug = parts[0];
+      }
+    } else {
+      // custom domain (future-proof)
+      slug = host;
+    }
 
     if (slug && slug !== "www" && slug !== "marinepanel") {
-      const reseller = await Reseller.findOne({ slug });
+      const reseller = await Reseller.findOne({
+        $or: [{ slug }, { domain: host }],
+      });
 
       if (reseller) {
         branding = {
@@ -156,11 +178,11 @@ app.get("*", async (req, res) => {
       }
     }
 
-    // Read built frontend (Vite dist folder)
-    const filePath = path.resolve("dist", "index.html");
+    // 🔥 Correct path for production
+    const filePath = path.join(__dirname, "dist", "index.html");
     let html = fs.readFileSync(filePath, "utf-8");
 
-    // Inject branding BEFORE sending to browser
+    // Inject branding
     html = html.replace(
       "</head>",
       `

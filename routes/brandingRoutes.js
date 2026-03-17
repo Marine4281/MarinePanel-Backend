@@ -1,5 +1,4 @@
 // routes/brandingRoutes.js
-
 import express from "express";
 import { getBranding } from "../controllers/brandingController.js";
 import { updateBranding } from "../controllers/resellerController.js";
@@ -9,12 +8,12 @@ const router = express.Router();
 
 /*
 --------------------------------
-Get Branding (Public)
-Used by frontend to detect
-brand name, logo, theme color
+Get Branding
+- For reseller dashboard: requires login to detect reseller
+- For end users: can still work with reseller domain/subdomain if resellerDomainMiddleware is applied globally
 --------------------------------
 */
-router.get("/", getBranding);
+router.get("/", protect, getBranding);
 
 /*
 --------------------------------

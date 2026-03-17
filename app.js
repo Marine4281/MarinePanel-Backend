@@ -153,7 +153,7 @@ app.use(express.static(path.join(__dirname, "dist")));
 /* ========================================
    SERVE FRONTEND + INJECT BRANDING
 ======================================== */
-app.get("*", async (req, res) => {
+app.get("/*", async (req, res) => {
   try {
     const host = req.headers.host;
 

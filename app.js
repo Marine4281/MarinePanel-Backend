@@ -7,10 +7,16 @@ import morgan from "morgan";
 import rateLimit from "express-rate-limit";
 import cookieParser from "cookie-parser";
 
+// 🔥 NEW (must be at top)
+import fs from "fs";
+import path from "path";
+import { fileURLToPath } from "url";
+import Reseller from "./models/Reseller.js";
+
 // Routes
 import authRoutes from "./routes/authRoutes.js";
-import serviceRoutes from "./routes/serviceRoutes.js";           // ✅ Public service routes
-import adminServiceRoutes from "./routes/adminServiceRoutes.js"; // ✅ Admin-only services
+import serviceRoutes from "./routes/serviceRoutes.js";
+import adminServiceRoutes from "./routes/adminServiceRoutes.js";
 import orderRoutes from "./routes/orderRoutes.js";
 import walletRoutes from "./routes/walletRoutes.js";
 import userRoutes from "./routes/userRoutes.js";
@@ -23,7 +29,7 @@ import smmWebhookRoutes from "./routes/smmWebhookRoutes.js";
 import paymentRoutes from "./routes/paymentRoutes.js";
 import commissionRoutes from "./routes/commissionRoutes.js";
 
-//Reseller Routes
+// Reseller Routes
 import resellerRoutes from "./routes/resellerRoutes.js";
 import { detectResellerDomain } from "./middlewares/resellerDomainMiddleware.js";
 import brandingRoutes from "./routes/brandingRoutes.js";
@@ -31,8 +37,7 @@ import resellerGuideRoutes from "./routes/resellerGuideRoutes.js";
 import resellerServiceRoutes from "./routes/resellerServiceRoutes.js";
 import endUserRoutes from "./routes/endUserRoutes.js";
 
-
-// ← NEW: Admin Orders Route
+// Admin
 import adminOrderRoutes from "./routes/adminOrderRoutes.js";
 import adminUserOrdersRoutes from "./routes/adminUserOrdersRoutes.js";
 import providerRoutes from "./routes/providerRoutes.js";
@@ -42,22 +47,30 @@ const app = express();
 
 app.set("trust proxy", 1);
 
-/* Security */
+/* ========================================
+   FIX __dirname (ES MODULES)
+======================================== */
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+/* ========================================
+   SECURITY
+======================================== */
 app.use(helmet());
 
-/* Rate limit */
 app.use(
-rateLimit({
-windowMs: 15 * 60 * 1000, // 15 minutes
-max: 100,                 // limit each IP
-})
+  rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 100,
+  })
 );
 
-/* Middlewares */
+/* ========================================
+   CORS
+======================================== */
 app.use(
   cors({
     origin: (origin, callback) => {
-
       if (!origin) return callback(null, true);
 
       if (
@@ -76,28 +89,37 @@ app.use(
   })
 );
 
-/* Body parser */
+/* ========================================
+   BODY PARSER
+======================================== */
 app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ limit: "50mb", extended: true }));
 app.use(morgan("dev"));
-/* Health check */
+
+/* ========================================
+   HEALTH CHECK
+======================================== */
 app.get("/", (req, res) => {
-res.json({ status: "Marine backend running" });
+  res.json({ status: "Marine backend running" });
 });
 
-/* CORS preflight */
-app.options(/./, cors());
+app.options(/.*/, cors());
 
-/* Cookies routes */
+/* ========================================
+   COOKIES
+======================================== */
 app.use(cookieParser());
 
-/* Detect reseller subdomain */
+/* ========================================
+   DETECT RESELLER
+======================================== */
 app.use(detectResellerDomain);
 
-
-/* Public routes */
+/* ========================================
+   API ROUTES
+======================================== */
 app.use("/api/auth", authRoutes);
-app.use("/api/services", serviceRoutes); // ✅ public service routes
+app.use("/api/services", serviceRoutes);
 app.use("/api/orders", orderRoutes);
 app.use("/api/wallet", walletRoutes);
 app.use("/api/users", userRoutes);
@@ -106,37 +128,31 @@ app.use("/api/smm", smmWebhookRoutes);
 app.use("/api/payment", paymentRoutes);
 app.use("/api/settings", commissionRoutes);
 
-//Reseller Routes
+// Reseller
 app.use("/api/reseller", resellerRoutes);
 app.use("/api/branding", brandingRoutes);
 app.use("/api/reseller-guides", resellerGuideRoutes);
 app.use("/api/reseller/services", resellerServiceRoutes);
 app.use("/api/end-users", endUserRoutes);
 
-
-/* Admin routes */
+// Admin
 app.use("/api/admin", adminRoutes);
 app.use("/api/admin/users", adminUserRoutes);
-app.use("/api/admin/services", adminServiceRoutes); // ✅ admin-only service routes
+app.use("/api/admin/services", adminServiceRoutes);
 app.use("/api/admin/settings", adminSettingsRoutes);
 app.use("/api/admin/payment-methods", adminPaymentMethodRoutes);
 app.use("/api/provider", providerRoutes);
-
-// ← NEW: Admin Orders
 app.use("/api/admin/orders", adminOrderRoutes);
 app.use("/api/admin/user-orders", adminUserOrdersRoutes);
+
+/* ========================================
+   SERVE FRONTEND STATIC FILES
+======================================== */
+app.use(express.static(path.join(__dirname, "dist")));
+
 /* ========================================
    SERVE FRONTEND + INJECT BRANDING
 ======================================== */
-import fs from "fs";
-import path from "path";
-import { fileURLToPath } from "url";
-import Reseller from "./models/Reseller.js";
-
-// Fix __dirname for ES modules
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-
 app.get("*", async (req, res) => {
   try {
     const host = req.headers.host;
@@ -148,18 +164,16 @@ app.get("*", async (req, res) => {
       domain: "marinepanel.online",
     };
 
-    // 🔥 Better reseller detection
+    // 🔥 Detect reseller properly
     const parts = host.split(".");
-
     let slug = null;
 
     if (host.includes("marinepanel.online")) {
-      // subdomain
       if (parts.length > 2) {
         slug = parts[0];
       }
     } else {
-      // custom domain (future-proof)
+      // custom domain
       slug = host;
     }
 
@@ -178,11 +192,9 @@ app.get("*", async (req, res) => {
       }
     }
 
-    // 🔥 Correct path for production
     const filePath = path.join(__dirname, "dist", "index.html");
     let html = fs.readFileSync(filePath, "utf-8");
 
-    // Inject branding
     html = html.replace(
       "</head>",
       `
@@ -203,5 +215,3 @@ app.get("*", async (req, res) => {
 });
 
 export default app;
-
-

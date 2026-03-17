@@ -10,20 +10,75 @@ import { getCache, setCache } from "../utils/cache.js";
 ========================================================= */
 export const getServicesPublic = async (req, res) => {
   try {
-    const cacheKey = "public_services";
+    /*
+    --------------------------------
+    If request is from reseller domain
+    --------------------------------
+    */
+    if (req.reseller) {
+      const reseller = req.reseller;
 
-    // 🔥 1️⃣ Check cache first
-    const cached = getCache(cacheKey);
-    if (cached) {
-      return res.status(200).json(cached);
+      const resellerCommission = Number(reseller.resellerCommissionRate || 0);
+
+      const settings = await Settings.findOne();
+      const adminCommission = Number(settings?.commission || 0);
+
+      const services = await Service.find({ status: true }).lean();
+
+      const resellerOverrides = await ResellerService.find({
+        resellerId: reseller._id,
+      }).lean();
+
+      const overridesMap = {};
+      resellerOverrides.forEach((r) => {
+        overridesMap[r.serviceId.toString()] = r;
+      });
+
+      const formatted = services.map((s) => {
+        const providerRate = Number(s.rate || 0);
+
+        const systemRate =
+          providerRate + (providerRate * adminCommission) / 100;
+
+        const resellerRate =
+          systemRate + (systemRate * resellerCommission) / 100;
+
+        const override = overridesMap[s._id.toString()];
+
+        const visible =
+          override && override.visible !== undefined
+            ? override.visible
+            : s.visible ?? true;
+
+        return {
+          _id: s._id,
+          serviceId: s.serviceId || s._id,
+          name: s.name,
+          category: s.category || "General",
+          visible,
+          price: resellerRate, // 👈 IMPORTANT (final price)
+          min: Number(s.min ?? 1),
+          max: Number(s.max ?? 100000),
+        };
+      });
+
+      return res.json(formatted);
     }
 
-    // 🔥 2️⃣ Fetch from DB if not cached
+    /*
+    --------------------------------
+    Normal public (main panel)
+    --------------------------------
+    */
+    const cacheKey = "public_services";
+
+    const cached = getCache(cacheKey);
+    if (cached) return res.status(200).json(cached);
+
     const services = await Service.find({ status: true })
       .sort({ createdAt: -1 })
       .lean();
 
-    // 🔥 3️⃣ Store in cache for 5 minutes
     setCache(cacheKey, services, 300);
 
     res.status(200).json(services);
@@ -32,7 +87,6 @@ export const getServicesPublic = async (req, res) => {
     console.error("GET PUBLIC SERVICES ERROR:", error);
     res.status(500).json({
       message: "Failed to fetch services",
-      error: error.message,
     });
   }
 };

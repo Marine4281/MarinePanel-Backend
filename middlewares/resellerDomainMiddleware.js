@@ -6,15 +6,12 @@ const BASE_DOMAIN = "marinepanel.online";
 
 export const detectResellerDomain = async (req, res, next) => {
   try {
-
     let host =
       req.headers["x-reseller-domain"] ||
       req.headers.host ||
       "";
 
-    if (!host) {
-      return next();
-    }
+    if (!host) return next();
 
     // Remove port
     host = host.split(":")[0];
@@ -30,7 +27,6 @@ export const detectResellerDomain = async (req, res, next) => {
     Skip platform domain
     -----------------------------
     */
-
     if (host === BASE_DOMAIN) {
       return next();
     }
@@ -40,55 +36,54 @@ export const detectResellerDomain = async (req, res, next) => {
 
     /*
     -----------------------------
-    SUBDOMAIN DETECTION
+    STRICT SUBDOMAIN CHECK
     -----------------------------
     */
+    const isSubdomain = host.endsWith(`.${BASE_DOMAIN}`);
 
-    if (host.endsWith(BASE_DOMAIN)) {
+    if (isSubdomain) {
       subdomain = host.replace(`.${BASE_DOMAIN}`, "");
     }
 
     /*
     -----------------------------
-    DATABASE SEARCH
+    DATABASE SEARCH (SAFE)
     -----------------------------
     */
-
-    reseller = await User.findOne({
+    const query = {
       isReseller: true,
-      $or: [
-        subdomain ? { brandSlug: subdomain } : null,
-        { resellerDomain: host }
-      ].filter(Boolean),
-    });
+      $or: [],
+    };
+
+    if (subdomain) {
+      query.$or.push({ brandSlug: subdomain });
+    }
+
+    query.$or.push({ resellerDomain: host });
+
+    reseller = await User.findOne(query);
 
     /*
     -----------------------------
     ATTACH RESELLER
     -----------------------------
     */
-
     if (reseller) {
-
       req.reseller = reseller;
 
       req.brand = {
         brandName: reseller.brandName || reseller.brandSlug,
         logo: reseller.logo || null,
-        themeColor: reseller.themeColor || "#16a34a", // default green
+        themeColor: reseller.themeColor || "#16a34a",
         domain:
           reseller.resellerDomain ||
           `${reseller.brandSlug}.${BASE_DOMAIN}`,
       };
-
     }
 
     next();
-
   } catch (error) {
-
     console.error("Reseller domain detection error:", error);
     next();
-
   }
 };

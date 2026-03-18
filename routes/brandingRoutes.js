@@ -1,6 +1,11 @@
 // routes/brandingRoutes.js
+
 import express from "express";
-import { getBranding } from "../controllers/brandingController.js";
+import {
+  getPublicBranding,
+  getDashboardBranding
+} from "../controllers/brandingController.js";
+
 import { updateBranding } from "../controllers/resellerController.js";
 import { protect } from "../middlewares/authMiddleware.js";
 
@@ -8,16 +13,35 @@ const router = express.Router();
 
 /*
 --------------------------------
-Get Branding
-- For reseller dashboard: requires login to detect reseller
-- For end users: can still work with reseller domain/subdomain if resellerDomainMiddleware is applied globally
+🌍 PUBLIC BRANDING (DOMAIN-BASED)
+--------------------------------
+- Used by:
+  • Main site
+  • Reseller subdomains
+  • Custom domains
+- NO authentication required
+- Uses resellerDomainMiddleware (req.brand)
 --------------------------------
 */
-router.get("/", protect, getBranding);
+router.get("/public", getPublicBranding);
 
 /*
 --------------------------------
-Update Branding (Reseller Only)
+🔐 DASHBOARD BRANDING (LOGGED-IN)
+--------------------------------
+- Used ONLY inside reseller dashboard
+- Requires authentication
+- Uses req.user (NOT domain)
+--------------------------------
+*/
+router.get("/dashboard", protect, getDashboardBranding);
+
+/*
+--------------------------------
+✏️ UPDATE BRANDING (RESELLER ONLY)
+--------------------------------
+- Updates reseller branding in DB
+- Used in dashboard settings page
 --------------------------------
 */
 router.patch("/", protect, updateBranding);

@@ -1,3 +1,5 @@
+//controllers/orderController.js
+
 import Order from "../models/Order.js";
 import Wallet from "../models/Wallet.js";
 import User from "../models/User.js";
@@ -11,7 +13,7 @@ const calculateBalance = (transactions = []) =>
   transactions.reduce((acc, t) => acc + (t.amount || 0), 0);
 
 /* =========================================================
-CREATE ORDER (ALIGNED WITH SERVICE PRICING)
+CREATE ORDER (FIXED PRICING LOGIC)
 ========================================================= */
 export const createOrder = async (req, res) => {
   try {
@@ -57,27 +59,37 @@ export const createOrder = async (req, res) => {
       });
     }
 
-    /* ================= PRICE CALCULATION ================= */
+    /* ================= PRICE CALCULATION (FIXED) ================= */
 
-    const systemRate = Number(serviceData.rate || 0);
+    const providerRate = Number(serviceData.rate || 0);
+
+    // ✅ Get admin commission
+    const settings = await Settings.findOne();
+    const adminCommissionRate = Number(settings?.commission || 0);
+
+    // ✅ Apply admin commission first
+    const systemRate =
+      providerRate + (providerRate * adminCommissionRate) / 100;
 
     let finalRate = systemRate;
     let resellerCommission = 0;
 
+    // ✅ Apply reseller commission ON TOP of system rate
     if (user.resellerOwner) {
       const reseller = await User.findById(user.resellerOwner);
 
       const resellerCommissionRate =
         Number(reseller?.resellerCommissionRate || 0);
 
-      finalRate = systemRate + (systemRate * resellerCommissionRate) / 100;
+      finalRate =
+        systemRate + (systemRate * resellerCommissionRate) / 100;
 
       resellerCommission =
         ((qty / 1000) * systemRate * resellerCommissionRate) / 100;
     }
 
     const finalCharge = (qty / 1000) * finalRate;
-    const baseCharge = (qty / 1000) * systemRate;
+    const baseCharge = (qty / 1000) * providerRate; // original provider cost
 
     /* ================= BALANCE CHECK ================= */
 
@@ -166,8 +178,6 @@ export const createOrder = async (req, res) => {
 
     /* ================= ADMIN REVENUE ================= */
 
-    const settings = await Settings.findOne();
-
     if (settings) {
       const adminRevenue = finalCharge - baseCharge;
       settings.totalRevenue += adminRevenue;
@@ -222,7 +232,7 @@ export const getMyOrders = async (req, res) => {
 };
 
 /* =========================================================
-PREVIEW ORDER (MATCHES CREATE ORDER LOGIC)
+PREVIEW ORDER (FIXED)
 ========================================================= */
 export const previewOrder = async (req, res) => {
   try {
@@ -244,7 +254,13 @@ export const previewOrder = async (req, res) => {
     if (!serviceData)
       return res.status(404).json({ message: "Service not found" });
 
-    const systemRate = Number(serviceData.rate || 0);
+    const providerRate = Number(serviceData.rate || 0);
+
+    const settings = await Settings.findOne();
+    const adminCommissionRate = Number(settings?.commission || 0);
+
+    const systemRate =
+      providerRate + (providerRate * adminCommissionRate) / 100;
 
     let finalRate = systemRate;
 
@@ -256,10 +272,11 @@ export const previewOrder = async (req, res) => {
       const resellerCommissionRate =
         Number(reseller?.resellerCommissionRate || 0);
 
-      finalRate = systemRate + (systemRate * resellerCommissionRate) / 100;
+      finalRate =
+        systemRate + (systemRate * resellerCommissionRate) / 100;
     }
 
-    const baseCharge = (qty / 1000) * systemRate;
+    const baseCharge = (qty / 1000) * providerRate;
     const finalCharge = (qty / 1000) * finalRate;
 
     res.json({

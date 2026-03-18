@@ -54,6 +54,11 @@ export const getServicesPublic = async (req, res) => {
             serviceId: s.serviceId || s._id,
             name: s.name,
             category: s.category || "General",
+            platform: s.platform || "General",
+            description: s.description || "",
+            icon: s.icon || "",
+            isDefaultCategoryGlobal: s.isDefaultCategoryGlobal || false,
+            isDefaultCategoryPlatform: s.isDefaultCategoryPlatform || false,
             visible,
 
             providerRate,
@@ -105,6 +110,11 @@ export const getServicesPublic = async (req, res) => {
         serviceId: s.serviceId || s._id,
         name: s.name,
         category: s.category || "General",
+        platform: s.platform || "General",
+        description: s.description || "",
+        icon: s.icon || "",
+        isDefaultCategoryGlobal: s.isDefaultCategoryGlobal || false,
+        isDefaultCategoryPlatform: s.isDefaultCategoryPlatform || false,
         visible: s.visible ?? true,
 
         providerRate,

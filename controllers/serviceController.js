@@ -7,14 +7,12 @@ import { getCache, setCache } from "../utils/cache.js";
 
 /* =========================================================
    GET PUBLIC SERVICES (SMART)
-   - Detect reseller domain
-   - Apply reseller pricing if needed
 ========================================================= */
 export const getServicesPublic = async (req, res) => {
   try {
     /*
     ========================================================
-    🟢 CASE 1: Reseller Domain Detected
+    🟢 CASE 1: Reseller Domain
     ========================================================
     */
     if (req.reseller) {
@@ -22,14 +20,11 @@ export const getServicesPublic = async (req, res) => {
 
       const resellerCommission = Number(reseller.resellerCommissionRate || 0);
 
-      // Get admin commission
       const settings = await Settings.findOne();
       const adminCommission = Number(settings?.commission || 0);
 
-      // Fetch services
       const services = await Service.find({ status: true }).lean();
 
-      // Fetch reseller overrides
       const resellerOverrides = await ResellerService.find({
         resellerId: reseller._id,
       }).lean();
@@ -43,20 +38,16 @@ export const getServicesPublic = async (req, res) => {
         .map((s) => {
           const providerRate = Number(s.rate || 0);
 
-          // Admin-adjusted price
           const systemRate =
             providerRate + (providerRate * adminCommission) / 100;
 
-          // Reseller price (FINAL for user)
           const finalRate =
             systemRate + (systemRate * resellerCommission) / 100;
 
           const override = overridesMap[s._id.toString()];
 
           const visible =
-            override && override.visible !== undefined
-              ? override.visible
-              : s.visible ?? true;
+            override?.visible ?? s.visible ?? true;
 
           return {
             _id: s._id,
@@ -65,11 +56,11 @@ export const getServicesPublic = async (req, res) => {
             category: s.category || "General",
             visible,
 
-            // pricing
-            rate: finalRate,          // fallback
+            providerRate,
             systemRate,
             resellerRate: finalRate,
             finalRate,
+            rate: finalRate,
 
             min: Number(s.min ?? 1),
             max: Number(s.max ?? 100000),
@@ -82,26 +73,54 @@ export const getServicesPublic = async (req, res) => {
 
     /*
     ========================================================
-    🔵 CASE 2: Normal Public (Main Panel)
+    🔵 CASE 2: Main Panel (Public)
     ========================================================
     */
     const cacheKey = "public_services";
 
-    // 🔥 1️⃣ Check cache
+    // 1️⃣ Check cache
     const cached = getCache(cacheKey);
     if (cached) {
       return res.status(200).json(cached);
     }
 
-    // 🔥 2️⃣ Fetch from DB
+    // 2️⃣ Fetch admin commission
+    const settings = await Settings.findOne();
+    const adminCommission = Number(settings?.commission || 0);
+
+    // 3️⃣ Fetch services
     const services = await Service.find({ status: true })
       .sort({ createdAt: -1 })
       .lean();
 
-    // 🔥 3️⃣ Cache
-    setCache(cacheKey, services, 300);
+    // 4️⃣ Apply admin commission
+    const formattedServices = services.map((s) => {
+      const providerRate = Number(s.rate || 0);
 
-    return res.status(200).json(services);
+      const finalRate =
+        providerRate + (providerRate * adminCommission) / 100;
+
+      return {
+        _id: s._id,
+        serviceId: s.serviceId || s._id,
+        name: s.name,
+        category: s.category || "General",
+        visible: s.visible ?? true,
+
+        providerRate,
+        systemRate: finalRate,
+        finalRate,
+        rate: finalRate,
+
+        min: Number(s.min ?? 1),
+        max: Number(s.max ?? 100000),
+      };
+    }).filter((s) => s.visible);
+
+    // 5️⃣ Cache final result (IMPORTANT FIX)
+    setCache(cacheKey, formattedServices, 300);
+
+    return res.status(200).json(formattedServices);
 
   } catch (error) {
     console.error("GET PUBLIC SERVICES ERROR:", error);
@@ -120,10 +139,8 @@ export const createService = async (req, res) => {
   try {
     const service = await Service.create(req.body);
 
-    // 🔥 Clear cache
     setCache("public_services", null, 1);
 
-    // 🔥 Emit socket update
     const io = req.app.get("io");
     if (io) io.emit("servicesUpdated");
 
@@ -149,10 +166,8 @@ export const updateService = async (req, res) => {
       { new: true }
     );
 
-    // 🔥 Clear cache
     setCache("public_services", null, 1);
 
-    // 🔥 Emit socket update
     const io = req.app.get("io");
     if (io) io.emit("servicesUpdated");
 
@@ -174,10 +189,8 @@ export const deleteService = async (req, res) => {
   try {
     await Service.findByIdAndDelete(req.params.id);
 
-    // 🔥 Clear cache
     setCache("public_services", null, 1);
 
-    // 🔥 Emit socket update
     const io = req.app.get("io");
     if (io) io.emit("servicesUpdated");
 

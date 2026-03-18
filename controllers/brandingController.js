@@ -4,7 +4,7 @@ import User from "../models/User.js";
 
 /*
 --------------------------------
-PUBLIC (DOMAIN-BASED)
+PUBLIC BRANDING (DOMAIN ONLY)
 --------------------------------
 */
 export const getPublicBranding = async (req, res) => {
@@ -18,6 +18,7 @@ export const getPublicBranding = async (req, res) => {
       });
     }
 
+    // Default platform branding
     return res.json({
       brandName: "MarinePanel",
       logo: null,
@@ -31,25 +32,33 @@ export const getPublicBranding = async (req, res) => {
   }
 };
 
+
 /*
 --------------------------------
-DASHBOARD (LOGGED-IN RESELLER)
+DASHBOARD BRANDING (RESELLER ONLY)
 --------------------------------
 */
 export const getDashboardBranding = async (req, res) => {
   try {
-    if (req.user?.isReseller) {
-      return res.json({
-        brandName: req.user.brandName || "Reseller Panel",
-        logo: req.user.logo || null,
-        themeColor: req.user.themeColor || "#16a34a",
-        domain:
-          req.user.resellerCustomDomain ||
-          `${req.user.resellerDomain}.marinepanel.online`,
-      });
+    if (!req.user?.isReseller) {
+      return res.status(403).json({ message: "Not a reseller" });
     }
 
-    return res.status(403).json({ message: "Not a reseller" });
+    // ✅ ALWAYS fetch from DB (NOT req.user)
+    const user = await User.findById(req.user._id);
+
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    return res.json({
+      brandName: user.brandName || "Reseller Panel",
+      logo: user.logo || null,
+      themeColor: user.themeColor || "#16a34a",
+      domain:
+        user.resellerCustomDomain ||
+        `${user.resellerDomain}.marinepanel.online`,
+    });
 
   } catch (error) {
     console.error("Dashboard branding error:", error);

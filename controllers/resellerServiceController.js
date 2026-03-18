@@ -1,3 +1,4 @@
+//controllers/resellerServiceController.js
 import Service from "../models/Service.js";
 import User from "../models/User.js";
 import ResellerService from "../models/ResellerService.js";
@@ -37,46 +38,45 @@ export const getResellerServices = async (req, res) => {
       overridesMap[r.serviceId.toString()] = r;
     });
 
-    const formattedServices = services.map((s) => {
+    const formattedServices = services
+      .map((s) => {
+        const providerRate = Number(s.rate || 0);
 
-      const providerRate = Number(s.rate || 0);
-
-      // Admin-adjusted price (normal users see this)
-      const systemRate =
-        providerRate + (providerRate * adminCommission) / 100;
-
-      // Reseller selling price
-      const resellerRate =
-        systemRate + (systemRate * resellerCommission) / 100;
-
-      const override = overridesMap[s._id.toString()];
-
-      const visible =
-        override && override.visible !== undefined
-          ? override.visible
-          : s.visible ?? true;
-
-      return {
-        _id: s._id,
-        serviceId: s.serviceId || s._id,
-        name: s.name,
-        category: s.category || "General",
-
-        visible,
-
-        // Provider cost
-        providerRate,
-
-        // System price (admin adjusted)
-        systemRate,
+        // Admin-adjusted price
+        const systemRate =
+          providerRate + (providerRate * adminCommission) / 100;
 
         // Reseller selling price
-        resellerRate,
+        const resellerRate =
+          systemRate + (systemRate * resellerCommission) / 100;
 
-        min: Number(s.min ?? 1),
-        max: Number(s.max ?? 100000),
-      };
-    });
+        const override = overridesMap[s._id.toString()];
+
+        const visible =
+          override && override.visible !== undefined
+            ? override.visible
+            : s.visible ?? true;
+
+        return {
+          _id: s._id,
+          serviceId: s.serviceId || s._id,
+          name: s.name,
+          category: s.category || "General",
+
+          visible,
+
+          // Pricing
+          providerRate,
+          systemRate,
+          resellerRate,
+          finalRate: resellerRate, // ✅ FIXED
+          rate: resellerRate,      // ✅ fallback for UI
+
+          min: Number(s.min ?? 1),
+          max: Number(s.max ?? 100000),
+        };
+      })
+      .filter((s) => s.visible); // ✅ hide disabled services
 
     res.json({
       services: formattedServices,

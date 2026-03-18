@@ -1,9 +1,15 @@
-//controllers/brandingController.js
+// controllers/brandingController.js
 import User from "../models/User.js";
 
 export const getBranding = async (req, res) => {
   try {
-    // Priority 1: req.brand (from subdomain or custom domain)
+    /*
+    --------------------------------
+    PRIORITY: DOMAIN-BASED BRANDING ONLY
+    --------------------------------
+    This ensures branding is tied to the domain,
+    NOT the logged-in user
+    */
     if (req.brand) {
       return res.json({
         brandName: req.brand.brandName || "Reseller Panel",
@@ -13,23 +19,19 @@ export const getBranding = async (req, res) => {
       });
     }
 
-    // Priority 2: req.user (logged-in reseller)
-    if (req.user?.isReseller) {
-      return res.json({
-        brandName: req.user.brandName || "Reseller Panel",
-        logo: req.user.logo || null,
-        themeColor: req.user.themeColor || "#16a34a",
-        domain: req.user.resellerDomain || null,
-      });
-    }
-
-    // Default platform branding
+    /*
+    --------------------------------
+    DEFAULT PLATFORM BRANDING
+    --------------------------------
+    Used when no reseller domain is detected
+    */
     return res.json({
       brandName: "MarinePanel",
       logo: null,
       themeColor: "#f97316",
       domain: "marinepanel.online",
     });
+
   } catch (error) {
     console.error("Branding error:", error);
     res.status(500).json({ message: "Branding load failed" });

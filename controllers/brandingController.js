@@ -1,14 +1,13 @@
 // controllers/brandingController.js
+
 import User from "../models/User.js";
 
 export const getBranding = async (req, res) => {
   try {
     /*
     --------------------------------
-    PRIORITY: DOMAIN-BASED BRANDING ONLY
+    1️⃣ DOMAIN BRANDING (PUBLIC USERS)
     --------------------------------
-    This ensures branding is tied to the domain,
-    NOT the logged-in user
     */
     if (req.brand) {
       return res.json({
@@ -21,9 +20,24 @@ export const getBranding = async (req, res) => {
 
     /*
     --------------------------------
-    DEFAULT PLATFORM BRANDING
+    2️⃣ LOGGED-IN RESELLER (DASHBOARD)
     --------------------------------
-    Used when no reseller domain is detected
+    */
+    if (req.user?.isReseller) {
+      return res.json({
+        brandName: req.user.brandName || "Reseller Panel",
+        logo: req.user.logo || null,
+        themeColor: req.user.themeColor || "#16a34a",
+        domain:
+          req.user.resellerCustomDomain ||
+          `${req.user.resellerDomain}.marinepanel.online`,
+      });
+    }
+
+    /*
+    --------------------------------
+    3️⃣ DEFAULT PLATFORM
+    --------------------------------
     */
     return res.json({
       brandName: "MarinePanel",

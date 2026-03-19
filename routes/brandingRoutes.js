@@ -26,7 +26,7 @@ const router = express.Router();
 */
 router.get(
   "/public",
-  detectResellerDomain, // ✅ CRITICAL FIX
+  authMiddleware, // ✅ CRITICAL FIX
   getPublicBranding
 );
 

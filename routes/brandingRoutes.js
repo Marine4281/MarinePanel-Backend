@@ -26,7 +26,7 @@ const router = express.Router();
 */
 router.get(
   "/public",
-  authMiddleware, // ✅ CRITICAL FIX
+  authMiddleware,
   getPublicBranding
 );
 

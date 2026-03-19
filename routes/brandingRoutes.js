@@ -8,6 +8,7 @@ import {
 
 import { updateBranding } from "../controllers/resellerController.js";
 import { protect } from "../middlewares/authMiddleware.js";
+import { detectResellerDomain } from "../middlewares/resellerDomainMiddleware.js"; // ✅ REQUIRED
 
 const router = express.Router();
 
@@ -23,7 +24,11 @@ const router = express.Router();
 - Uses resellerDomainMiddleware (req.brand)
 --------------------------------
 */
-router.get("/public", getPublicBranding);
+router.get(
+  "/public",
+  detectResellerDomain, // ✅ CRITICAL FIX
+  getPublicBranding
+);
 
 /*
 --------------------------------
@@ -34,7 +39,11 @@ router.get("/public", getPublicBranding);
 - Uses req.user (NOT domain)
 --------------------------------
 */
-router.get("/dashboard", protect, getDashboardBranding);
+router.get(
+  "/dashboard",
+  protect,
+  getDashboardBranding
+);
 
 /*
 --------------------------------
@@ -44,6 +53,10 @@ router.get("/dashboard", protect, getDashboardBranding);
 - Used in dashboard settings page
 --------------------------------
 */
-router.patch("/", protect, updateBranding);
+router.patch(
+  "/",
+  protect,
+  updateBranding
+);
 
 export default router;

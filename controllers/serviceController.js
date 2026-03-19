@@ -46,8 +46,9 @@ export const getServicesPublic = async (req, res) => {
 
           const override = overridesMap[s._id.toString()];
 
+          // ✅ FIX: default visible = true
           const visible =
-            override?.visible ?? s.visible ?? true;
+            override?.visible ?? (s.visible !== false);
 
           return {
             _id: s._id,
@@ -71,7 +72,8 @@ export const getServicesPublic = async (req, res) => {
             max: Number(s.max ?? 100000),
           };
         })
-        .filter((s) => s.visible);
+        // ✅ FIX: only remove explicitly hidden services
+        .filter((s) => s.visible !== false);
 
       return res.status(200).json(formattedServices);
     }
@@ -83,51 +85,51 @@ export const getServicesPublic = async (req, res) => {
     */
     const cacheKey = "public_services";
 
-    // 1️⃣ Check cache
     const cached = getCache(cacheKey);
     if (cached) {
       return res.status(200).json(cached);
     }
 
-    // 2️⃣ Fetch admin commission
     const settings = await Settings.findOne();
     const adminCommission = Number(settings?.commission || 0);
 
-    // 3️⃣ Fetch services
     const services = await Service.find({ status: true })
       .sort({ createdAt: -1 })
       .lean();
 
-    // 4️⃣ Apply admin commission
-    const formattedServices = services.map((s) => {
-      const providerRate = Number(s.rate || 0);
+    const formattedServices = services
+      .map((s) => {
+        const providerRate = Number(s.rate || 0);
 
-      const finalRate =
-        providerRate + (providerRate * adminCommission) / 100;
+        const finalRate =
+          providerRate + (providerRate * adminCommission) / 100;
 
-      return {
-        _id: s._id,
-        serviceId: s.serviceId || s._id,
-        name: s.name,
-        category: s.category || "General",
-        platform: s.platform || "General",
-        description: s.description || "",
-        icon: s.icon || "",
-        isDefaultCategoryGlobal: s.isDefaultCategoryGlobal || false,
-        isDefaultCategoryPlatform: s.isDefaultCategoryPlatform || false,
-        visible: s.visible ?? true,
+        return {
+          _id: s._id,
+          serviceId: s.serviceId || s._id,
+          name: s.name,
+          category: s.category || "General",
+          platform: s.platform || "General",
+          description: s.description || "",
+          icon: s.icon || "",
+          isDefaultCategoryGlobal: s.isDefaultCategoryGlobal || false,
+          isDefaultCategoryPlatform: s.isDefaultCategoryPlatform || false,
 
-        providerRate,
-        systemRate: finalRate,
-        finalRate,
-        rate: finalRate,
+          // ✅ FIX: default visible = true
+          visible: s.visible !== false,
 
-        min: Number(s.min ?? 1),
-        max: Number(s.max ?? 100000),
-      };
-    }).filter((s) => s.visible);
+          providerRate,
+          systemRate: finalRate,
+          finalRate,
+          rate: finalRate,
 
-    // 5️⃣ Cache final result (IMPORTANT FIX)
+          min: Number(s.min ?? 1),
+          max: Number(s.max ?? 100000),
+        };
+      })
+      // ✅ FIX: only remove explicitly hidden services
+      .filter((s) => s.visible !== false);
+
     setCache(cacheKey, formattedServices, 300);
 
     return res.status(200).json(formattedServices);
@@ -140,7 +142,6 @@ export const getServicesPublic = async (req, res) => {
     });
   }
 };
-
 
 /* =========================================================
    🆕 CREATE SERVICE (ADMIN)
@@ -163,7 +164,6 @@ export const createService = async (req, res) => {
     });
   }
 };
-
 
 /* =========================================================
    ✏️ UPDATE SERVICE (ADMIN)
@@ -190,7 +190,6 @@ export const updateService = async (req, res) => {
     });
   }
 };
-
 
 /* =========================================================
    ❌ DELETE SERVICE (ADMIN)

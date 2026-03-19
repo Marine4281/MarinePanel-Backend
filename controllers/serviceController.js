@@ -29,6 +29,7 @@ export const getServicesPublic = async (req, res) => {
         resellerId: reseller._id,
       }).lean();
 
+      // Map overrides by serviceId
       const overridesMap = {};
       resellerOverrides.forEach((r) => {
         overridesMap[r.serviceId.toString()] = r;
@@ -46,9 +47,19 @@ export const getServicesPublic = async (req, res) => {
 
           const override = overridesMap[s._id.toString()];
 
-          // ✅ FIX: default visible = true
+          /*
+          ========================================================
+          ✅ BULLETPROOF VISIBILITY LOGIC
+          Priority:
+          1. Reseller override (if explicitly set)
+          2. Service visibility
+          3. Default = true
+          ========================================================
+          */
           const visible =
-            override?.visible ?? (s.visible !== false);
+            override && override.visible !== undefined
+              ? override.visible
+              : s.visible !== false;
 
           return {
             _id: s._id,
@@ -72,7 +83,7 @@ export const getServicesPublic = async (req, res) => {
             max: Number(s.max ?? 100000),
           };
         })
-        // ✅ FIX: only remove explicitly hidden services
+        // Only remove explicitly hidden services
         .filter((s) => s.visible !== false);
 
       return res.status(200).json(formattedServices);
@@ -85,6 +96,7 @@ export const getServicesPublic = async (req, res) => {
     */
     const cacheKey = "public_services";
 
+    // Check cache
     const cached = getCache(cacheKey);
     if (cached) {
       return res.status(200).json(cached);
@@ -115,7 +127,7 @@ export const getServicesPublic = async (req, res) => {
           isDefaultCategoryGlobal: s.isDefaultCategoryGlobal || false,
           isDefaultCategoryPlatform: s.isDefaultCategoryPlatform || false,
 
-          // ✅ FIX: default visible = true
+          // Default visible = true unless explicitly false
           visible: s.visible !== false,
 
           providerRate,
@@ -127,9 +139,10 @@ export const getServicesPublic = async (req, res) => {
           max: Number(s.max ?? 100000),
         };
       })
-      // ✅ FIX: only remove explicitly hidden services
+      // Only remove explicitly hidden services
       .filter((s) => s.visible !== false);
 
+    // Cache result
     setCache(cacheKey, formattedServices, 300);
 
     return res.status(200).json(formattedServices);
@@ -150,8 +163,10 @@ export const createService = async (req, res) => {
   try {
     const service = await Service.create(req.body);
 
+    // Clear cache
     setCache("public_services", null, 1);
 
+    // Emit socket update
     const io = req.app.get("io");
     if (io) io.emit("servicesUpdated");
 
@@ -176,8 +191,10 @@ export const updateService = async (req, res) => {
       { new: true }
     );
 
+    // Clear cache
     setCache("public_services", null, 1);
 
+    // Emit socket update
     const io = req.app.get("io");
     if (io) io.emit("servicesUpdated");
 
@@ -198,8 +215,10 @@ export const deleteService = async (req, res) => {
   try {
     await Service.findByIdAndDelete(req.params.id);
 
+    // Clear cache
     setCache("public_services", null, 1);
 
+    // Emit socket update
     const io = req.app.get("io");
     if (io) io.emit("servicesUpdated");
 

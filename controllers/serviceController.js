@@ -6,7 +6,7 @@ import ResellerService from "../models/ResellerService.js";
 import { getCache, setCache } from "../utils/cache.js";
 
 /* =========================================================
-   GET PUBLIC SERVICES (SMART)
+   GET PUBLIC SERVICES (SMART + FREE SUPPORT)
 ========================================================= */
 export const getServicesPublic = async (req, res) => {
   try {
@@ -46,7 +46,6 @@ export const getServicesPublic = async (req, res) => {
 
           const override = overridesMap[s._id.toString()];
 
-          // ✅ FIX: default visible = true
           const visible =
             override?.visible ?? (s.visible !== false);
 
@@ -60,6 +59,12 @@ export const getServicesPublic = async (req, res) => {
             icon: s.icon || "",
             isDefaultCategoryGlobal: s.isDefaultCategoryGlobal || false,
             isDefaultCategoryPlatform: s.isDefaultCategoryPlatform || false,
+
+            // ✅ FIXED: FREE SUPPORT
+            isFree: s.isFree || false,
+            freeQuantity: s.freeQuantity || 0,
+            cooldownHours: s.cooldownHours || 0,
+
             visible,
 
             providerRate,
@@ -72,7 +77,6 @@ export const getServicesPublic = async (req, res) => {
             max: Number(s.max ?? 100000),
           };
         })
-        // ✅ FIX: only remove explicitly hidden services
         .filter((s) => s.visible !== false);
 
       return res.status(200).json(formattedServices);
@@ -115,7 +119,11 @@ export const getServicesPublic = async (req, res) => {
           isDefaultCategoryGlobal: s.isDefaultCategoryGlobal || false,
           isDefaultCategoryPlatform: s.isDefaultCategoryPlatform || false,
 
-          // ✅ FIX: default visible = true
+          // ✅ FIXED: FREE SUPPORT
+          isFree: s.isFree || false,
+          freeQuantity: s.freeQuantity || 0,
+          cooldownHours: s.cooldownHours || 0,
+
           visible: s.visible !== false,
 
           providerRate,
@@ -127,7 +135,6 @@ export const getServicesPublic = async (req, res) => {
           max: Number(s.max ?? 100000),
         };
       })
-      // ✅ FIX: only remove explicitly hidden services
       .filter((s) => s.visible !== false);
 
     setCache(cacheKey, formattedServices, 300);

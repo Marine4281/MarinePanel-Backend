@@ -13,7 +13,7 @@ const calculateBalance = (transactions = []) =>
   transactions.reduce((acc, t) => acc + (t.amount || 0), 0);
 
 /* =========================================================
-CREATE ORDER (PAID + FREE SUPPORT)
+CREATE ORDER (FINAL VERSION - FREE + PAID SAFE)
 ========================================================= */
 export const createOrder = async (req, res) => {
   try {
@@ -50,27 +50,36 @@ export const createOrder = async (req, res) => {
       status: true,
     });
 
-    if (!serviceData)
+    if (!serviceData) {
       return res.status(404).json({ message: "Service not found" });
-
-    if (qty < serviceData.min || qty > serviceData.max) {
-      return res.status(400).json({
-        message: `Quantity must be between ${serviceData.min} and ${serviceData.max}`,
-      });
     }
 
-    /* ================= FREE LOGIC ================= */
+    // 🔥 IMPORTANT: prevent ordering hidden services
+    if (serviceData.visible === false) {
+      return res.status(403).json({ message: "Service not available" });
+    }
+
+    /* ================= INIT ================= */
 
     let isFreeOrder = false;
     let finalCharge = 0;
     let baseCharge = 0;
     let resellerCommission = 0;
 
+    /* ======================================================
+       🎁 FREE SERVICE LOGIC (FIXED + SAFE)
+    ===================================================== */
     if (serviceData.isFree) {
       isFreeOrder = true;
 
-      const maxPerClaim = serviceData.freeQuantity || 0;
-      const cooldown = serviceData.cooldownHours || 0;
+      const maxPerClaim = Number(serviceData.freeQuantity || 0);
+      const cooldown = Number(serviceData.cooldownHours || 0);
+
+      if (!maxPerClaim) {
+        return res.status(400).json({
+          message: "Free service is not configured properly",
+        });
+      }
 
       if (qty > maxPerClaim) {
         return res.status(400).json({
@@ -102,9 +111,16 @@ export const createOrder = async (req, res) => {
       finalCharge = 0;
     }
 
-    /* ================= PAID PRICING ================= */
-
+    /* ======================================================
+       💰 PAID SERVICE LOGIC
+    ===================================================== */
     if (!isFreeOrder) {
+      if (qty < serviceData.min || qty > serviceData.max) {
+        return res.status(400).json({
+          message: `Quantity must be between ${serviceData.min} and ${serviceData.max}`,
+        });
+      }
+
       const providerRate = Number(serviceData.rate || 0);
 
       const settings = await Settings.findOne();
@@ -184,7 +200,6 @@ export const createOrder = async (req, res) => {
       }
 
       order.providerResponse = providerResponse.data;
-
       await order.save();
     } catch (providerError) {
       order.status = "failed";
@@ -199,7 +214,7 @@ export const createOrder = async (req, res) => {
       });
     }
 
-    /* ================= WALLET DEDUCTION ================= */
+    /* ================= WALLET ================= */
 
     if (!isFreeOrder) {
       const transaction = {
@@ -231,7 +246,7 @@ export const createOrder = async (req, res) => {
       }
     }
 
-    /* ================= RESELLER EARNINGS ================= */
+    /* ================= RESELLER ================= */
 
     if (!isFreeOrder && user.resellerOwner && resellerCommission > 0) {
       const reseller = await User.findById(user.resellerOwner);
@@ -279,7 +294,7 @@ export const getMyOrders = async (req, res) => {
 };
 
 /* =========================================================
-PREVIEW ORDER (WITH FREE SUPPORT)
+PREVIEW ORDER (MATCHES CREATE LOGIC)
 ========================================================= */
 export const previewOrder = async (req, res) => {
   try {
@@ -298,8 +313,9 @@ export const previewOrder = async (req, res) => {
       status: true,
     });
 
-    if (!serviceData)
+    if (!serviceData) {
       return res.status(404).json({ message: "Service not found" });
+    }
 
     /* ================= FREE ================= */
 

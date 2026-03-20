@@ -13,7 +13,7 @@ const calculateBalance = (transactions = []) =>
   transactions.reduce((acc, t) => acc + (t.amount || 0), 0);
 
 /* =========================================================
-CREATE ORDER (FIXED PRICING LOGIC)
+CREATE ORDER (PAID + FREE SUPPORT)
 ========================================================= */
 export const createOrder = async (req, res) => {
   try {
@@ -59,47 +59,88 @@ export const createOrder = async (req, res) => {
       });
     }
 
-    /* ================= PRICE CALCULATION (FIXED) ================= */
+    /* ================= FREE LOGIC ================= */
 
-    const providerRate = Number(serviceData.rate || 0);
-
-    // ✅ Get admin commission
-    const settings = await Settings.findOne();
-    const adminCommissionRate = Number(settings?.commission || 0);
-
-    // ✅ Apply admin commission first
-    const systemRate =
-      providerRate + (providerRate * adminCommissionRate) / 100;
-
-    let finalRate = systemRate;
+    let isFreeOrder = false;
+    let finalCharge = 0;
+    let baseCharge = 0;
     let resellerCommission = 0;
 
-    // ✅ Apply reseller commission ON TOP of system rate
-    if (user.resellerOwner) {
-      const reseller = await User.findById(user.resellerOwner);
+    if (serviceData.isFree) {
+      isFreeOrder = true;
 
-      const resellerCommissionRate =
-        Number(reseller?.resellerCommissionRate || 0);
+      const maxPerClaim = serviceData.freeQuantity || 0;
+      const cooldown = serviceData.cooldownHours || 0;
 
-      finalRate =
-        systemRate + (systemRate * resellerCommissionRate) / 100;
+      if (qty > maxPerClaim) {
+        return res.status(400).json({
+          message: `Max free quantity per claim is ${maxPerClaim}`,
+        });
+      }
 
-      resellerCommission =
-        ((qty / 1000) * systemRate * resellerCommissionRate) / 100;
+      if (cooldown > 0) {
+        const lastOrder = await Order.findOne({
+          userId: user._id,
+          service,
+          isFreeOrder: true,
+        }).sort({ createdAt: -1 });
+
+        if (lastOrder) {
+          const hoursPassed =
+            (Date.now() - new Date(lastOrder.createdAt)) /
+            (1000 * 60 * 60);
+
+          if (hoursPassed < cooldown) {
+            const remaining = Math.ceil(cooldown - hoursPassed);
+            return res.status(400).json({
+              message: `You can claim again in ${remaining} hour(s).`,
+            });
+          }
+        }
+      }
+
+      finalCharge = 0;
     }
 
-    const finalCharge = (qty / 1000) * finalRate;
-    const baseCharge = (qty / 1000) * providerRate; // original provider cost
+    /* ================= PAID PRICING ================= */
 
-    /* ================= BALANCE CHECK ================= */
+    if (!isFreeOrder) {
+      const providerRate = Number(serviceData.rate || 0);
 
-    const currentBalance =
-      typeof wallet.balance === "number"
-        ? wallet.balance
-        : calculateBalance(wallet.transactions);
+      const settings = await Settings.findOne();
+      const adminCommissionRate = Number(settings?.commission || 0);
 
-    if (currentBalance < finalCharge) {
-      return res.status(400).json({ message: "Insufficient balance" });
+      const systemRate =
+        providerRate + (providerRate * adminCommissionRate) / 100;
+
+      let finalRate = systemRate;
+
+      if (user.resellerOwner) {
+        const reseller = await User.findById(user.resellerOwner);
+
+        const resellerCommissionRate =
+          Number(reseller?.resellerCommissionRate || 0);
+
+        finalRate =
+          systemRate + (systemRate * resellerCommissionRate) / 100;
+
+        resellerCommission =
+          ((qty / 1000) * systemRate * resellerCommissionRate) / 100;
+      }
+
+      finalCharge = (qty / 1000) * finalRate;
+      baseCharge = (qty / 1000) * providerRate;
+
+      /* ================= BALANCE CHECK ================= */
+
+      const currentBalance =
+        typeof wallet.balance === "number"
+          ? wallet.balance
+          : calculateBalance(wallet.transactions);
+
+      if (currentBalance < finalCharge) {
+        return res.status(400).json({ message: "Insufficient balance" });
+      }
     }
 
     /* ================= CREATE ORDER ================= */
@@ -115,6 +156,7 @@ export const createOrder = async (req, res) => {
       quantity: qty,
       charge: finalCharge,
       status: "pending",
+      isFreeOrder,
 
       provider: serviceData.provider,
       providerApiUrl: serviceData.providerApiUrl,
@@ -159,34 +201,39 @@ export const createOrder = async (req, res) => {
 
     /* ================= WALLET DEDUCTION ================= */
 
-    const transaction = {
-      type: "Order",
-      amount: -Number(finalCharge),
-      status: "Completed",
-      note: `Order #${order.orderId}`,
-      date: new Date(),
-    };
+    if (!isFreeOrder) {
+      const transaction = {
+        type: "Order",
+        amount: -Number(finalCharge),
+        status: "Completed",
+        note: `Order #${order.orderId}`,
+        date: new Date(),
+      };
 
-    wallet.transactions.push(transaction);
-    wallet.balance = calculateBalance(wallet.transactions);
+      wallet.transactions.push(transaction);
+      wallet.balance = calculateBalance(wallet.transactions);
 
-    await wallet.save();
+      await wallet.save();
 
-    await User.findByIdAndUpdate(user._id, {
-      balance: wallet.balance,
-    });
+      await User.findByIdAndUpdate(user._id, {
+        balance: wallet.balance,
+      });
+    }
 
     /* ================= ADMIN REVENUE ================= */
 
-    if (settings) {
-      const adminRevenue = finalCharge - baseCharge;
-      settings.totalRevenue += adminRevenue;
-      await settings.save();
+    if (!isFreeOrder) {
+      const settings = await Settings.findOne();
+      if (settings) {
+        const adminRevenue = finalCharge - baseCharge;
+        settings.totalRevenue += adminRevenue;
+        await settings.save();
+      }
     }
 
     /* ================= RESELLER EARNINGS ================= */
 
-    if (user.resellerOwner && resellerCommission > 0) {
+    if (!isFreeOrder && user.resellerOwner && resellerCommission > 0) {
       const reseller = await User.findById(user.resellerOwner);
 
       reseller.resellerWallet =
@@ -232,7 +279,7 @@ export const getMyOrders = async (req, res) => {
 };
 
 /* =========================================================
-PREVIEW ORDER (FIXED)
+PREVIEW ORDER (WITH FREE SUPPORT)
 ========================================================= */
 export const previewOrder = async (req, res) => {
   try {
@@ -253,6 +300,20 @@ export const previewOrder = async (req, res) => {
 
     if (!serviceData)
       return res.status(404).json({ message: "Service not found" });
+
+    /* ================= FREE ================= */
+
+    if (serviceData.isFree) {
+      return res.json({
+        service,
+        quantity: qty,
+        baseCharge: 0,
+        finalCharge: 0,
+        isFree: true,
+      });
+    }
+
+    /* ================= PAID ================= */
 
     const providerRate = Number(serviceData.rate || 0);
 
@@ -286,6 +347,7 @@ export const previewOrder = async (req, res) => {
       finalCharge: finalCharge.toFixed(4),
       systemRate,
       finalRate,
+      isFree: false,
     });
 
   } catch (error) {

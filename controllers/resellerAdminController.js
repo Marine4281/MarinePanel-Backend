@@ -1,38 +1,52 @@
-//controllers/resellerAdminController.js
+// controllers/resellerAdminController.js
 import User from "../models/User.js";
 import Order from "../models/Order.js";
-import Wallet from "../models/Wallet.js";
-import Settings from "../models/Settings.js";
 import mongoose from "mongoose";
 
 /* =========================================================
-   GET ALL RESELLERS
+   HELPER: VALIDATE OBJECT ID
+========================================================= */
+const isValidId = (id) => mongoose.Types.ObjectId.isValid(id);
+
+/* =========================================================
+   GET ALL RESELLERS (OPTIMIZED - NO N+1)
 ========================================================= */
 export const getAllResellers = async (req, res) => {
   try {
-    const resellers = await User.find({ isReseller: true })
-      .select("email phone resellerWallet createdAt isSuspended")
-      .lean();
+    const resellers = await User.aggregate([
+      { $match: { isReseller: true } },
 
-    const data = await Promise.all(
-      resellers.map(async (r) => {
-        const usersCount = await User.countDocuments({
-          resellerOwner: r._id,
-        });
+      {
+        $lookup: {
+          from: "users",
+          localField: "_id",
+          foreignField: "resellerOwner",
+          as: "users",
+        },
+      },
+      {
+        $lookup: {
+          from: "orders",
+          localField: "_id",
+          foreignField: "resellerOwner",
+          as: "orders",
+        },
+      },
 
-        const ordersCount = await Order.countDocuments({
-          resellerOwner: r._id,
-        });
+      {
+        $project: {
+          email: 1,
+          phone: 1,
+          resellerWallet: 1,
+          createdAt: 1,
+          isSuspended: 1,
+          usersCount: { $size: "$users" },
+          ordersCount: { $size: "$orders" },
+        },
+      },
+    ]);
 
-        return {
-          ...r,
-          usersCount,
-          ordersCount,
-        };
-      })
-    );
-
-    res.json(data);
+    res.json(resellers);
   } catch (error) {
     console.error("GET ALL RESELLERS ERROR:", error);
     res.status(500).json({ message: "Failed to fetch resellers" });
@@ -46,9 +60,15 @@ export const getResellerDetails = async (req, res) => {
   try {
     const { id } = req.params;
 
+    if (!isValidId(id)) {
+      return res.status(400).json({ message: "Invalid reseller ID" });
+    }
+
     const reseller = await User.findById(id).lean();
-    if (!reseller)
+
+    if (!reseller || !reseller.isReseller) {
       return res.status(404).json({ message: "Reseller not found" });
+    }
 
     /* ================= USERS ================= */
     const users = await User.find({ resellerOwner: id })
@@ -69,6 +89,7 @@ export const getResellerDetails = async (req, res) => {
     for (const order of orders) {
       const charge = Number(order.charge || 0);
       const resellerCommission = Number(order.resellerCommission || 0);
+      const providerCost = Number(order.providerCost || 0); // ✅ FIXED
 
       totalRevenue += charge;
       resellerEarnings += resellerCommission;
@@ -78,11 +99,8 @@ export const getResellerDetails = async (req, res) => {
         continue;
       }
 
-      // provider cost approximation
-      const providerCost = charge - resellerCommission;
       providerCostTotal += providerCost;
 
-      // admin profit
       const adminProfit = charge - providerCost - resellerCommission;
       totalProfit += adminProfit;
     }
@@ -115,11 +133,25 @@ export const updateResellerCommission = async (req, res) => {
     const { id } = req.params;
     const { commission } = req.body;
 
-    const reseller = await User.findById(id);
-    if (!reseller)
-      return res.status(404).json({ message: "Reseller not found" });
+    if (!isValidId(id)) {
+      return res.status(400).json({ message: "Invalid reseller ID" });
+    }
 
-    reseller.resellerCommissionRate = Number(commission || 0);
+    const rate = Number(commission);
+
+    if (isNaN(rate) || rate < 0 || rate > 100) {
+      return res.status(400).json({
+        message: "Commission must be between 0 and 100",
+      });
+    }
+
+    const reseller = await User.findById(id);
+
+    if (!reseller || !reseller.isReseller) {
+      return res.status(404).json({ message: "Reseller not found" });
+    }
+
+    reseller.resellerCommissionRate = rate;
     await reseller.save();
 
     res.json({ message: "Commission updated successfully" });
@@ -136,19 +168,24 @@ export const toggleResellerStatus = async (req, res) => {
   try {
     const { id } = req.params;
 
+    if (!isValidId(id)) {
+      return res.status(400).json({ message: "Invalid reseller ID" });
+    }
+
     const reseller = await User.findById(id);
-    if (!reseller)
+
+    if (!reseller || !reseller.isReseller) {
       return res.status(404).json({ message: "Reseller not found" });
+    }
 
     const newStatus = !reseller.isSuspended;
 
     reseller.isSuspended = newStatus;
     await reseller.save();
 
-    // update all users under reseller
     await User.updateMany(
       { resellerOwner: reseller._id },
-      { isSuspended: newStatus }
+      { $set: { isSuspended: newStatus } } // ✅ safer
     );
 
     res.json({
@@ -166,6 +203,10 @@ export const toggleResellerStatus = async (req, res) => {
 export const getResellerUsers = async (req, res) => {
   try {
     const { id } = req.params;
+
+    if (!isValidId(id)) {
+      return res.status(400).json({ message: "Invalid reseller ID" });
+    }
 
     const users = await User.find({ resellerOwner: id })
       .select("email phone balance createdAt isSuspended")
@@ -186,15 +227,19 @@ export const getResellerOrders = async (req, res) => {
     const { id } = req.params;
     const { from, to, status } = req.query;
 
+    if (!isValidId(id)) {
+      return res.status(400).json({ message: "Invalid reseller ID" });
+    }
+
     const query = { resellerOwner: id };
 
     if (status) query.status = status;
 
-    if (from && to) {
-      query.createdAt = {
-        $gte: new Date(from),
-        $lte: new Date(to),
-      };
+    if (from || to) {
+      query.createdAt = {};
+
+      if (from) query.createdAt.$gte = new Date(from);
+      if (to) query.createdAt.$lte = new Date(to);
     }
 
     const orders = await Order.find(query)

@@ -9,7 +9,7 @@ import {
   getResellerOrders,
 } from "../controllers/resellerAdminController.js";
 
-import { protect, admin } from "../middleware/authMiddleware.js";
+import { protect, admin } from "../middlewares/authMiddleware.js";
 
 const router = express.Router();
 

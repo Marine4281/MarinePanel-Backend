@@ -30,6 +30,8 @@ import brandingRoutes from "./routes/brandingRoutes.js";
 import resellerGuideRoutes from "./routes/resellerGuideRoutes.js";
 import resellerServiceRoutes from "./routes/resellerServiceRoutes.js";
 import endUserRoutes from "./routes/endUserRoutes.js";
+import resellerAdminRoutes from "./routes/resellerAdminRoutes.js";
+
 
 
 // ← NEW: Admin Orders Route
@@ -105,6 +107,7 @@ app.use("/api/payment-methods", paymentMethodRoutes);
 app.use("/api/smm", smmWebhookRoutes);
 app.use("/api/payment", paymentRoutes);
 app.use("/api/settings", commissionRoutes);
+app.use("/api/admin/resellers", resellerAdminRoutes);
 
 //Reseller Routes
 app.use("/api/reseller", resellerRoutes);

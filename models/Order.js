@@ -1,11 +1,12 @@
+// models/Order.js
 import mongoose from "mongoose";
 import { v4 as uuidv4 } from "uuid";
 
 const orderSchema = new mongoose.Schema(
   {
-    // ===============================
-    // 🆔 Human-readable Order ID
-    // ===============================
+    /* ===============================
+       🆔 Order ID
+    =============================== */
     orderId: {
       type: String,
       default: () => "ORD-" + uuidv4().slice(0, 8),
@@ -13,9 +14,9 @@ const orderSchema = new mongoose.Schema(
       index: true,
     },
 
-    // ===============================
-    // 👤 User Reference
-    // ===============================
+    /* ===============================
+       👤 USER
+    =============================== */
     userId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
@@ -23,9 +24,30 @@ const orderSchema = new mongoose.Schema(
       index: true,
     },
 
-    // ===============================
-    // 📦 Order Details
-    // ===============================
+    /* ===============================
+       👥 RESELLER (🔥 REQUIRED)
+    =============================== */
+    resellerOwner: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      default: null,
+      index: true,
+    },
+
+    resellerCommission: {
+      type: Number,
+      default: 0,
+    },
+
+    earningsCredited: {
+      type: Boolean,
+      default: false,
+      index: true,
+    },
+
+    /* ===============================
+       📦 ORDER DETAILS
+    =============================== */
     category: { type: String, required: true },
     service: { type: String, required: true },
     link: { type: String, required: true },
@@ -37,48 +59,45 @@ const orderSchema = new mongoose.Schema(
       default: 0,
     },
 
-    // ======================================================
-    // 🎁 FREE ORDER SUPPORT (Enterprise Safe Version)
-    // ======================================================
-
+    /* ===============================
+       🎁 FREE ORDER SYSTEM
+    =============================== */
     isFreeOrder: {
       type: Boolean,
       default: false,
       index: true,
     },
 
-    // Snapshot of service config at time of order
     freeMaxQuantity: {
       type: Number,
       default: 0,
     },
 
-    // -1 = once ever
-    // 24 = every 24 hours
-    // 168 = weekly
     freeCooldownHours: {
       type: Number,
       default: 0,
     },
 
-    // ======================================================
-
-    // ✅ REQUIRED for progress bar & admin UI
+    /* ===============================
+       📊 DELIVERY TRACKING
+    =============================== */
     quantityDelivered: {
       type: Number,
       default: 0,
     },
 
-    // Prevent double refunds
+    /* ===============================
+       💸 REFUND SAFETY
+    =============================== */
     refundProcessed: {
       type: Boolean,
       default: false,
       index: true,
     },
 
-    // ===============================
-    // 🔄 Order Lifecycle
-    // ===============================
+    /* ===============================
+       🔄 STATUS
+    =============================== */
     status: {
       type: String,
       enum: [
@@ -94,9 +113,9 @@ const orderSchema = new mongoose.Schema(
       index: true,
     },
 
-    // ===============================
-    // 🔌 Provider / SMM Data
-    // ===============================
+    /* ===============================
+       🔌 PROVIDER
+    =============================== */
     provider: { type: String, default: "" },
     providerApiUrl: { type: String, default: "" },
     providerServiceId: { type: String, default: "" },
@@ -112,9 +131,9 @@ const orderSchema = new mongoose.Schema(
       default: null,
     },
 
-    // ===============================
-    // ❌ Error Handling
-    // ===============================
+    /* ===============================
+       ❌ ERROR
+    =============================== */
     errorMessage: {
       type: String,
       default: "",
@@ -126,21 +145,27 @@ const orderSchema = new mongoose.Schema(
   }
 );
 
-// ===============================
-// 🚀 Performance Indexes
-// ===============================
+/* ===============================
+   🚀 INDEXES (OPTIMIZED)
+=============================== */
 
-// Fast user order lookup
+// User orders
 orderSchema.index({ userId: 1, createdAt: -1 });
 
-// Fast free claim validation
+// Reseller dashboard (🔥 IMPORTANT)
+orderSchema.index({ resellerOwner: 1, createdAt: -1 });
+
+// Earnings queries (🔥 IMPORTANT)
+orderSchema.index({ resellerOwner: 1, earningsCredited: 1 });
+
+// Free service checks
 orderSchema.index({ userId: 1, service: 1, isFreeOrder: 1 });
 
-// Fast admin filters
+// Admin filters
 orderSchema.index({ status: 1 });
 orderSchema.index({ createdAt: -1 });
 
-// Prevent double refunds
+// Refund safety
 orderSchema.index({ refundProcessed: 1 });
 
 export default mongoose.models.Order ||

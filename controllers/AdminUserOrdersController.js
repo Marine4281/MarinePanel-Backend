@@ -1,6 +1,8 @@
+//controllers/AdminUserOrdersController.js
 import Order from "../models/Order.js";
 import User from "../models/User.js";
 import Wallet from "../models/Wallet.js";
+import { creditResellerCommission } from "./orderController.js"; // ✅ ADDED
 
 /* ======================================================
    GET ALL USER ORDERS (Search + Pagination)
@@ -99,6 +101,11 @@ export const updateOrderStatus = async (req, res) => {
 
     await order.save();
 
+    // 💰 CREDIT RESELLER (SAFE)
+    if (order.status === "completed") {
+      await creditResellerCommission(order);
+    }
+
     const io = req.app.get("io");
 
     if (io) {
@@ -170,6 +177,11 @@ export const updateOrderProgress = async (req, res) => {
 
     await order.save();
 
+    // 💰 CREDIT RESELLER (SAFE)
+    if (order.status === "completed") {
+      await creditResellerCommission(order);
+    }
+
     const io = req.app.get("io");
 
     if (io) {
@@ -221,7 +233,7 @@ export const refundOrder = async (req, res) => {
 
     if (!wallet) {
       wallet = await Wallet.create({
-        userId: order.user._id,
+        user: order.userId._id, // ✅ FIXED (was wrong before)
         balance: 0,
         transactions: [],
       });
@@ -229,18 +241,9 @@ export const refundOrder = async (req, res) => {
 
     let refundAmount = 0;
 
-    /* ==============================================
-       FULL REFUND
-    ============================================== */
     if (type === "full") {
       refundAmount = order.charge;
-    }
-
-    /* ==============================================
-       PARTIAL REFUND (AUTO CALCULATE)
-    ============================================== */
-    else if (type === "partial") {
-
+    } else if (type === "partial") {
       const remaining = order.quantity - order.quantityDelivered;
 
       if (remaining <= 0) {
@@ -251,13 +254,7 @@ export const refundOrder = async (req, res) => {
 
       refundAmount =
         (remaining / order.quantity) * order.charge;
-    }
-
-    /* ==============================================
-       CUSTOM REFUND
-    ============================================== */
-    else if (type === "custom") {
-
+    } else if (type === "custom") {
       if (!customAmount || customAmount <= 0) {
         return res.status(400).json({
           message: "Invalid custom refund amount",
@@ -265,9 +262,7 @@ export const refundOrder = async (req, res) => {
       }
 
       refundAmount = Number(customAmount);
-    }
-
-    else {
+    } else {
       return res.status(400).json({
         message: "Invalid refund type",
       });

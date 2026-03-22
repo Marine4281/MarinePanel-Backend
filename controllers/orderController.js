@@ -46,6 +46,40 @@ export const creditResellerCommission = async (order) => {
 };
 
 /* =========================================================
+REVERSE RESELLER COMMISSION (ON REFUND)
+========================================================= */
+export const reverseResellerCommission = async (order) => {
+  try {
+    if (
+      !order.earningsCredited ||      // nothing credited yet
+      !order.resellerOwner ||         // no reseller
+      order.resellerCommission <= 0   // zero commission
+    ) {
+      return;
+    }
+
+    const wallet = await Wallet.findOne({ user: order.resellerOwner });
+    if (!wallet) return;
+
+    wallet.balance -= order.resellerCommission;
+
+    wallet.transactions.push({
+      type: "Commission Reversal",
+      amount: -order.resellerCommission,
+      status: "Completed",
+      note: `Reversal for refunded order ${order.orderId}`,
+      reference: order._id,
+      createdAt: new Date(),
+    });
+
+    order.earningsCredited = false; // 🔥 prevents double reversal
+    await Promise.all([wallet.save(), order.save()]);
+
+  } catch (err) {
+    console.error("Commission Reversal Error:", err);
+  }
+};
+/* =========================================================
 CREATE ORDER
 ========================================================= */
 export const createOrder = async (req, res) => {

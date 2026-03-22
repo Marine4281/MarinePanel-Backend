@@ -1,15 +1,15 @@
 // controllers/resellerAdminController.js
+
 import User from "../models/User.js";
 import Order from "../models/Order.js";
+import Wallet from "../models/Wallet.js";
 import mongoose from "mongoose";
 
-/* =========================================================
-   HELPER: VALIDATE OBJECT ID
-========================================================= */
+/* ========================================================= */
 const isValidId = (id) => mongoose.Types.ObjectId.isValid(id);
 
 /* =========================================================
-   GET ALL RESELLERS (OPTIMIZED - NO N+1)
+   GET ALL RESELLERS (FIXED)
 ========================================================= */
 export const getAllResellers = async (req, res) => {
   try {
@@ -37,7 +37,6 @@ export const getAllResellers = async (req, res) => {
         $project: {
           email: 1,
           phone: 1,
-          resellerWallet: 1,
           createdAt: 1,
           isSuspended: 1,
           usersCount: { $size: "$users" },
@@ -48,13 +47,13 @@ export const getAllResellers = async (req, res) => {
 
     res.json(resellers);
   } catch (error) {
-    console.error("GET ALL RESELLERS ERROR:", error);
+    console.error(error);
     res.status(500).json({ message: "Failed to fetch resellers" });
   }
 };
 
 /* =========================================================
-   GET SINGLE RESELLER DETAILS
+   GET RESELLER DETAILS (FULLY FIXED)
 ========================================================= */
 export const getResellerDetails = async (req, res) => {
   try {
@@ -65,68 +64,63 @@ export const getResellerDetails = async (req, res) => {
     }
 
     const reseller = await User.findById(id).lean();
-
     if (!reseller || !reseller.isReseller) {
       return res.status(404).json({ message: "Reseller not found" });
     }
 
-    /* ================= USERS ================= */
-    const users = await User.find({ resellerOwner: id })
-      .select("email phone balance createdAt isSuspended")
-      .lean();
+    const [users, orders, wallet] = await Promise.all([
+      User.find({ resellerOwner: id })
+        .select("email phone balance createdAt isSuspended")
+        .lean(),
 
-    /* ================= ORDERS ================= */
-    const orders = await Order.find({ resellerOwner: id }).lean();
+      Order.find({ resellerOwner: id }).lean(),
+
+      Wallet.findOne({ user: id }).lean(),
+    ]);
 
     /* ================= STATS ================= */
+
     let totalOrders = orders.length;
     let totalRevenue = 0;
-    let totalProfit = 0;
     let resellerEarnings = 0;
-    let providerCostTotal = 0;
     let freeOrders = 0;
 
     for (const order of orders) {
       const charge = Number(order.charge || 0);
-      const resellerCommission = Number(order.resellerCommission || 0);
-      const providerCost = Number(order.providerCost || 0); // ✅ FIXED
 
-      totalRevenue += charge;
-      resellerEarnings += resellerCommission;
-
-      if (order.isFreeOrder) {
-        freeOrders++;
-        continue;
+      if (order.status !== "failed" && order.status !== "refunded") {
+        totalRevenue += charge;
       }
 
-      providerCostTotal += providerCost;
+      // ✅ ONLY COUNT CREDITED EARNINGS
+      if (order.earningsCredited) {
+        resellerEarnings += Number(order.resellerCommission || 0);
+      }
 
-      const adminProfit = charge - providerCost - resellerCommission;
-      totalProfit += adminProfit;
+      if (order.isFreeOrder) freeOrders++;
     }
 
     res.json({
       reseller,
       stats: {
-        wallet: reseller.resellerWallet || 0,
+        wallet: wallet?.balance || 0, // ✅ FIXED
         totalOrders,
         totalRevenue,
-        totalProfit,
         resellerEarnings,
-        providerCostTotal,
         freeOrders,
       },
       users,
       orders,
     });
+
   } catch (error) {
-    console.error("GET RESELLER DETAILS ERROR:", error);
+    console.error(error);
     res.status(500).json({ message: "Failed to fetch reseller details" });
   }
 };
 
 /* =========================================================
-   UPDATE RESELLER COMMISSION
+   UPDATE COMMISSION
 ========================================================= */
 export const updateResellerCommission = async (req, res) => {
   try {
@@ -154,15 +148,16 @@ export const updateResellerCommission = async (req, res) => {
     reseller.resellerCommissionRate = rate;
     await reseller.save();
 
-    res.json({ message: "Commission updated successfully" });
+    res.json({ message: "Commission updated" });
+
   } catch (error) {
-    console.error("UPDATE COMMISSION ERROR:", error);
+    console.error(error);
     res.status(500).json({ message: "Failed to update commission" });
   }
 };
 
 /* =========================================================
-   SUSPEND / UNSUSPEND RESELLER + USERS
+   TOGGLE STATUS
 ========================================================= */
 export const toggleResellerStatus = async (req, res) => {
   try {
@@ -185,20 +180,21 @@ export const toggleResellerStatus = async (req, res) => {
 
     await User.updateMany(
       { resellerOwner: reseller._id },
-      { $set: { isSuspended: newStatus } } // ✅ safer
+      { $set: { isSuspended: newStatus } }
     );
 
     res.json({
       message: `Reseller ${newStatus ? "suspended" : "activated"}`,
     });
+
   } catch (error) {
-    console.error("TOGGLE RESELLER ERROR:", error);
+    console.error(error);
     res.status(500).json({ message: "Failed to update status" });
   }
 };
 
 /* =========================================================
-   GET RESELLER USERS
+   USERS
 ========================================================= */
 export const getResellerUsers = async (req, res) => {
   try {
@@ -213,14 +209,14 @@ export const getResellerUsers = async (req, res) => {
       .lean();
 
     res.json(users);
+
   } catch (error) {
-    console.error("GET RESELLER USERS ERROR:", error);
     res.status(500).json({ message: "Failed to fetch users" });
   }
 };
 
 /* =========================================================
-   GET RESELLER ORDERS (WITH FILTER)
+   ORDERS
 ========================================================= */
 export const getResellerOrders = async (req, res) => {
   try {
@@ -237,7 +233,6 @@ export const getResellerOrders = async (req, res) => {
 
     if (from || to) {
       query.createdAt = {};
-
       if (from) query.createdAt.$gte = new Date(from);
       if (to) query.createdAt.$lte = new Date(to);
     }
@@ -247,8 +242,8 @@ export const getResellerOrders = async (req, res) => {
       .lean();
 
     res.json(orders);
+
   } catch (error) {
-    console.error("GET RESELLER ORDERS ERROR:", error);
     res.status(500).json({ message: "Failed to fetch orders" });
   }
 };

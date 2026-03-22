@@ -1,3 +1,4 @@
+//models/Settings.js
 import mongoose from "mongoose";
 
 const settingsSchema = new mongoose.Schema(

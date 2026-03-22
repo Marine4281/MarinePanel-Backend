@@ -66,6 +66,7 @@ export const activateReseller = async (req, res) => {
 
     let finalDomain = "";
 
+    /* ===== SUBDOMAIN ===== */
     if (domainType === "subdomain") {
       finalDomain = `${slug}.${platformDomain}`;
 
@@ -75,6 +76,7 @@ export const activateReseller = async (req, res) => {
       }
     }
 
+    /* ===== CUSTOM DOMAIN ===== */
     if (domainType === "custom") {
       if (!customDomain) {
         return res.status(400).json({ message: "Custom domain required" });
@@ -90,6 +92,7 @@ export const activateReseller = async (req, res) => {
       finalDomain = clean;
     }
 
+    /* ===== ACTIVATE ===== */
     user.isReseller = true;
     user.brandName = brandName;
     user.brandSlug = slug;
@@ -97,6 +100,7 @@ export const activateReseller = async (req, res) => {
     user.themeColor = "#16a34a";
     user.resellerActivatedAt = new Date();
 
+    /* ===== WALLET ===== */
     wallet.balance -= activationFee;
 
     wallet.transactions.push({
@@ -124,7 +128,7 @@ export const activateReseller = async (req, res) => {
 
 /*
 --------------------------------
-Dashboard (CRITICAL FIXED)
+Dashboard (FIXED CORRECTLY)
 --------------------------------
 */
 
@@ -149,6 +153,21 @@ export const getResellerDashboard = async (req, res) => {
           $group: {
             _id: null,
             totalRevenue: { $sum: "$charge" },
+          },
+        },
+      ]),
+
+      // 🔥 ONLY COUNT CREDITED EARNINGS
+      Order.aggregate([
+        {
+          $match: {
+            resellerOwner: resellerId,
+            earningsCredited: true,
+          },
+        },
+        {
+          $group: {
+            _id: null,
             earnings: { $sum: "$resellerCommission" },
           },
         },
@@ -163,7 +182,7 @@ export const getResellerDashboard = async (req, res) => {
       users: usersCount,
       orders: ordersCount,
       totalRevenue: stats[0]?.totalRevenue || 0,
-      earnings: stats[0]?.earnings || 0,
+      earnings: stats[1]?.earnings || 0,
       wallet: wallet?.balance || 0,
       domain: user?.resellerDomain || null,
       brandName: user?.brandName || null,
@@ -218,13 +237,15 @@ export const getResellerOrders = async (req, res) => {
 
 /*
 --------------------------------
-Withdraw (FIXED)
+Withdraw (SAFE)
 --------------------------------
 */
 
 export const withdrawResellerFunds = async (req, res) => {
   try {
-    const { amount } = req.body;
+    let { amount } = req.body;
+
+    amount = Number(amount);
 
     const settings = await Settings.findOne().lean();
     const minWithdraw = settings?.resellerWithdrawMin || 10;
@@ -281,6 +302,12 @@ export const updateBranding = async (req, res) => {
   try {
     const user = req.user;
     const { brandName, logo, themeColor } = req.body;
+
+    if (!user.isReseller) {
+      return res.status(403).json({
+        message: "Only resellers can update branding",
+      });
+    }
 
     if (brandName !== undefined) {
       const slug = generateSlug(brandName);

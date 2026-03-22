@@ -1,3 +1,4 @@
+// models/Wallet.js
 import mongoose from "mongoose";
 
 const walletSchema = new mongoose.Schema(
@@ -26,10 +27,19 @@ const walletSchema = new mongoose.Schema(
             "Deposit",
             "Withdrawal",
             "Order",
-            "Refund",          // ✅ ADDED THIS
+            "Refund",          
             "Admin Adjustment"
           ],
           required: true,
+          set: (v) => {
+            if (!v) return v;
+            // Capitalize each word to match enum
+            return v
+              .toLowerCase()
+              .split(" ")
+              .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+              .join(" ");
+          },
         },
 
         amount: { 
@@ -40,7 +50,11 @@ const walletSchema = new mongoose.Schema(
         status: {
           type: String,
           enum: ["Pending", "Completed", "Failed"],
-          default: "Completed",   // ✅ refunds & orders usually complete instantly
+          default: "Completed",
+          set: (v) => {
+            if (!v) return v;
+            return v.charAt(0).toUpperCase() + v.slice(1).toLowerCase();
+          },
         },
 
         createdAt: { 
@@ -57,4 +71,4 @@ const walletSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-export default mongoose.model("Wallet", walletSchema);
+export default mongoose.models.Wallet || mongoose.model("Wallet", walletSchema);

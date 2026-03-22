@@ -5,28 +5,30 @@ import Order from "../models/Order.js";
 import Settings from "../models/Settings.js";
 import Wallet from "../models/Wallet.js";
 
-/*
---------------------------------
-Helpers
---------------------------------
-*/
+/* ================================================
+   HELPERS
+================================================ */
 
-const generateSlug = (brandName) =>
-  brandName.toLowerCase().trim().replace(/\s+/g, "").replace(/[^a-z0-9]/g, "");
+const generateSlug = (brandName) => {
+  return brandName
+    .toLowerCase()
+    .trim()
+    .replace(/\s+/g, "")
+    .replace(/[^a-z0-9]/g, "");
+};
 
-const normalizeDomain = (domain) =>
-  domain
+const normalizeDomain = (domain) => {
+  return domain
     .toLowerCase()
     .replace(/^https?:\/\//, "")
     .replace(/^www\./, "")
     .split("/")[0]
     .trim();
+};
 
-/*
---------------------------------
-Activate Reseller
---------------------------------
-*/
+/* ================================================
+   ACTIVATE RESELLER
+================================================ */
 
 export const activateReseller = async (req, res) => {
   try {
@@ -37,6 +39,18 @@ export const activateReseller = async (req, res) => {
       return res.status(400).json({ message: "Brand name required" });
     }
 
+    const user = await User.findById(userId);
+
+    if (!user) return res.status(404).json({ message: "User not found" });
+
+    if (user.isSuspended) {
+      return res.status(403).json({ message: "Account suspended" });
+    }
+
+    if (user.isReseller) {
+      return res.status(400).json({ message: "Already a reseller" });
+    }
+
     const slug = generateSlug(brandName);
 
     const existingBrand = await User.findOne({ brandSlug: slug });
@@ -44,55 +58,51 @@ export const activateReseller = async (req, res) => {
       return res.status(400).json({ message: "Brand already taken" });
     }
 
-    const user = await User.findById(userId);
-    if (!user) return res.status(404).json({ message: "User not found" });
-
-    if (user.isReseller) {
-      return res.status(400).json({ message: "Already a reseller" });
-    }
-
     const settings = await Settings.findOne().lean();
+
     const activationFee = settings?.resellerActivationFee || 25;
     const platformDomain = settings?.platformDomain || "marinepanel.online";
 
     const wallet = await Wallet.findOne({ user: user._id });
-    if (!wallet) return res.status(404).json({ message: "Wallet not found" });
+
+    if (!wallet) {
+      return res.status(404).json({ message: "Wallet not found" });
+    }
 
     if (wallet.balance < activationFee) {
       return res.status(400).json({
-        message: `Need $${activationFee} to activate`,
+        message: `You need $${activationFee} to activate reseller`,
       });
     }
 
     let finalDomain = "";
 
-    /* ===== SUBDOMAIN ===== */
     if (domainType === "subdomain") {
       finalDomain = `${slug}.${platformDomain}`;
 
       const exists = await User.findOne({ resellerDomain: finalDomain });
       if (exists) {
-        return res.status(400).json({ message: "Subdomain in use" });
+        return res.status(400).json({ message: "Subdomain already in use" });
       }
     }
 
-    /* ===== CUSTOM DOMAIN ===== */
     if (domainType === "custom") {
       if (!customDomain) {
         return res.status(400).json({ message: "Custom domain required" });
       }
 
-      const clean = normalizeDomain(customDomain);
+      const cleanDomain = normalizeDomain(customDomain);
 
-      const exists = await User.findOne({ resellerDomain: clean });
+      const exists = await User.findOne({ resellerDomain: cleanDomain });
       if (exists) {
-        return res.status(400).json({ message: "Domain in use" });
+        return res.status(400).json({ message: "Domain already in use" });
       }
 
-      finalDomain = clean;
+      finalDomain = cleanDomain;
     }
 
     /* ===== ACTIVATE ===== */
+
     user.isReseller = true;
     user.brandName = brandName;
     user.brandSlug = slug;
@@ -100,24 +110,25 @@ export const activateReseller = async (req, res) => {
     user.themeColor = "#16a34a";
     user.resellerActivatedAt = new Date();
 
-    /* ===== WALLET ===== */
+    /* ===== WALLET DEDUCTION ===== */
+
     wallet.balance -= activationFee;
 
     wallet.transactions.push({
-      type: "debit",
+      type: "Withdrawal",
       amount: activationFee,
-      status: "completed",
+      status: "Completed",
       description: "Reseller activation fee",
-      reference: "activation",
-      createdAt: new Date(),
+      date: new Date(),
     });
 
-    await Promise.all([user.save(), wallet.save()]);
+    await wallet.save();
+    await user.save();
 
     res.json({
-      message: "Reseller activated",
+      message: "Reseller activated successfully",
       domain: finalDomain,
-      balance: wallet.balance,
+      remainingBalance: wallet.balance,
     });
 
   } catch (error) {
@@ -126,133 +137,115 @@ export const activateReseller = async (req, res) => {
   }
 };
 
-/*
---------------------------------
-Dashboard (FIXED CORRECTLY)
---------------------------------
-*/
+/* ================================================
+   GET ACTIVATION FEE
+================================================ */
+
+export const getActivationFee = async (req, res) => {
+  try {
+    const settings = await Settings.findOne().lean();
+
+    res.json({
+      fee: settings?.resellerActivationFee || 25,
+      platformDomain: settings?.platformDomain || "marinepanel.online",
+    });
+  } catch (error) {
+    res.status(500).json({ message: "Failed to fetch fee" });
+  }
+};
+
+/* ================================================
+   DASHBOARD (FIXED)
+================================================ */
 
 export const getResellerDashboard = async (req, res) => {
   try {
-    const resellerId = req.reseller?._id || req.user._id;
+    const resellerId = req.user._id;
 
-    const [usersCount, ordersCount, stats, wallet, user] = await Promise.all([
-
+    const [usersCount, orders, wallet, user] = await Promise.all([
       User.countDocuments({ resellerOwner: resellerId }),
-
-      Order.countDocuments({ resellerOwner: resellerId }),
-
-      Order.aggregate([
-        {
-          $match: {
-            resellerOwner: resellerId,
-            status: { $nin: ["failed", "refunded", "cancelled"] },
-          },
-        },
-        {
-          $group: {
-            _id: null,
-            totalRevenue: { $sum: "$charge" },
-          },
-        },
-      ]),
-
-      // 🔥 ONLY COUNT CREDITED EARNINGS
-      Order.aggregate([
-        {
-          $match: {
-            resellerOwner: resellerId,
-            earningsCredited: true,
-          },
-        },
-        {
-          $group: {
-            _id: null,
-            earnings: { $sum: "$resellerCommission" },
-          },
-        },
-      ]),
-
+      Order.find({ resellerOwner: resellerId }).lean(),
       Wallet.findOne({ user: resellerId }).lean(),
-
       User.findById(resellerId).lean(),
     ]);
 
+    let totalOrders = orders.length;
+    let totalRevenue = 0;
+    let earnings = 0;
+
+    for (const order of orders) {
+      if (order.status !== "failed" && order.status !== "refunded") {
+        totalRevenue += Number(order.charge || 0);
+      }
+
+      if (order.earningsCredited) {
+        earnings += Number(order.resellerCommission || 0);
+      }
+    }
+
     res.json({
       users: usersCount,
-      orders: ordersCount,
-      totalRevenue: stats[0]?.totalRevenue || 0,
-      earnings: stats[1]?.earnings || 0,
+      orders: totalOrders,
+      revenue: totalRevenue,
+      earnings,
       wallet: wallet?.balance || 0,
-      domain: user?.resellerDomain || null,
-      brandName: user?.brandName || null,
+      domain: user?.resellerDomain,
+      brandName: user?.brandName,
     });
 
   } catch (error) {
-    console.error(error);
     res.status(500).json({ message: "Dashboard failed" });
   }
 };
 
-/*
---------------------------------
-Users
---------------------------------
-*/
+/* ================================================
+   USERS
+================================================ */
 
 export const getResellerUsers = async (req, res) => {
   try {
-    const resellerId = req.reseller?._id || req.user._id;
-
-    const users = await User.find({ resellerOwner: resellerId })
+    const users = await User.find({
+      resellerOwner: req.user._id,
+    })
       .select("-password")
-      .sort({ createdAt: -1 })
       .lean();
 
     res.json(users);
-  } catch (error) {
-    res.status(500).json({ message: "Users fetch failed" });
+  } catch {
+    res.status(500).json({ message: "Failed" });
   }
 };
 
-/*
---------------------------------
-Orders
---------------------------------
-*/
+/* ================================================
+   ORDERS
+================================================ */
 
 export const getResellerOrders = async (req, res) => {
   try {
-    const resellerId = req.reseller?._id || req.user._id;
-
-    const orders = await Order.find({ resellerOwner: resellerId })
-      .sort({ createdAt: -1 })
-      .lean();
+    const orders = await Order.find({
+      resellerOwner: req.user._id,
+    }).lean();
 
     res.json(orders);
-  } catch (error) {
-    res.status(500).json({ message: "Orders fetch failed" });
+  } catch {
+    res.status(500).json({ message: "Failed" });
   }
 };
 
-/*
---------------------------------
-Withdraw (SAFE)
---------------------------------
-*/
+/* ================================================
+   WITHDRAW (FIXED)
+================================================ */
 
 export const withdrawResellerFunds = async (req, res) => {
   try {
-    let { amount } = req.body;
-
-    amount = Number(amount);
-
-    const settings = await Settings.findOne().lean();
-    const minWithdraw = settings?.resellerWithdrawMin || 10;
+    const { amount } = req.body;
 
     if (!amount || amount <= 0) {
       return res.status(400).json({ message: "Invalid amount" });
     }
+
+    const settings = await Settings.findOne().lean();
+    const minWithdraw = settings?.resellerWithdrawMin || 10;
 
     if (amount < minWithdraw) {
       return res.status(400).json({
@@ -264,50 +257,40 @@ export const withdrawResellerFunds = async (req, res) => {
 
     if (!wallet || wallet.balance < amount) {
       return res.status(400).json({
-        message: "Insufficient wallet balance",
+        message: "Insufficient balance",
       });
     }
 
     wallet.balance -= amount;
 
     wallet.transactions.push({
-      type: "debit",
+      type: "Withdrawal",
       amount,
-      status: "completed",
+      status: "Completed",
       description: "Reseller withdrawal",
-      reference: "withdrawal",
-      createdAt: new Date(),
+      date: new Date(),
     });
 
     await wallet.save();
 
     res.json({
       message: "Withdrawal successful",
-      balance: wallet.balance,
+      remainingBalance: wallet.balance,
     });
 
   } catch (error) {
-    console.error(error);
     res.status(500).json({ message: "Withdraw failed" });
   }
 };
 
-/*
---------------------------------
-Branding
---------------------------------
-*/
+/* ================================================
+   BRANDING
+================================================ */
 
 export const updateBranding = async (req, res) => {
   try {
     const user = req.user;
     const { brandName, logo, themeColor } = req.body;
-
-    if (!user.isReseller) {
-      return res.status(403).json({
-        message: "Only resellers can update branding",
-      });
-    }
 
     if (brandName !== undefined) {
       const slug = generateSlug(brandName);
@@ -333,13 +316,13 @@ export const updateBranding = async (req, res) => {
     await user.save();
 
     res.json({
-      message: "Brand updated",
+      message: "Branding updated",
       brandName: user.brandName,
       logo: user.logo,
       themeColor: user.themeColor,
     });
 
-  } catch (error) {
-    res.status(500).json({ message: "Brand update failed" });
+  } catch {
+    res.status(500).json({ message: "Failed" });
   }
 };

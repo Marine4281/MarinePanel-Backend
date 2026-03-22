@@ -2,7 +2,10 @@
 import Order from "../models/Order.js";
 import User from "../models/User.js";
 import Wallet from "../models/Wallet.js";
-import { creditResellerCommission } from "./orderController.js"; // ✅ ADDED
+import { 
+  creditResellerCommission,
+  reverseResellerCommission // ✅ ADDED
+} from "./orderController.js";
 
 /* ======================================================
    GET ALL USER ORDERS (Search + Pagination)
@@ -233,7 +236,7 @@ export const refundOrder = async (req, res) => {
 
     if (!wallet) {
       wallet = await Wallet.create({
-        user: order.userId._id, // ✅ FIXED (was wrong before)
+        user: order.userId._id,
         balance: 0,
         transactions: [],
       });
@@ -285,6 +288,9 @@ export const refundOrder = async (req, res) => {
     order.refundProcessed = true;
 
     await order.save();
+
+    // 💸 REVERSE RESELLER COMMISSION (CRITICAL FIX)
+    await reverseResellerCommission(order);
 
     const io = req.app.get("io");
 

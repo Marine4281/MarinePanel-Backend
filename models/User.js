@@ -143,26 +143,50 @@ const userSchema = new mongoose.Schema(
       default: null,
       index: true,
     },
+
     /*
     --------------------------------
-    Support Links
+    Support Links (Improved)
     --------------------------------
     */
     supportWhatsapp: {
       type: String,
       default: null,
+      trim: true,
+      validate: {
+        validator: function (v) {
+          if (!v) return true; // allow null
+          const cleaned = v.replace(/\D/g, "");
+          return cleaned.length >= 7 && cleaned.length <= 15;
+        },
+        message: "Invalid WhatsApp number",
+      },
     },
-    
-   supportTelegram: {
-     type: String,
-     default: null,
-   },
-    
-   supportWhatsappChannel: {
-     type: String,
-     default: null,
-   },
 
+    supportTelegram: {
+      type: String,
+      default: null,
+      trim: true,
+      validate: {
+        validator: function (v) {
+          if (!v) return true;
+          return typeof v === "string";
+        },
+      },
+    },
+
+    supportWhatsappChannel: {
+      type: String,
+      default: null,
+      trim: true,
+      validate: {
+        validator: function (v) {
+          if (!v) return true;
+          return v.startsWith("http");
+        },
+        message: "Channel must be a valid link",
+      },
+    },
 
     /*
     --------------------------------

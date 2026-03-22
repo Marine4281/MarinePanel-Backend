@@ -143,6 +143,26 @@ const userSchema = new mongoose.Schema(
       default: null,
       index: true,
     },
+    /*
+    --------------------------------
+    Support Links
+    --------------------------------
+    */
+    supportWhatsapp: {
+      type: String,
+      default: null,
+    },
+    
+   supportTelegram: {
+     type: String,
+     default: null,
+   },
+    
+   supportWhatsappChannel: {
+     type: String,
+     default: null,
+   },
+
 
     /*
     --------------------------------

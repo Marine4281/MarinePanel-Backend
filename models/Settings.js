@@ -26,6 +26,27 @@ const settingsSchema = new mongoose.Schema(
       default: 10,
     },
 
+    /*
+    --------------------------------
+    Support Links
+    --------------------------------
+    */
+    supportWhatsapp: {
+      type: String,
+      default: "",
+    },
+    
+   supportTelegram: {
+     type: String,
+     default: "",
+   },
+    
+   supportWhatsappChannel: {
+     type: String,
+     default: "",
+   },
+
+
     // Platform domain used for reseller subdomains
     platformDomain: {
       type: String,

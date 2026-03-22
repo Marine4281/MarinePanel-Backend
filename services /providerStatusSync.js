@@ -136,6 +136,8 @@ export const syncProviderOrders = async (io) => {
                 order.refundProcessed = true;
 
                 await wallet.save();
+                // 💸 REVERSE RESELLER COMMISSION
+                await reverseResellerCommission(order);
               }
 
               // ==============================

@@ -14,7 +14,7 @@ CREDIT RESELLER (SAFE - CALLED ON COMPLETION)
 export const creditResellerCommission = async (order) => {
   try {
     if (
-      order.status !== "completed" ||
+      order.status !== "Completed" ||
       order.earningsCredited ||
       !order.resellerOwner ||
       order.resellerCommission <= 0
@@ -30,7 +30,7 @@ export const creditResellerCommission = async (order) => {
     wallet.transactions.push({
       type: "credit",
       amount: order.resellerCommission,
-      status: "completed",
+      status: "Completed",
       description: `Commission from ${order.orderId}`,
       reference: order._id,
       createdAt: new Date(),

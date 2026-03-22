@@ -1,8 +1,10 @@
+//services/providerStatusSync.js
 import Order from "../models/Order.js";
 import Service from "../models/Service.js";
 import Wallet from "../models/Wallet.js";
 import axios from "axios";
 import { mapProviderStatus, calculateDelivered } from "../utils/providerStatusMapper.js";
+import { creditResellerCommission } from "../controllers/orderController.js"; // ✅ ADDED
 
 // ===============================================
 // 🔄 SYNC PROVIDER ORDER STATUSES
@@ -168,6 +170,13 @@ export const syncProviderOrders = async (io) => {
 
             await order.save();
 
+            // ===============================================
+            // 💰 CREDIT RESELLER (🔥 FIXED HERE)
+            // ===============================================
+            if (order.status === "completed") {
+              await creditResellerCommission(order);
+            }
+
             // 🔥 Real-time update
             if (io) {
               io.to(order.userId.toString()).emit("orderUpdated", {
@@ -202,10 +211,6 @@ export const startProviderStatusSync = (io) => {
   // run immediately
   runSync();
 
-  // run every 60 seconds
+  // run every 45 seconds
   setInterval(runSync, 45000);
 };
-
-
-
-

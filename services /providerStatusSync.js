@@ -4,7 +4,7 @@ import Service from "../models/Service.js";
 import Wallet from "../models/Wallet.js";
 import axios from "axios";
 import { mapProviderStatus, calculateDelivered } from "../utils/providerStatusMapper.js";
-import { creditResellerCommission } from "../controllers/orderController.js"; // ✅ ADDED
+import { creditResellerCommission,reverseResellerCommission } from "../controllers/orderController.js"; // ✅ ADDED
 
 // ===============================================
 // 🔄 SYNC PROVIDER ORDER STATUSES

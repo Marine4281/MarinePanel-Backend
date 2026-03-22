@@ -7,15 +7,12 @@ import Settings from "../models/Settings.js";
 ========================================
 PUBLIC BRANDING (DOMAIN-BASED)
 ========================================
-Used for:
-- Landing pages
-- End users
-- White-labeled domains
-
-DOES NOT depend on logged-in user
 */
 export const getPublicBranding = async (req, res) => {
   try {
+    // ✅ Fetch once (needed for fallback)
+    const settings = await Settings.findOne().lean();
+
     /*
     ================================
     🟢 RESELLER DOMAIN
@@ -28,11 +25,20 @@ export const getPublicBranding = async (req, res) => {
         themeColor: req.brand.themeColor || "#16a34a",
         domain: req.brand.domain || null,
 
-        // ✅ NEW: Reseller Support
+        // ✅ FIXED: SaaS fallback (reseller → admin → "")
         support: {
-          whatsapp: req.reseller.supportWhatsapp || "",
-          telegram: req.reseller.supportTelegram || "",
-          whatsappChannel: req.reseller.supportWhatsappChannel || "",
+          whatsapp:
+            req.reseller.supportWhatsapp ||
+            settings?.supportWhatsapp ||
+            "",
+          telegram:
+            req.reseller.supportTelegram ||
+            settings?.supportTelegram ||
+            "",
+          whatsappChannel:
+            req.reseller.supportWhatsappChannel ||
+            settings?.supportWhatsappChannel ||
+            "",
         },
       });
     }
@@ -42,44 +48,37 @@ export const getPublicBranding = async (req, res) => {
     🔵 MAIN PANEL (ADMIN)
     ================================
     */
-    const settings = await Settings.findOne().lean();
-
     return res.json({
       brandName: "MarinePanel",
       logo: null,
       themeColor: "#f97316",
       domain: "marinepanel.online",
 
-      // ✅ NEW: Admin Support
       support: {
         whatsapp: settings?.supportWhatsapp || "",
         telegram: settings?.supportTelegram || "",
         whatsappChannel: settings?.supportWhatsappChannel || "",
       },
     });
-
   } catch (error) {
     console.error("Public Branding error:", error);
     res.status(500).json({ message: "Branding load failed" });
   }
 };
 
-
 /*
 ========================================
 DASHBOARD BRANDING (USER-BASED)
 ========================================
-Used for:
-- Reseller dashboard
-- Branding settings page
-
-ALWAYS tied to logged-in user
 */
 export const getDashboardBranding = async (req, res) => {
   try {
     if (!req.user) {
       return res.status(401).json({ message: "Unauthorized" });
     }
+
+    // ✅ Fetch once for fallback
+    const settings = await Settings.findOne().lean();
 
     /*
     ================================
@@ -93,11 +92,20 @@ export const getDashboardBranding = async (req, res) => {
         themeColor: req.user.themeColor || "#16a34a",
         domain: req.user.resellerDomain || null,
 
-        // ✅ NEW: Reseller Support (for dashboard editing UI)
+        // ✅ FIXED: fallback added
         support: {
-          whatsapp: req.user.supportWhatsapp || "",
-          telegram: req.user.supportTelegram || "",
-          whatsappChannel: req.user.supportWhatsappChannel || "",
+          whatsapp:
+            req.user.supportWhatsapp ||
+            settings?.supportWhatsapp ||
+            "",
+          telegram:
+            req.user.supportTelegram ||
+            settings?.supportTelegram ||
+            "",
+          whatsappChannel:
+            req.user.supportWhatsappChannel ||
+            settings?.supportWhatsappChannel ||
+            "",
         },
       });
     }
@@ -107,34 +115,28 @@ export const getDashboardBranding = async (req, res) => {
     🔵 ADMIN / NORMAL USER
     ================================
     */
-    const settings = await Settings.findOne().lean();
-
     return res.json({
       brandName: "MarinePanel",
       logo: null,
       themeColor: "#f97316",
       domain: "marinepanel.online",
 
-      // ✅ Admin support fallback
       support: {
         whatsapp: settings?.supportWhatsapp || "",
         telegram: settings?.supportTelegram || "",
         whatsappChannel: settings?.supportWhatsappChannel || "",
       },
     });
-
   } catch (error) {
     console.error("Dashboard Branding error:", error);
     res.status(500).json({ message: "Branding load failed" });
   }
 };
 
-
 /*
 ========================================
 UPDATE BRANDING (RESELLER ONLY)
 ========================================
-Now also updates SUPPORT (SaaS-ready)
 */
 export const updateBranding = async (req, res) => {
   try {
@@ -147,7 +149,7 @@ export const updateBranding = async (req, res) => {
       themeColor,
       logo,
 
-      // ✅ NEW SUPPORT FIELDS
+      // ✅ SUPPORT FIELDS
       supportWhatsapp,
       supportTelegram,
       supportWhatsappChannel,
@@ -176,7 +178,7 @@ export const updateBranding = async (req, res) => {
         logo: updatedUser.logo,
         domain: updatedUser.resellerDomain,
 
-        // ✅ Return support (important for frontend sync)
+        // ✅ Keep consistent response
         support: {
           whatsapp: updatedUser.supportWhatsapp || "",
           telegram: updatedUser.supportTelegram || "",
@@ -185,7 +187,6 @@ export const updateBranding = async (req, res) => {
         },
       },
     });
-
   } catch (error) {
     console.error("Update Branding error:", error);
     res.status(500).json({ message: "Failed to update branding" });

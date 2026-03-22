@@ -30,7 +30,7 @@ export const creditResellerCommission = async (order) => {
     wallet.transactions.push({
       type: "Order",
       amount: order.resellerCommission,
-      status: "completed",
+      status: "Completed",
       description: `Commission from ${order.orderId}`,
       reference: order._id,
       createdAt: new Date(),
@@ -237,9 +237,9 @@ export const createOrder = async (req, res) => {
       wallet.balance -= finalCharge;
 
       wallet.transactions.push({
-        type: "debit",
+        type: "Order",
         amount: finalCharge,
-        status: "completed",
+        status: "Completed",
         description: `Order ${order.orderId}`,
         reference: order._id,
         createdAt: new Date(),

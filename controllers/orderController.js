@@ -238,7 +238,7 @@ export const createOrder = async (req, res) => {
 
       wallet.transactions.push({
         type: "Order",
-        amount: finalCharge,
+        amount: -Number(finalCharge),
         status: "Completed",
         description: `Order ${order.orderId}`,
         reference: order._id,

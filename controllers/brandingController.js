@@ -24,11 +24,12 @@ export const getPublicBranding = async (req, res) => {
         themeColor: req.brand.themeColor || "#16a34a",
         domain: req.brand.domain || null,
 
-        // ❌ NO FALLBACK → reseller only
+        // ✅ NO FALLBACK → reseller only
         support: {
           whatsapp: req.reseller.supportWhatsapp || "",
           telegram: req.reseller.supportTelegram || "",
-          whatsappChannel: req.reseller.supportWhatsappChannel || "",
+          whatsappChannel:
+            req.reseller.supportWhatsappChannel || "",
         },
       });
     }
@@ -44,7 +45,6 @@ export const getPublicBranding = async (req, res) => {
       themeColor: "#f97316",
       domain: "marinepanel.online",
 
-      // ✅ Admin uses settings
       support: {
         whatsapp: settings?.supportWhatsapp || "",
         telegram: settings?.supportTelegram || "",
@@ -82,18 +82,47 @@ export const getDashboardBranding = async (req, res) => {
         themeColor: req.user.themeColor || "#16a34a",
         domain: req.user.resellerDomain || null,
 
-        // ❌ NO FALLBACK
+        // ✅ reseller only (no fallback)
         support: {
           whatsapp: req.user.supportWhatsapp || "",
           telegram: req.user.supportTelegram || "",
-          whatsappChannel: req.user.supportWhatsappChannel || "",
+          whatsappChannel:
+            req.user.supportWhatsappChannel || "",
         },
       });
     }
 
     /*
     ================================
-    🔵 ADMIN / NORMAL USER
+    🟡 USER UNDER RESELLER
+    ================================
+    */
+    if (req.user.resellerOwner) {
+      const reseller = await User.findById(
+        req.user.resellerOwner
+      ).lean();
+
+      if (reseller) {
+        return res.json({
+          brandName: reseller.brandName || "Reseller Panel",
+          logo: reseller.logo || null,
+          themeColor: reseller.themeColor || "#16a34a",
+          domain: reseller.resellerDomain || null,
+
+          // ✅ user sees reseller support
+          support: {
+            whatsapp: reseller.supportWhatsapp || "",
+            telegram: reseller.supportTelegram || "",
+            whatsappChannel:
+              reseller.supportWhatsappChannel || "",
+          },
+        });
+      }
+    }
+
+    /*
+    ================================
+    🔵 ADMIN / NORMAL USER (NO RESELLER)
     ================================
     */
     return res.json({
@@ -102,7 +131,6 @@ export const getDashboardBranding = async (req, res) => {
       themeColor: "#f97316",
       domain: "marinepanel.online",
 
-      // ✅ Admin support
       support: {
         whatsapp: settings?.supportWhatsapp || "",
         telegram: settings?.supportTelegram || "",

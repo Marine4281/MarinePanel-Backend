@@ -10,8 +10,15 @@ PUBLIC BRANDING (DOMAIN-BASED)
 */
 export const getPublicBranding = async (req, res) => {
   try {
-    // ✅ Fetch once (needed for fallback)
-    const settings = await Settings.findOne().lean();
+    // ✅ Ensure settings always exists
+    let settings = await Settings.findOne().lean();
+    if (!settings) {
+      settings = {
+        supportWhatsapp: "",
+        supportTelegram: "",
+        supportWhatsappChannel: "",
+      };
+    }
 
     /*
     ================================
@@ -25,19 +32,19 @@ export const getPublicBranding = async (req, res) => {
         themeColor: req.brand.themeColor || "#16a34a",
         domain: req.brand.domain || null,
 
-        // ✅ FIXED: SaaS fallback (reseller → admin → "")
+        // ✅ SaaS fallback (reseller → admin → "")
         support: {
           whatsapp:
             req.reseller.supportWhatsapp ||
-            settings?.supportWhatsapp ||
+            settings.supportWhatsapp ||
             "",
           telegram:
             req.reseller.supportTelegram ||
-            settings?.supportTelegram ||
+            settings.supportTelegram ||
             "",
           whatsappChannel:
             req.reseller.supportWhatsappChannel ||
-            settings?.supportWhatsappChannel ||
+            settings.supportWhatsappChannel ||
             "",
         },
       });
@@ -55,9 +62,9 @@ export const getPublicBranding = async (req, res) => {
       domain: "marinepanel.online",
 
       support: {
-        whatsapp: settings?.supportWhatsapp || "",
-        telegram: settings?.supportTelegram || "",
-        whatsappChannel: settings?.supportWhatsappChannel || "",
+        whatsapp: settings.supportWhatsapp || "",
+        telegram: settings.supportTelegram || "",
+        whatsappChannel: settings.supportWhatsappChannel || "",
       },
     });
   } catch (error) {
@@ -77,8 +84,15 @@ export const getDashboardBranding = async (req, res) => {
       return res.status(401).json({ message: "Unauthorized" });
     }
 
-    // ✅ Fetch once for fallback
-    const settings = await Settings.findOne().lean();
+    // ✅ Ensure settings exists
+    let settings = await Settings.findOne().lean();
+    if (!settings) {
+      settings = {
+        supportWhatsapp: "",
+        supportTelegram: "",
+        supportWhatsappChannel: "",
+      };
+    }
 
     /*
     ================================
@@ -92,19 +106,19 @@ export const getDashboardBranding = async (req, res) => {
         themeColor: req.user.themeColor || "#16a34a",
         domain: req.user.resellerDomain || null,
 
-        // ✅ FIXED: fallback added
+        // ✅ Fallback logic
         support: {
           whatsapp:
             req.user.supportWhatsapp ||
-            settings?.supportWhatsapp ||
+            settings.supportWhatsapp ||
             "",
           telegram:
             req.user.supportTelegram ||
-            settings?.supportTelegram ||
+            settings.supportTelegram ||
             "",
           whatsappChannel:
             req.user.supportWhatsappChannel ||
-            settings?.supportWhatsappChannel ||
+            settings.supportWhatsappChannel ||
             "",
         },
       });
@@ -122,9 +136,9 @@ export const getDashboardBranding = async (req, res) => {
       domain: "marinepanel.online",
 
       support: {
-        whatsapp: settings?.supportWhatsapp || "",
-        telegram: settings?.supportTelegram || "",
-        whatsappChannel: settings?.supportWhatsappChannel || "",
+        whatsapp: settings.supportWhatsapp || "",
+        telegram: settings.supportTelegram || "",
+        whatsappChannel: settings.supportWhatsappChannel || "",
       },
     });
   } catch (error) {
@@ -148,25 +162,24 @@ export const updateBranding = async (req, res) => {
       brandName,
       themeColor,
       logo,
-
-      // ✅ SUPPORT FIELDS
       supportWhatsapp,
       supportTelegram,
       supportWhatsappChannel,
     } = req.body;
 
+    // ✅ CRITICAL FIX: NEVER SAVE undefined
+    const updateData = {
+      brandName,
+      themeColor,
+      logo,
+      supportWhatsapp: supportWhatsapp || "",
+      supportTelegram: supportTelegram || "",
+      supportWhatsappChannel: supportWhatsappChannel || "",
+    };
+
     const updatedUser = await User.findByIdAndUpdate(
       req.user._id,
-      {
-        brandName,
-        themeColor,
-        logo,
-
-        // ✅ Save support
-        supportWhatsapp,
-        supportTelegram,
-        supportWhatsappChannel,
-      },
+      updateData,
       { new: true }
     );
 
@@ -178,7 +191,6 @@ export const updateBranding = async (req, res) => {
         logo: updatedUser.logo,
         domain: updatedUser.resellerDomain,
 
-        // ✅ Keep consistent response
         support: {
           whatsapp: updatedUser.supportWhatsapp || "",
           telegram: updatedUser.supportTelegram || "",

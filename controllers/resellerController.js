@@ -116,7 +116,7 @@ export const activateReseller = async (req, res) => {
 
     wallet.transactions.push({
       type: "Withdrawal",
-      amount: activationFee,
+      amount: -Number(activationFee),
       status: "Completed",
       description: "Reseller activation fee",
       date: new Date(),

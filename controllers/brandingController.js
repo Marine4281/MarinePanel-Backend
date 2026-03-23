@@ -54,6 +54,7 @@ export const getDashboardBranding = async (req, res) => {
 
     const settings = await Settings.findOne().lean();
 
+    // Reseller dashboard
     if (req.user.isReseller) {
       return res.json({
         brandName: req.user.brandName || "Reseller Panel",
@@ -71,6 +72,7 @@ export const getDashboardBranding = async (req, res) => {
     // Users under reseller
     if (req.user.resellerOwner) {
       const reseller = await User.findById(req.user.resellerOwner).lean();
+
       if (reseller) {
         return res.json({
           brandName: reseller.brandName || "Reseller Panel",
@@ -111,8 +113,9 @@ UPDATE BRANDING (RESELLER ONLY)
 */
 export const updateBranding = async (req, res) => {
   try {
-    if (!req.user || !req.user.isReseller)
+    if (!req.user || !req.user.isReseller) {
       return res.status(403).json({ message: "Access denied" });
+    }
 
     const {
       brandName,
@@ -123,21 +126,72 @@ export const updateBranding = async (req, res) => {
       supportWhatsappChannel,
     } = req.body;
 
-    // Fetch user first
     const user = await User.findById(req.user._id);
-
     if (!user) return res.status(404).json({ message: "User not found" });
 
-    // Only update fields if defined (like admin pattern)
+    /*
+    --------------------------------
+    BASIC BRANDING
+    --------------------------------
+    */
     if (brandName !== undefined) user.brandName = brandName;
     if (themeColor !== undefined) user.themeColor = themeColor;
     if (logo !== undefined) user.logo = logo;
 
-    if (supportWhatsapp !== undefined) user.supportWhatsapp = supportWhatsapp;
-    if (supportTelegram !== undefined) user.supportTelegram = supportTelegram;
-    if (supportWhatsappChannel !== undefined)
-      user.supportWhatsappChannel = supportWhatsappChannel;
+    /*
+    --------------------------------
+    ✅ SUPPORT NORMALIZATION (FIXED)
+    --------------------------------
+    */
 
+    // WhatsApp (number OR link)
+    if (supportWhatsapp !== undefined) {
+      let value = supportWhatsapp.trim();
+
+      // Add https if wa.me without protocol
+      if (value && value.includes("wa.me") && !value.startsWith("http")) {
+        value = "https://" + value;
+      }
+
+      // If not a URL, clean to digits
+      if (value && !value.startsWith("http")) {
+        value = value.replace(/\D/g, "");
+      }
+
+      user.supportWhatsapp = value;
+    }
+
+    // Telegram (username OR link)
+    if (supportTelegram !== undefined) {
+      let value = supportTelegram.trim();
+
+      if (
+        value &&
+        !value.startsWith("http") &&
+        !value.startsWith("@")
+      ) {
+        value = "@" + value;
+      }
+
+      user.supportTelegram = value;
+    }
+
+    // WhatsApp Channel / Group / Invite
+    if (supportWhatsappChannel !== undefined) {
+      let value = supportWhatsappChannel.trim();
+
+      if (value && !value.startsWith("http")) {
+        value = "https://" + value;
+      }
+
+      user.supportWhatsappChannel = value;
+    }
+
+    /*
+    --------------------------------
+    SAVE
+    --------------------------------
+    */
     await user.save();
 
     return res.json({
@@ -156,6 +210,16 @@ export const updateBranding = async (req, res) => {
     });
   } catch (error) {
     console.error("Update Branding error:", error);
+
+    // ✅ RETURN REAL VALIDATION ERRORS
+    if (error.name === "ValidationError") {
+      return res.status(400).json({
+        message: Object.values(error.errors)
+          .map((e) => e.message)
+          .join(", "),
+      });
+    }
+
     res.status(500).json({ message: "Failed to update branding" });
   }
 };

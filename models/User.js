@@ -145,48 +145,65 @@ const userSchema = new mongoose.Schema(
     },
 
     /*
-    --------------------------------
-    Support Links (Improved)
-    --------------------------------
-    */
-    supportWhatsapp: {
-      type: String,
-      default: "",
-      trim: true,
-      validate: {
-        validator: function (v) {
-          if (!v) return true; // allow null
-          const cleaned = v.replace(/\D/g, "");
-          return cleaned.length >= 7 && cleaned.length <= 15;
-        },
-        message: "Invalid WhatsApp number",
-      },
-    },
+--------------------------------
+Support Links (Final - Robust & Flexible)
+--------------------------------
+*/
 
-    supportTelegram: {
-      type: String,
-      default: "",
-      trim: true,
-      validate: {
-        validator: function (v) {
-          if (!v) return true;
-          return typeof v === "string";
-        },
-      },
-    },
+// WhatsApp (number OR wa.me link)
+supportWhatsapp: {
+  type: String,
+  default: "",
+  trim: true,
+  validate: {
+    validator: function (v) {
+      if (!v) return true;
 
-    supportWhatsappChannel: {
-      type: String,
-      default: "",
-      trim: true,
-      validate: {
-        validator: function (v) {
-          if (!v) return true;
-          return v.startsWith("http");
-        },
-        message: "Channel must be a valid link",
-      },
+      const cleaned = v.replace(/\D/g, "");
+
+      return (
+        (cleaned.length >= 7 && cleaned.length <= 15) ||
+        /^(https?:\/\/)?(wa\.me)\//.test(v)
+      );
     },
+    message: "Invalid WhatsApp number or link",
+  },
+},
+
+// Telegram (username OR full link)
+supportTelegram: {
+  type: String,
+  default: "",
+  trim: true,
+  validate: {
+    validator: function (v) {
+      if (!v) return true;
+
+      return (
+        /^@?[a-zA-Z0-9_]{5,}$/.test(v) ||
+        /^(https?:\/\/)?t\.me\/[a-zA-Z0-9_]+/.test(v)
+      );
+    },
+    message: "Invalid Telegram username or link",
+  },
+},
+
+// WhatsApp Channel / Group / Invite (VERY FLEXIBLE)
+supportWhatsappChannel: {
+  type: String,
+  default: "",
+  trim: true,
+  validate: {
+    validator: function (v) {
+      if (!v) return true;
+
+      return /^(https?:\/\/)?(chat\.whatsapp\.com|wa\.me|whatsapp\.com\/channel)\//.test(v);
+    },
+    message: "Invalid WhatsApp channel/group link",
+  },
+},
+
+    
 
     /*
     --------------------------------

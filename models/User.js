@@ -55,7 +55,7 @@ const userSchema = new mongoose.Schema(
       index: true,
     },
 
-    // Branding fields
+    // Branding fields (used everywhere)
     brandName: {
       type: String,
       default: null,
@@ -81,7 +81,7 @@ const userSchema = new mongoose.Schema(
       trim: true,
     },
 
-    // Domains
+    // Subdomain and custom domain
     resellerDomain: {
       type: String,
       default: null,
@@ -95,34 +95,37 @@ const userSchema = new mongoose.Schema(
       trim: true,
     },
 
-    // Commission
+    // Commission percentage
     resellerCommissionRate: {
       type: Number,
       default: 0,
     },
 
-    // Earnings
+    // Reseller wallet (earnings)
     resellerWallet: {
       type: Number,
       default: 0,
     },
 
+    // Total earnings
     resellerTotalEarned: {
       type: Number,
       default: 0,
     },
 
+    // Total users under reseller
     resellerUsersCount: {
       type: Number,
       default: 0,
     },
 
+    // Total orders from reseller users
     resellerOrdersCount: {
       type: Number,
       default: 0,
     },
 
-    // ✅ Activation (core of SaaS gating)
+    // Activation time
     resellerActivatedAt: {
       type: Date,
       default: null,
@@ -133,6 +136,7 @@ const userSchema = new mongoose.Schema(
     RESELLER USER RELATION
     --------------------------------
     */
+
     resellerOwner: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
@@ -141,69 +145,65 @@ const userSchema = new mongoose.Schema(
     },
 
     /*
-    --------------------------------
-    SUPPORT (ACTIVE RESELLERS ONLY)
-    --------------------------------
-    */
+--------------------------------
+Support Links (Final - Robust & Flexible)
+--------------------------------
+*/
 
-    // WhatsApp
-    supportWhatsapp: {
-      type: String,
-      default: "",
-      trim: true,
-      validate: {
-        validator: function (v) {
-          // ✅ Only validate if active reseller
-          if (!this.isReseller || !this.resellerActivatedAt) return true;
-          if (!v) return true;
+// WhatsApp (number OR wa.me link)
+supportWhatsapp: {
+  type: String,
+  default: "",
+  trim: true,
+  validate: {
+    validator: function (v) {
+      if (!v) return true;
 
-          const cleaned = v.replace(/\D/g, "");
+      const cleaned = v.replace(/\D/g, "");
 
-          return (
-            (cleaned.length >= 7 && cleaned.length <= 15) ||
-            /^(https?:\/\/)?(wa\.me)\//.test(v)
-          );
-        },
-        message: "Invalid WhatsApp number or link",
-      },
+      return (
+        (cleaned.length >= 7 && cleaned.length <= 15) ||
+        /^(https?:\/\/)?(wa\.me)\//.test(v)
+      );
     },
+    message: "Invalid WhatsApp number or link",
+  },
+},
 
-    // Telegram
-    supportTelegram: {
-      type: String,
-      default: "",
-      trim: true,
-      validate: {
-        validator: function (v) {
-          if (!this.isReseller || !this.resellerActivatedAt) return true;
-          if (!v) return true;
+// Telegram (username OR full link)
+supportTelegram: {
+  type: String,
+  default: "",
+  trim: true,
+  validate: {
+    validator: function (v) {
+      if (!v) return true;
 
-          return (
-            /^@?[a-zA-Z0-9_]{5,}$/.test(v) ||
-            /^(https?:\/\/)?t\.me\/[a-zA-Z0-9_]+/.test(v)
-          );
-        },
-        message: "Invalid Telegram username or link",
-      },
+      return (
+        /^@?[a-zA-Z0-9_]{5,}$/.test(v) ||
+        /^(https?:\/\/)?t\.me\/[a-zA-Z0-9_]+/.test(v)
+      );
     },
+    message: "Invalid Telegram username or link",
+  },
+},
 
-    // WhatsApp Channel
-    supportWhatsappChannel: {
-      type: String,
-      default: "",
-      trim: true,
-      validate: {
-        validator: function (v) {
-          if (!this.isReseller || !this.resellerActivatedAt) return true;
-          if (!v) return true;
+// WhatsApp Channel / Group / Invite (VERY FLEXIBLE)
+supportWhatsappChannel: {
+  type: String,
+  default: "",
+  trim: true,
+  validate: {
+    validator: function (v) {
+      if (!v) return true;
 
-          return /^(https?:\/\/)?(chat\.whatsapp\.com|wa\.me|whatsapp\.com\/channel)\//.test(
-            v
-          );
-        },
-        message: "Invalid WhatsApp channel/group link",
-      },
+      return /^(https?:\/\/)?(chat\.whatsapp\.com|wa\.me|whatsapp\.com\/channel)\//.test(v);
     },
+    message: "Invalid WhatsApp channel/group link",
+  },
+},
+
+    
 
     /*
     --------------------------------
@@ -228,30 +228,7 @@ const userSchema = new mongoose.Schema(
 
 /*
 --------------------------------
-VIRTUAL: Active Reseller
---------------------------------
-*/
-userSchema.virtual("isActiveReseller").get(function () {
-  return this.isReseller && !!this.resellerActivatedAt;
-});
-
-/*
---------------------------------
-AUTO CLEAN SUPPORT IF NOT ACTIVE
---------------------------------
-*/
-userSchema.pre("save", function (next) {
-  if (!this.isReseller || !this.resellerActivatedAt) {
-    this.supportWhatsapp = "";
-    this.supportTelegram = "";
-    this.supportWhatsappChannel = "";
-  }
-  next();
-});
-
-/*
---------------------------------
-Indexes
+Indexes for fast reseller queries
 --------------------------------
 */
 userSchema.index({ resellerOwner: 1 });

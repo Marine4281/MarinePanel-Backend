@@ -8,7 +8,6 @@ PUBLIC BRANDING (DOMAIN-BASED)
 */
 export const getPublicBranding = async (req, res) => {
   try {
-    // ✅ Only allow ACTIVE reseller branding
     if (
       req.brand &&
       req.brand.isReseller &&
@@ -18,30 +17,27 @@ export const getPublicBranding = async (req, res) => {
         brandName: req.brand.brandName || "Reseller Panel",
         logo: req.brand.logo || "",
         themeColor: req.brand.themeColor || "#16a34a",
-        domain: req.brand.domain || null,
-
-        // ✅ SUPPORT (ACTIVE ONLY)
+        domain: req.brand.resellerDomain || req.brand.domain || null,
         supportWhatsapp: req.brand.supportWhatsapp || "",
         supportTelegram: req.brand.supportTelegram || "",
         supportWhatsappChannel: req.brand.supportWhatsappChannel || "",
       });
     }
 
-    // ✅ Default platform branding
     return res.json({
       brandName: "MarinePanel",
       logo: "",
       themeColor: "#f97316",
       domain: "marinepanel.online",
-
-      // ❌ No support leakage
       supportWhatsapp: "",
       supportTelegram: "",
       supportWhatsappChannel: "",
     });
   } catch (error) {
     console.error("Public Branding error:", error);
-    return res.status(500).json({ message: "Branding load failed" });
+    return res.status(500).json({
+      message: error.message || "Branding load failed",
+    });
   }
 };
 
@@ -52,42 +48,44 @@ DASHBOARD BRANDING (USER-BASED)
 */
 export const getDashboardBranding = async (req, res) => {
   try {
-    if (!req.user) {
+    if (!req.user || !req.user._id) {
       return res.status(401).json({ message: "Unauthorized" });
     }
 
-    const isActiveReseller =
-      req.user.isReseller && req.user.resellerActivatedAt;
+    const user = await User.findById(req.user._id).lean();
 
-    // ✅ ACTIVE reseller only
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    const isActiveReseller = user.isReseller && user.resellerActivatedAt;
+
     if (isActiveReseller) {
       return res.json({
-        brandName: req.user.brandName || "Reseller Panel",
-        logo: req.user.logo || "",
-        themeColor: req.user.themeColor || "#16a34a",
-        domain: req.user.resellerDomain || null,
-
-        // ✅ SUPPORT
-        supportWhatsapp: req.user.supportWhatsapp || "",
-        supportTelegram: req.user.supportTelegram || "",
-        supportWhatsappChannel: req.user.supportWhatsappChannel || "",
+        brandName: user.brandName || "Reseller Panel",
+        logo: user.logo || "",
+        themeColor: user.themeColor || "#16a34a",
+        domain: user.resellerDomain || null,
+        supportWhatsapp: user.supportWhatsapp || "",
+        supportTelegram: user.supportTelegram || "",
+        supportWhatsappChannel: user.supportWhatsappChannel || "",
       });
     }
 
-    // ❌ Inactive reseller OR normal user
     return res.json({
       brandName: "MarinePanel",
       logo: "",
       themeColor: "#f97316",
       domain: "marinepanel.online",
-
       supportWhatsapp: "",
       supportTelegram: "",
       supportWhatsappChannel: "",
     });
   } catch (error) {
     console.error("Dashboard Branding error:", error);
-    return res.status(500).json({ message: "Branding load failed" });
+    return res.status(500).json({
+      message: error.message || "Branding load failed",
+    });
   }
 };
 
@@ -98,10 +96,24 @@ UPDATE BRANDING (ACTIVE RESELLER ONLY)
 */
 export const updateBranding = async (req, res) => {
   try {
-    const isActiveReseller =
-      req.user &&
-      req.user.isReseller &&
-      req.user.resellerActivatedAt;
+    // 🔍 Debug incoming auth and body
+    console.log("PATCH /branding req.user:", req.user);
+    console.log("PATCH /branding req.body:", req.body);
+
+    if (!req.user || !req.user._id) {
+      return res.status(401).json({
+        message: "Unauthorized: user not found in request",
+      });
+    }
+
+    // Always fetch fresh user from DB
+    const user = await User.findById(req.user._id);
+
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    const isActiveReseller = user.isReseller && user.resellerActivatedAt;
 
     if (!isActiveReseller) {
       return res.status(403).json({
@@ -116,78 +128,85 @@ export const updateBranding = async (req, res) => {
       supportWhatsapp,
       supportTelegram,
       supportWhatsappChannel,
-    } = req.body;
+    } = req.body || {};
 
-    const updateData = {};
-
-    // Helper: convert null/undefined to empty string for optional string fields
     const normalizeOptionalString = (value) => {
       if (value === null || value === undefined) return "";
-      if (typeof value === "string") return value.trim();
       return String(value).trim();
     };
 
-    // Branding
+    // Update only fields that were sent
     if (brandName !== undefined) {
-      updateData.brandName = brandName;
+      user.brandName = normalizeOptionalString(brandName);
     }
 
     if (themeColor !== undefined) {
-      updateData.themeColor = themeColor;
+      user.themeColor = normalizeOptionalString(themeColor);
     }
 
-    // Optional fields: always save "" instead of null
     if (logo !== undefined) {
-      updateData.logo = normalizeOptionalString(logo);
+      user.logo = normalizeOptionalString(logo);
     }
 
     if (supportWhatsapp !== undefined) {
-      updateData.supportWhatsapp = normalizeOptionalString(supportWhatsapp);
+      user.supportWhatsapp = normalizeOptionalString(supportWhatsapp);
     }
 
     if (supportTelegram !== undefined) {
-      updateData.supportTelegram = normalizeOptionalString(supportTelegram);
+      user.supportTelegram = normalizeOptionalString(supportTelegram);
     }
 
     if (supportWhatsappChannel !== undefined) {
-      updateData.supportWhatsappChannel =
-        normalizeOptionalString(supportWhatsappChannel);
+      user.supportWhatsappChannel = normalizeOptionalString(
+        supportWhatsappChannel
+      );
     }
 
-    const user = await User.findById(req.user._id);
-    if (!user) {
-      return res.status(404).json({ message: "User not found" });
-    }
-
-    Object.keys(updateData).forEach((key) => {
-      user[key] = updateData[key];
+    console.log("Saving branding for user:", {
+      id: user._id,
+      brandName: user.brandName,
+      themeColor: user.themeColor,
+      logo: user.logo,
+      supportWhatsapp: user.supportWhatsapp,
+      supportTelegram: user.supportTelegram,
+      supportWhatsappChannel: user.supportWhatsappChannel,
+      isReseller: user.isReseller,
+      resellerActivatedAt: user.resellerActivatedAt,
     });
 
-    await user.save(); // ✅ Runs validators
+    await user.save();
 
     return res.json({
       message: "Branding updated successfully",
       branding: {
-        brandName: user.brandName,
-        themeColor: user.themeColor,
+        brandName: user.brandName || "",
         logo: user.logo || "",
-        domain: user.resellerDomain,
+        themeColor: user.themeColor || "#16a34a",
+        domain: user.resellerDomain || null,
         supportWhatsapp: user.supportWhatsapp || "",
         supportTelegram: user.supportTelegram || "",
         supportWhatsappChannel: user.supportWhatsappChannel || "",
       },
     });
   } catch (err) {
-    console.error("Update Branding error:", err);
+    console.error("Update Branding error FULL:", err);
+    console.error("Update Branding error name:", err?.name);
+    console.error("Update Branding error message:", err?.message);
+    console.error("Update Branding stack:", err?.stack);
 
-    // ✅ If validation failed, show which field
-    if (err.name === "ValidationError") {
+    if (err?.errors) {
+      console.error("Validation errors:", err.errors);
+    }
+
+    if (err?.name === "ValidationError") {
       return res.status(400).json({
-        message: "Invalid support links",
+        message: "Invalid branding fields",
         errors: err.errors,
       });
     }
 
-    return res.status(500).json({ message: "Failed to update branding" });
+    return res.status(500).json({
+      message: err?.message || "Failed to update branding",
+    });
   }
 };

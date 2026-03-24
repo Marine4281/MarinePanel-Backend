@@ -83,7 +83,6 @@ export const detectResellerDomain = async (req, res, next) => {
         supportWhatsapp: reseller.supportWhatsapp || "",
         supportTelegram: reseller.supportTelegram || "",
         supportWhatsappChannel: reseller.supportWhatsappChannel || "",
-};
       };
     }
 

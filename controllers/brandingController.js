@@ -126,10 +126,10 @@ export const updateBranding = async (req, res) => {
     if (themeColor !== undefined) user.themeColor = themeColor;
     if (logo !== undefined) user.logo = logo;
 
-    if (supportWhatsapp !== undefined) user.supportWhatsapp = supportWhatsapp || "";
-    if (supportTelegram !== undefined) user.supportTelegram = supportTelegram || "";
-    if (supportWhatsappChannel !== undefined) user.supportWhatsappChannel = supportWhatsappChannel || "";
-
+    user.supportWhatsapp = supportWhatsapp || "";
+    user.supportTelegram = supportTelegram || "";
+    user.supportWhatsappChannel = supportWhatsappChannel || "";
+    
     await user.save(); // ✅ validators run
 
     return res.json({

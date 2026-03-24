@@ -109,7 +109,6 @@ export const updateBranding = async (req, res) => {
       req.user.isReseller &&
       req.user.resellerActivatedAt;
 
-    // ❌ Block inactive resellers
     if (!isActiveReseller) {
       return res.status(403).json({
         message: "Activate reseller to update branding",
@@ -132,48 +131,46 @@ export const updateBranding = async (req, res) => {
     if (themeColor !== undefined) updateData.themeColor = themeColor;
     if (logo !== undefined) updateData.logo = logo;
 
-    // ✅ Support (active only by design)
+    // Support
     if (supportWhatsapp !== undefined)
       updateData.supportWhatsapp = supportWhatsapp;
-
     if (supportTelegram !== undefined)
       updateData.supportTelegram = supportTelegram;
-
     if (supportWhatsappChannel !== undefined)
-      updateData.supportWhatsappChannel =
-        supportWhatsappChannel;
+      updateData.supportWhatsappChannel = supportWhatsappChannel;
 
     const user = await User.findById(req.user._id);
+    if (!user) return res.status(404).json({ message: "User not found" });
 
-if (!user) {
-  return res.status(404).json({ message: "User not found" });
-}
+    Object.keys(updateData).forEach((key) => {
+      user[key] = updateData[key];
+    });
 
-// Apply updates safely
-Object.keys(updateData).forEach((key) => {
-  user[key] = updateData[key];
-});
+    await user.save(); // ✅ Runs validators
 
-await user.save(); // ✅ IMPORTANT
-
-const updatedUser = user;
     return res.json({
       message: "Branding updated successfully",
       branding: {
-        brandName: updatedUser.brandName,
-        themeColor: updatedUser.themeColor,
-        logo: updatedUser.logo,
-        domain: updatedUser.resellerDomain,
-
-        supportWhatsapp: updatedUser.supportWhatsapp || "",
-        supportTelegram: updatedUser.supportTelegram || "",
-        supportWhatsappChannel:
-          updatedUser.supportWhatsappChannel || "",
+        brandName: user.brandName,
+        themeColor: user.themeColor,
+        logo: user.logo,
+        domain: user.resellerDomain,
+        supportWhatsapp: user.supportWhatsapp || "",
+        supportTelegram: user.supportTelegram || "",
+        supportWhatsappChannel: user.supportWhatsappChannel || "",
       },
     });
+  } catch (err) {
+    console.error("Update Branding error:", err);
 
-  } catch (error) {
-    console.error("Update Branding error:", error);
+    // ✅ If validation failed, show which field
+    if (err.name === "ValidationError") {
+      return res.status(400).json({
+        message: "Invalid support links",
+        errors: err.errors,
+      });
+    }
+
     res.status(500).json({ message: "Failed to update branding" });
   }
 };

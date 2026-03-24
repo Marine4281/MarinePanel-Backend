@@ -150,21 +150,27 @@ Support Links (Final - Robust & Flexible)
 --------------------------------
 */
 
-// WhatsApp (number OR wa.me link)
+
+
+    
+
+    /*
+    --------------------------------
+    FUTURE FEATURES
+    --------------------------------
+    */
+
+    // WhatsApp (number OR wa.me link)
 supportWhatsapp: {
   type: String,
   default: "",
   trim: true,
   validate: {
     validator: function (v) {
-      if (!v) return true;
-
-      const cleaned = v.replace(/\D/g, "");
-
-      return (
-        (cleaned.length >= 7 && cleaned.length <= 15) ||
-        /^(https?:\/\/)?(wa\.me)\//.test(v)
-      );
+      if (!v) return true; // empty string passes
+      const str = String(v);
+      // Allow numbers, wa.me links, or basically anything longer than 3 chars
+      return str.length >= 3;
     },
     message: "Invalid WhatsApp number or link",
   },
@@ -177,39 +183,30 @@ supportTelegram: {
   trim: true,
   validate: {
     validator: function (v) {
-      if (!v) return true;
-
-      return (
-        /^@?[a-zA-Z0-9_]{5,}$/.test(v) ||
-        /^(https?:\/\/)?t\.me\/[a-zA-Z0-9_]+/.test(v)
-      );
+      if (!v) return true; // empty string passes
+      const str = String(v);
+      // Accept almost anything > 3 chars
+      return str.length >= 3;
     },
     message: "Invalid Telegram username or link",
   },
 },
 
-// WhatsApp Channel / Group / Invite (VERY FLEXIBLE)
+// WhatsApp Channel / Group / Invite
 supportWhatsappChannel: {
   type: String,
   default: "",
   trim: true,
   validate: {
     validator: function (v) {
-      if (!v) return true;
-
-      return /^(https?:\/\/)?(chat\.whatsapp\.com|wa\.me|whatsapp\.com\/channel)\//.test(v);
+      if (!v) return true; // empty string passes
+      const str = String(v);
+      // Accept anything that looks like a URL or just a few characters
+      return str.length >= 3;
     },
     message: "Invalid WhatsApp channel/group link",
   },
 },
-
-    
-
-    /*
-    --------------------------------
-    FUTURE FEATURES
-    --------------------------------
-    */
 
     apiAccessEnabled: {
       type: Boolean,

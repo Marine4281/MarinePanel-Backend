@@ -5,22 +5,23 @@ import User from "../models/User.js";
 ========================================
 PUBLIC BRANDING (DOMAIN-BASED)
 ========================================
+Used for:
+- Landing pages
+- End users
+- White-labeled domains
+
+NOW ALSO RETURNS SUPPORT (RESELLER ONLY)
 */
 export const getPublicBranding = async (req, res) => {
   try {
-    // ✅ Only allow ACTIVE reseller branding
-    if (
-      req.brand &&
-      req.brand.isReseller &&
-      req.brand.resellerActivatedAt
-    ) {
+    if (req.brand) {
       return res.json({
         brandName: req.brand.brandName || "Reseller Panel",
         logo: req.brand.logo || null,
         themeColor: req.brand.themeColor || "#16a34a",
         domain: req.brand.domain || null,
 
-        // ✅ SUPPORT (ACTIVE ONLY)
+        // ✅ SUPPORT (NO FALLBACK)
         supportWhatsapp: req.brand.supportWhatsapp || "",
         supportTelegram: req.brand.supportTelegram || "",
         supportWhatsappChannel:
@@ -28,14 +29,14 @@ export const getPublicBranding = async (req, res) => {
       });
     }
 
-    // ✅ Default platform branding
+    // Default platform branding (NO support exposed)
     return res.json({
       brandName: "MarinePanel",
       logo: null,
       themeColor: "#f97316",
       domain: "marinepanel.online",
 
-      // ❌ No support leakage
+      // ✅ EMPTY (important for SaaS isolation)
       supportWhatsapp: "",
       supportTelegram: "",
       supportWhatsappChannel: "",
@@ -52,6 +53,9 @@ export const getPublicBranding = async (req, res) => {
 ========================================
 DASHBOARD BRANDING (USER-BASED)
 ========================================
+Used for:
+- Reseller dashboard
+- Branding settings page
 */
 export const getDashboardBranding = async (req, res) => {
   try {
@@ -59,18 +63,15 @@ export const getDashboardBranding = async (req, res) => {
       return res.status(401).json({ message: "Unauthorized" });
     }
 
-    const isActiveReseller =
-      req.user.isReseller && req.user.resellerActivatedAt;
-
-    // ✅ ACTIVE reseller only
-    if (isActiveReseller) {
+    // Reseller → return THEIR branding + support
+    if (req.user.isReseller) {
       return res.json({
         brandName: req.user.brandName || "Reseller Panel",
         logo: req.user.logo || null,
         themeColor: req.user.themeColor || "#16a34a",
         domain: req.user.resellerDomain || null,
 
-        // ✅ SUPPORT
+        // ✅ SUPPORT (STRICT)
         supportWhatsapp: req.user.supportWhatsapp || "",
         supportTelegram: req.user.supportTelegram || "",
         supportWhatsappChannel:
@@ -78,7 +79,7 @@ export const getDashboardBranding = async (req, res) => {
       });
     }
 
-    // ❌ Inactive reseller OR normal user
+    // Admin / normal user (no support leak)
     return res.json({
       brandName: "MarinePanel",
       logo: null,
@@ -99,27 +100,22 @@ export const getDashboardBranding = async (req, res) => {
 
 /*
 ========================================
-UPDATE BRANDING (ACTIVE RESELLER ONLY)
+UPDATE BRANDING (RESELLER ONLY)
 ========================================
+NOW ALSO UPDATES SUPPORT
 */
 export const updateBranding = async (req, res) => {
   try {
-    const isActiveReseller =
-      req.user &&
-      req.user.isReseller &&
-      req.user.resellerActivatedAt;
-
-    // ❌ Block inactive resellers
-    if (!isActiveReseller) {
-      return res.status(403).json({
-        message: "Activate reseller to update branding",
-      });
+    if (!req.user || !req.user.isReseller) {
+      return res.status(403).json({ message: "Access denied" });
     }
 
     const {
       brandName,
       themeColor,
       logo,
+
+      // ✅ NEW SUPPORT FIELDS
       supportWhatsapp,
       supportTelegram,
       supportWhatsappChannel,
@@ -127,12 +123,12 @@ export const updateBranding = async (req, res) => {
 
     const updateData = {};
 
-    // Branding
+    // Branding fields
     if (brandName !== undefined) updateData.brandName = brandName;
     if (themeColor !== undefined) updateData.themeColor = themeColor;
     if (logo !== undefined) updateData.logo = logo;
 
-    // ✅ Support (active only by design)
+    // ✅ Support fields (NO fallback logic)
     if (supportWhatsapp !== undefined)
       updateData.supportWhatsapp = supportWhatsapp;
 
@@ -157,6 +153,7 @@ export const updateBranding = async (req, res) => {
         logo: updatedUser.logo,
         domain: updatedUser.resellerDomain,
 
+        // ✅ RETURN SUPPORT
         supportWhatsapp: updatedUser.supportWhatsapp || "",
         supportTelegram: updatedUser.supportTelegram || "",
         supportWhatsappChannel:

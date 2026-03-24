@@ -23,8 +23,7 @@ export const getPublicBranding = async (req, res) => {
         // ✅ SUPPORT (ACTIVE ONLY)
         supportWhatsapp: req.brand.supportWhatsapp || "",
         supportTelegram: req.brand.supportTelegram || "",
-        supportWhatsappChannel:
-          req.brand.supportWhatsappChannel || "",
+        supportWhatsappChannel: req.brand.supportWhatsappChannel || "",
       });
     }
 
@@ -40,13 +39,11 @@ export const getPublicBranding = async (req, res) => {
       supportTelegram: "",
       supportWhatsappChannel: "",
     });
-
   } catch (error) {
     console.error("Public Branding error:", error);
-    res.status(500).json({ message: "Branding load failed" });
+    return res.status(500).json({ message: "Branding load failed" });
   }
 };
-
 
 /*
 ========================================
@@ -73,8 +70,7 @@ export const getDashboardBranding = async (req, res) => {
         // ✅ SUPPORT
         supportWhatsapp: req.user.supportWhatsapp || "",
         supportTelegram: req.user.supportTelegram || "",
-        supportWhatsappChannel:
-          req.user.supportWhatsappChannel || "",
+        supportWhatsappChannel: req.user.supportWhatsappChannel || "",
       });
     }
 
@@ -89,13 +85,11 @@ export const getDashboardBranding = async (req, res) => {
       supportTelegram: "",
       supportWhatsappChannel: "",
     });
-
   } catch (error) {
     console.error("Dashboard Branding error:", error);
-    res.status(500).json({ message: "Branding load failed" });
+    return res.status(500).json({ message: "Branding load failed" });
   }
 };
-
 
 /*
 ========================================
@@ -126,21 +120,44 @@ export const updateBranding = async (req, res) => {
 
     const updateData = {};
 
-    // Branding
-    if (brandName !== undefined) updateData.brandName = brandName;
-    if (themeColor !== undefined) updateData.themeColor = themeColor;
-    if (logo !== undefined) updateData.logo = logo;
+    // Helper: convert null/undefined to empty string for optional string fields
+    const normalizeOptionalString = (value) => {
+      if (value === null || value === undefined) return "";
+      if (typeof value === "string") return value.trim();
+      return String(value).trim();
+    };
 
-    // Support
-    if (supportWhatsapp !== undefined)
-      updateData.supportWhatsapp = supportWhatsapp;
-    if (supportTelegram !== undefined)
-      updateData.supportTelegram = supportTelegram;
-    if (supportWhatsappChannel !== undefined)
-      updateData.supportWhatsappChannel = supportWhatsappChannel;
+    // Branding
+    if (brandName !== undefined) {
+      updateData.brandName = brandName;
+    }
+
+    if (themeColor !== undefined) {
+      updateData.themeColor = themeColor;
+    }
+
+    // Optional fields: always save "" instead of null
+    if (logo !== undefined) {
+      updateData.logo = normalizeOptionalString(logo);
+    }
+
+    if (supportWhatsapp !== undefined) {
+      updateData.supportWhatsapp = normalizeOptionalString(supportWhatsapp);
+    }
+
+    if (supportTelegram !== undefined) {
+      updateData.supportTelegram = normalizeOptionalString(supportTelegram);
+    }
+
+    if (supportWhatsappChannel !== undefined) {
+      updateData.supportWhatsappChannel =
+        normalizeOptionalString(supportWhatsappChannel);
+    }
 
     const user = await User.findById(req.user._id);
-    if (!user) return res.status(404).json({ message: "User not found" });
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
 
     Object.keys(updateData).forEach((key) => {
       user[key] = updateData[key];
@@ -153,7 +170,7 @@ export const updateBranding = async (req, res) => {
       branding: {
         brandName: user.brandName,
         themeColor: user.themeColor,
-        logo: user.logo,
+        logo: user.logo || "",
         domain: user.resellerDomain,
         supportWhatsapp: user.supportWhatsapp || "",
         supportTelegram: user.supportTelegram || "",
@@ -171,6 +188,6 @@ export const updateBranding = async (req, res) => {
       });
     }
 
-    res.status(500).json({ message: "Failed to update branding" });
+    return res.status(500).json({ message: "Failed to update branding" });
   }
 };

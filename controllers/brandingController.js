@@ -110,59 +110,46 @@ export const updateBranding = async (req, res) => {
       return res.status(403).json({ message: "Access denied" });
     }
 
-    const {
-      brandName,
-      themeColor,
-      logo,
+    const { brandName, themeColor, logo, supportWhatsapp, supportTelegram, supportWhatsappChannel } = req.body;
 
-      // ✅ NEW SUPPORT FIELDS
-      supportWhatsapp,
-      supportTelegram,
-      supportWhatsappChannel,
-    } = req.body;
+    // Coerce null → "" for support fields to pass validators
+    const updateData = {
+      ...(brandName !== undefined && { brandName }),
+      ...(themeColor !== undefined && { themeColor }),
+      ...(logo !== undefined && { logo }),
+      ...(supportWhatsapp !== undefined && { supportWhatsapp: supportWhatsapp ?? "" }),
+      ...(supportTelegram !== undefined && { supportTelegram: supportTelegram ?? "" }),
+      ...(supportWhatsappChannel !== undefined && { supportWhatsappChannel: supportWhatsappChannel ?? "" }),
+    };
 
-    const updateData = {};
+    // Use findById + manual assignment + save to ensure validators run
+    const user = await User.findById(req.user._id);
+    if (!user) return res.status(404).json({ message: "User not found" });
 
-    // Branding fields
-    if (brandName !== undefined) updateData.brandName = brandName;
-    if (themeColor !== undefined) updateData.themeColor = themeColor;
-    if (logo !== undefined) updateData.logo = logo;
+    Object.keys(updateData).forEach((key) => {
+      user[key] = updateData[key];
+    });
 
-    // ✅ Support fields (NO fallback logic)
-    if (supportWhatsapp !== undefined)
-      updateData.supportWhatsapp = supportWhatsapp;
-
-    if (supportTelegram !== undefined)
-      updateData.supportTelegram = supportTelegram;
-
-    if (supportWhatsappChannel !== undefined)
-      updateData.supportWhatsappChannel =
-        supportWhatsappChannel;
-
-    const updatedUser = await User.findByIdAndUpdate(
-      req.user._id,
-      updateData,
-      { new: true }
-    );
+    await user.save(); // ✅ runs all validators, defaults, coercion
 
     return res.json({
       message: "Branding updated successfully",
       branding: {
-        brandName: updatedUser.brandName,
-        themeColor: updatedUser.themeColor,
-        logo: updatedUser.logo,
-        domain: updatedUser.resellerDomain,
-
-        // ✅ RETURN SUPPORT
-        supportWhatsapp: updatedUser.supportWhatsapp || "",
-        supportTelegram: updatedUser.supportTelegram || "",
-        supportWhatsappChannel:
-          updatedUser.supportWhatsappChannel || "",
+        brandName: user.brandName,
+        themeColor: user.themeColor,
+        logo: user.logo,
+        domain: user.resellerDomain,
+        supportWhatsapp: user.supportWhatsapp,
+        supportTelegram: user.supportTelegram,
+        supportWhatsappChannel: user.supportWhatsappChannel,
       },
     });
 
-  } catch (error) {
-    console.error("Update Branding error:", error);
+  } catch (err) {
+    console.error("Update Branding error:", err);
+    if (err.name === "ValidationError") {
+      return res.status(400).json({ message: "Invalid support links", errors: err.errors });
+    }
     res.status(500).json({ message: "Failed to update branding" });
   }
 };

@@ -143,12 +143,20 @@ export const updateBranding = async (req, res) => {
       updateData.supportWhatsappChannel =
         supportWhatsappChannel;
 
-    const updatedUser = await User.findByIdAndUpdate(
-      req.user._id,
-      updateData,
-      { new: true }
-    );
+    const user = await User.findById(req.user._id);
 
+if (!user) {
+  return res.status(404).json({ message: "User not found" });
+}
+
+// Apply updates safely
+Object.keys(updateData).forEach((key) => {
+  user[key] = updateData[key];
+});
+
+await user.save(); // ✅ IMPORTANT
+
+const updatedUser = user;
     return res.json({
       message: "Branding updated successfully",
       branding: {

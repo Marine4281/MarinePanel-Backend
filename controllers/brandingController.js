@@ -19,9 +19,19 @@ export const getPublicBranding = async (req, res) => {
         themeColor: req.brand.themeColor || "#16a34a",
         domain: req.brand.domain || null,
         support: {
-          whatsapp: req.reseller.supportWhatsapp || "",
-          telegram: req.reseller.supportTelegram || "",
-          whatsappChannel: req.reseller.supportWhatsappChannel || "",
+          // ✅ FALLBACK ADDED
+          whatsapp:
+            req.reseller.supportWhatsapp ||
+            settings?.supportWhatsapp ||
+            "",
+          telegram:
+            req.reseller.supportTelegram ||
+            settings?.supportTelegram ||
+            "",
+          whatsappChannel:
+            req.reseller.supportWhatsappChannel ||
+            settings?.supportWhatsappChannel ||
+            "",
         },
       });
     }
@@ -62,9 +72,19 @@ export const getDashboardBranding = async (req, res) => {
         themeColor: req.user.themeColor || "#16a34a",
         domain: req.user.resellerDomain || null,
         support: {
-          whatsapp: req.user.supportWhatsapp || "",
-          telegram: req.user.supportTelegram || "",
-          whatsappChannel: req.user.supportWhatsappChannel || "",
+          // ✅ FALLBACK ADDED
+          whatsapp:
+            req.user.supportWhatsapp ||
+            settings?.supportWhatsapp ||
+            "",
+          telegram:
+            req.user.supportTelegram ||
+            settings?.supportTelegram ||
+            "",
+          whatsappChannel:
+            req.user.supportWhatsappChannel ||
+            settings?.supportWhatsappChannel ||
+            "",
         },
       });
     }
@@ -80,9 +100,19 @@ export const getDashboardBranding = async (req, res) => {
           themeColor: reseller.themeColor || "#16a34a",
           domain: reseller.resellerDomain || null,
           support: {
-            whatsapp: reseller.supportWhatsapp || "",
-            telegram: reseller.supportTelegram || "",
-            whatsappChannel: reseller.supportWhatsappChannel || "",
+            // ✅ FALLBACK ADDED
+            whatsapp:
+              reseller.supportWhatsapp ||
+              settings?.supportWhatsapp ||
+              "",
+            telegram:
+              reseller.supportTelegram ||
+              settings?.supportTelegram ||
+              "",
+            whatsappChannel:
+              reseller.supportWhatsappChannel ||
+              settings?.supportWhatsappChannel ||
+              "",
           },
         });
       }
@@ -140,7 +170,7 @@ export const updateBranding = async (req, res) => {
 
     /*
     --------------------------------
-    ✅ SUPPORT NORMALIZATION (FIXED)
+    ✅ SUPPORT NORMALIZATION (UNCHANGED)
     --------------------------------
     */
 
@@ -148,12 +178,10 @@ export const updateBranding = async (req, res) => {
     if (supportWhatsapp !== undefined) {
       let value = supportWhatsapp.trim();
 
-      // Add https if wa.me without protocol
       if (value && value.includes("wa.me") && !value.startsWith("http")) {
         value = "https://" + value;
       }
 
-      // If not a URL, clean to digits
       if (value && !value.startsWith("http")) {
         value = value.replace(/\D/g, "");
       }
@@ -211,7 +239,6 @@ export const updateBranding = async (req, res) => {
   } catch (error) {
     console.error("Update Branding error:", error);
 
-    // ✅ RETURN REAL VALIDATION ERRORS
     if (error.name === "ValidationError") {
       return res.status(400).json({
         message: Object.values(error.errors)

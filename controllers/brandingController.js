@@ -12,6 +12,7 @@ export const getPublicBranding = async (req, res) => {
   try {
     const settings = await Settings.findOne().lean();
 
+    // ✅ Reseller domain
     if (req.brand && req.reseller) {
       return res.json({
         brandName: req.brand.brandName || "Reseller Panel",
@@ -19,23 +20,15 @@ export const getPublicBranding = async (req, res) => {
         themeColor: req.brand.themeColor || "#16a34a",
         domain: req.brand.domain || null,
         support: {
-          // ✅ FALLBACK ADDED
-          whatsapp:
-            req.reseller.supportWhatsapp ||
-            settings?.supportWhatsapp ||
-            "",
-          telegram:
-            req.reseller.supportTelegram ||
-            settings?.supportTelegram ||
-            "",
-          whatsappChannel:
-            req.reseller.supportWhatsappChannel ||
-            settings?.supportWhatsappChannel ||
-            "",
+          // ✅ STRICT: reseller only
+          whatsapp: req.reseller.supportWhatsapp || "",
+          telegram: req.reseller.supportTelegram || "",
+          whatsappChannel: req.reseller.supportWhatsappChannel || "",
         },
       });
     }
 
+    // ✅ Main platform (admin)
     return res.json({
       brandName: "MarinePanel",
       logo: null,
@@ -64,7 +57,7 @@ export const getDashboardBranding = async (req, res) => {
 
     const settings = await Settings.findOne().lean();
 
-    // Reseller dashboard
+    // ✅ Reseller dashboard
     if (req.user.isReseller) {
       return res.json({
         brandName: req.user.brandName || "Reseller Panel",
@@ -72,24 +65,15 @@ export const getDashboardBranding = async (req, res) => {
         themeColor: req.user.themeColor || "#16a34a",
         domain: req.user.resellerDomain || null,
         support: {
-          // ✅ FALLBACK ADDED
-          whatsapp:
-            req.user.supportWhatsapp ||
-            settings?.supportWhatsapp ||
-            "",
-          telegram:
-            req.user.supportTelegram ||
-            settings?.supportTelegram ||
-            "",
-          whatsappChannel:
-            req.user.supportWhatsappChannel ||
-            settings?.supportWhatsappChannel ||
-            "",
+          // ✅ STRICT
+          whatsapp: req.user.supportWhatsapp || "",
+          telegram: req.user.supportTelegram || "",
+          whatsappChannel: req.user.supportWhatsappChannel || "",
         },
       });
     }
 
-    // Users under reseller
+    // ✅ Users under reseller
     if (req.user.resellerOwner) {
       const reseller = await User.findById(req.user.resellerOwner).lean();
 
@@ -100,25 +84,16 @@ export const getDashboardBranding = async (req, res) => {
           themeColor: reseller.themeColor || "#16a34a",
           domain: reseller.resellerDomain || null,
           support: {
-            // ✅ FALLBACK ADDED
-            whatsapp:
-              reseller.supportWhatsapp ||
-              settings?.supportWhatsapp ||
-              "",
-            telegram:
-              reseller.supportTelegram ||
-              settings?.supportTelegram ||
-              "",
-            whatsappChannel:
-              reseller.supportWhatsappChannel ||
-              settings?.supportWhatsappChannel ||
-              "",
+            // ✅ STRICT: only reseller
+            whatsapp: reseller.supportWhatsapp || "",
+            telegram: reseller.supportTelegram || "",
+            whatsappChannel: reseller.supportWhatsappChannel || "",
           },
         });
       }
     }
 
-    // Admin / normal user
+    // ✅ Admin / normal users (main platform only)
     return res.json({
       brandName: "MarinePanel",
       logo: null,
@@ -170,11 +145,10 @@ export const updateBranding = async (req, res) => {
 
     /*
     --------------------------------
-    ✅ SUPPORT NORMALIZATION (UNCHANGED)
+    SUPPORT NORMALIZATION (UNCHANGED)
     --------------------------------
     */
 
-    // WhatsApp (number OR link)
     if (supportWhatsapp !== undefined) {
       let value = supportWhatsapp.trim();
 
@@ -189,7 +163,6 @@ export const updateBranding = async (req, res) => {
       user.supportWhatsapp = value;
     }
 
-    // Telegram (username OR link)
     if (supportTelegram !== undefined) {
       let value = supportTelegram.trim();
 
@@ -204,7 +177,6 @@ export const updateBranding = async (req, res) => {
       user.supportTelegram = value;
     }
 
-    // WhatsApp Channel / Group / Invite
     if (supportWhatsappChannel !== undefined) {
       let value = supportWhatsappChannel.trim();
 
@@ -215,11 +187,6 @@ export const updateBranding = async (req, res) => {
       user.supportWhatsappChannel = value;
     }
 
-    /*
-    --------------------------------
-    SAVE
-    --------------------------------
-    */
     await user.save();
 
     return res.json({

@@ -16,7 +16,7 @@ export const getPublicBranding = async (req, res) => {
     ) {
       return res.json({
         brandName: req.brand.brandName || "Reseller Panel",
-        logo: req.brand.logo || null,
+        logo: req.brand.logo || "",
         themeColor: req.brand.themeColor || "#16a34a",
         domain: req.brand.domain || null,
 
@@ -31,7 +31,7 @@ export const getPublicBranding = async (req, res) => {
     // ✅ Default platform branding
     return res.json({
       brandName: "MarinePanel",
-      logo: null,
+      logo: "",
       themeColor: "#f97316",
       domain: "marinepanel.online",
 
@@ -66,7 +66,7 @@ export const getDashboardBranding = async (req, res) => {
     if (isActiveReseller) {
       return res.json({
         brandName: req.user.brandName || "Reseller Panel",
-        logo: req.user.logo || null,
+        logo: req.user.logo || "",
         themeColor: req.user.themeColor || "#16a34a",
         domain: req.user.resellerDomain || null,
 
@@ -81,7 +81,7 @@ export const getDashboardBranding = async (req, res) => {
     // ❌ Inactive reseller OR normal user
     return res.json({
       brandName: "MarinePanel",
-      logo: null,
+      logo: "",
       themeColor: "#f97316",
       domain: "marinepanel.online",
 

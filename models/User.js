@@ -1,6 +1,12 @@
 // models/User.js
 import mongoose from "mongoose";
 
+// Helper: normalize optional string fields so null/undefined => ""
+const normalizeOptionalString = (v) => {
+  if (v === null || v === undefined) return "";
+  return String(v).trim();
+};
+
 const userSchema = new mongoose.Schema(
   {
     email: {
@@ -58,8 +64,9 @@ const userSchema = new mongoose.Schema(
     // Branding fields
     brandName: {
       type: String,
-      default: null,
+      default: "",
       trim: true,
+      set: normalizeOptionalString,
     },
 
     brandSlug: {
@@ -71,8 +78,19 @@ const userSchema = new mongoose.Schema(
 
     logo: {
       type: String,
-      default: null,
+      default: "",
       trim: true,
+      set: normalizeOptionalString,
+      validate: {
+        validator: function (v) {
+          // Allow empty
+          if (!v) return true;
+
+          // If provided, must be a valid URL
+          return /^https?:\/\/.+/i.test(v);
+        },
+        message: "Logo must be a valid URL",
+      },
     },
 
     themeColor: {
@@ -151,17 +169,20 @@ const userSchema = new mongoose.Schema(
       type: String,
       default: "",
       trim: true,
+      set: normalizeOptionalString,
       validate: {
         validator: function (v) {
           // ✅ Only validate if active reseller
           if (!this.isReseller || !this.resellerActivatedAt) return true;
+
+          // Allow empty
           if (!v) return true;
 
           const cleaned = v.replace(/\D/g, "");
 
           return (
             (cleaned.length >= 7 && cleaned.length <= 15) ||
-            /^(https?:\/\/)?(wa\.me)\//.test(v)
+            /^(https?:\/\/)?(wa\.me|api\.whatsapp\.com)\//i.test(v)
           );
         },
         message: "Invalid WhatsApp number or link",
@@ -173,14 +194,17 @@ const userSchema = new mongoose.Schema(
       type: String,
       default: "",
       trim: true,
+      set: normalizeOptionalString,
       validate: {
         validator: function (v) {
           if (!this.isReseller || !this.resellerActivatedAt) return true;
+
+          // Allow empty
           if (!v) return true;
 
           return (
             /^@?[a-zA-Z0-9_]{5,}$/.test(v) ||
-            /^(https?:\/\/)?t\.me\/[a-zA-Z0-9_]+/.test(v)
+            /^(https?:\/\/)?(t\.me|telegram\.me)\/[a-zA-Z0-9_]+/i.test(v)
           );
         },
         message: "Invalid Telegram username or link",
@@ -192,12 +216,15 @@ const userSchema = new mongoose.Schema(
       type: String,
       default: "",
       trim: true,
+      set: normalizeOptionalString,
       validate: {
         validator: function (v) {
           if (!this.isReseller || !this.resellerActivatedAt) return true;
+
+          // Allow empty
           if (!v) return true;
 
-          return /^(https?:\/\/)?(chat\.whatsapp\.com|wa\.me|whatsapp\.com\/channel)\//.test(
+          return /^(https?:\/\/)?(chat\.whatsapp\.com|wa\.me|whatsapp\.com\/channel)\//i.test(
             v
           );
         },
@@ -241,11 +268,19 @@ AUTO CLEAN SUPPORT IF NOT ACTIVE
 --------------------------------
 */
 userSchema.pre("save", function (next) {
+  // Normalize optional branding/support strings before save
+  this.brandName = normalizeOptionalString(this.brandName);
+  this.logo = normalizeOptionalString(this.logo);
+  this.supportWhatsapp = normalizeOptionalString(this.supportWhatsapp);
+  this.supportTelegram = normalizeOptionalString(this.supportTelegram);
+  this.supportWhatsappChannel = normalizeOptionalString(this.supportWhatsappChannel);
+
   if (!this.isReseller || !this.resellerActivatedAt) {
     this.supportWhatsapp = "";
     this.supportTelegram = "";
     this.supportWhatsappChannel = "";
   }
+
   next();
 });
 

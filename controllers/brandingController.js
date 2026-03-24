@@ -106,31 +106,31 @@ NOW ALSO UPDATES SUPPORT
 */
 export const updateBranding = async (req, res) => {
   try {
-    if (!req.user || !req.user.isReseller) {
+    if (!req.user || !req.user.isReseller)
       return res.status(403).json({ message: "Access denied" });
-    }
 
-    const { brandName, themeColor, logo, supportWhatsapp, supportTelegram, supportWhatsappChannel } = req.body;
+    const {
+      brandName,
+      themeColor,
+      logo,
+      supportWhatsapp,
+      supportTelegram,
+      supportWhatsappChannel,
+    } = req.body;
 
-    // Coerce null → "" for support fields to pass validators
-    const updateData = {
-      ...(brandName !== undefined && { brandName }),
-      ...(themeColor !== undefined && { themeColor }),
-      ...(logo !== undefined && { logo }),
-      ...(supportWhatsapp !== undefined && { supportWhatsapp: supportWhatsapp ?? "" }),
-      ...(supportTelegram !== undefined && { supportTelegram: supportTelegram ?? "" }),
-      ...(supportWhatsappChannel !== undefined && { supportWhatsappChannel: supportWhatsappChannel ?? "" }),
-    };
-
-    // Use findById + manual assignment + save to ensure validators run
     const user = await User.findById(req.user._id);
     if (!user) return res.status(404).json({ message: "User not found" });
 
-    Object.keys(updateData).forEach((key) => {
-      user[key] = updateData[key];
-    });
+    // Assign fields manually, coerce empty strings if field is sent
+    if (brandName !== undefined) user.brandName = brandName;
+    if (themeColor !== undefined) user.themeColor = themeColor;
+    if (logo !== undefined) user.logo = logo;
 
-    await user.save(); // ✅ runs all validators, defaults, coercion
+    if (supportWhatsapp !== undefined) user.supportWhatsapp = supportWhatsapp || "";
+    if (supportTelegram !== undefined) user.supportTelegram = supportTelegram || "";
+    if (supportWhatsappChannel !== undefined) user.supportWhatsappChannel = supportWhatsappChannel || "";
+
+    await user.save(); // ✅ validators run
 
     return res.json({
       message: "Branding updated successfully",
@@ -144,7 +144,6 @@ export const updateBranding = async (req, res) => {
         supportWhatsappChannel: user.supportWhatsappChannel,
       },
     });
-
   } catch (err) {
     console.error("Update Branding error:", err);
     if (err.name === "ValidationError") {

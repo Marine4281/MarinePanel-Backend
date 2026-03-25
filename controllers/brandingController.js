@@ -37,11 +37,9 @@ export const getPublicBranding = async (req, res) => {
       domain: "marinepanel.online",
 
       // ✅ EMPTY (important for SaaS isolation)
-      support: {
-        whatsapp: supportWhatsapp || "",
-        telegram: supportTelegram || "",
-        whatsappChannel: supportWhatsappChannel || "",
-  },
+      supportWhatsapp: "",
+      supportTelegram: "",
+      supportWhatsappChannel: "",
     });
 
   } catch (error) {

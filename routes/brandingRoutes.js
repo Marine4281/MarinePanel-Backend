@@ -6,7 +6,7 @@ import {
   getDashboardBranding
 } from "../controllers/brandingController.js";
 
-import { updateBranding } from "../controllers/brandingController.js";
+import { updateBranding } from "../controllers/resellerController.js";
 import { protect } from "../middlewares/authMiddleware.js";
 import { detectResellerDomain } from "../middlewares/resellerDomainMiddleware.js"; // ✅ REQUIRED
 
@@ -44,8 +44,6 @@ router.get(
   protect,
   getDashboardBranding
 );
-
-
 
 /*
 --------------------------------

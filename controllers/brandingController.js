@@ -38,9 +38,9 @@ export const getPublicBranding = async (req, res) => {
 
       // ✅ EMPTY (important for SaaS isolation)
       support: {
-    whatsapp: supportWhatsapp || "",
-    telegram: supportTelegram || "",
-    whatsappChannel: supportWhatsappChannel || "",
+        whatsapp: supportWhatsapp || "",
+        telegram: supportTelegram || "",
+        whatsappChannel: supportWhatsappChannel || "",
   },
     });
 

@@ -3,6 +3,7 @@
 import express from "express";
 import {
   getPublicBranding,
+  updateBranding,
   getDashboardBranding
 } from "../controllers/brandingController.js";
 
@@ -44,6 +45,8 @@ router.get(
   protect,
   getDashboardBranding
 );
+
+
 
 /*
 --------------------------------

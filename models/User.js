@@ -151,7 +151,7 @@ const userSchema = new mongoose.Schema(
     */
     supportWhatsapp: {
       type: String,
-      default: null,
+      default: "",
       trim: true,
       validate: {
         validator: function (v) {
@@ -165,7 +165,7 @@ const userSchema = new mongoose.Schema(
 
     supportTelegram: {
       type: String,
-      default: null,
+      default: "",
       trim: true,
       validate: {
         validator: function (v) {
@@ -177,7 +177,7 @@ const userSchema = new mongoose.Schema(
 
     supportWhatsappChannel: {
       type: String,
-      default: null,
+      default: "",
       trim: true,
       validate: {
         validator: function (v) {

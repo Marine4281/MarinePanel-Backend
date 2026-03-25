@@ -145,68 +145,54 @@ const userSchema = new mongoose.Schema(
     },
 
     /*
---------------------------------
-Support Links (Final - Robust & Flexible)
---------------------------------
-*/
+    --------------------------------
+    Support Links (Improved)
+    --------------------------------
+    */
+    supportWhatsapp: {
+      type: String,
+      default: "",
+      trim: true,
+      validate: {
+        validator: function (v) {
+          if (!v) return true; // allow null
+          const cleaned = v.replace(/\D/g, "");
+          return cleaned.length >= 7 && cleaned.length <= 15;
+        },
+        message: "Invalid WhatsApp number",
+      },
+    },
 
+    supportTelegram: {
+      type: String,
+      default: "",
+      trim: true,
+      validate: {
+        validator: function (v) {
+          if (!v) return true;
+          return typeof v === "string";
+        },
+      },
+    },
 
-
-    
+    supportWhatsappChannel: {
+      type: String,
+      default: "",
+      trim: true,
+      validate: {
+        validator: function (v) {
+          if (!v) return true;
+          return v.startsWith("http");
+        },
+        message: "Channel must be a valid link",
+      },
+    },
 
     /*
     --------------------------------
     FUTURE FEATURES
     --------------------------------
     */
-
-    // WhatsApp (number OR wa.me link)
-supportWhatsapp: {
-  type: String,
-  default: "",
-  trim: true,
-  validate: {
-    validator: function (v) {
-      if (!v) return true; // empty string passes
-      const str = String(v);
-      // Allow numbers, wa.me links, or basically anything longer than 3 chars
-      return str.length >= 3;
-    },
-    message: "Invalid WhatsApp number or link",
-  },
-},
-
-// Telegram (username OR full link)
-supportTelegram: {
-  type: String,
-  default: "",
-  trim: true,
-  validate: {
-    validator: function (v) {
-      if (!v) return true; // empty string passes
-      const str = String(v);
-      // Accept almost anything > 3 chars
-      return str.length >= 3;
-    },
-    message: "Invalid Telegram username or link",
-  },
-},
-
-// WhatsApp Channel / Group / Invite
-supportWhatsappChannel: {
-  type: String,
-  default: "",
-  trim: true,
-  validate: {
-    validator: function (v) {
-      if (!v) return true; // empty string passes
-      const str = String(v);
-      // Accept anything that looks like a URL or just a few characters
-      return str.length >= 3;
-    },
-    message: "Invalid WhatsApp channel/group link",
-  },
-},
 
     apiAccessEnabled: {
       type: Boolean,

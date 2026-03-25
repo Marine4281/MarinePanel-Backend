@@ -7,7 +7,6 @@ import {
   getResellerUsers,
   getResellerOrders,
   withdrawResellerFunds,
-  updateBranding,
 } from "../controllers/resellerController.js";
 
 import { protect } from "../middlewares/authMiddleware.js";
@@ -59,11 +58,5 @@ Withdraw Earnings
 router.post("/withdraw", protect, withdrawResellerFunds);
 
 
-/*
---------------------------------
-Update Branding
---------------------------------
-*/
-router.patch("/branding", protect, updateBranding);
 
 export default router;

@@ -78,6 +78,12 @@ export const detectResellerDomain = async (req, res, next) => {
         domain:
           reseller.resellerDomain ||
           `${reseller.brandSlug}.${BASE_DOMAIN}`,
+
+        // ✅ ADD SUPPORT HERE
+        supportWhatsapp: reseller.supportWhatsapp || "",
+        supportTelegram: reseller.supportTelegram || "",
+        supportWhatsappChannel:
+          reseller.supportWhatsappChannel || "",
       };
     }
 

@@ -31,7 +31,7 @@ export const creditResellerCommission = async (order) => {
       type: "Order",
       amount: order.resellerCommission,
       status: "Completed",
-      description: `Commission from ${order.orderId}`,
+      description: `Commission from ${order._id}`,
       reference: order._id,
       createdAt: new Date(),
     });
@@ -67,7 +67,7 @@ export const reverseResellerCommission = async (order) => {
       type: "Commission Reversal",
       amount: -order.resellerCommission,
       status: "Completed",
-      note: `Reversal for refunded order ${order.orderId}`,
+      note: `Reversal for refunded order ${order._id}`,
       reference: order._id,
       createdAt: new Date(),
     });
@@ -274,7 +274,7 @@ export const createOrder = async (req, res) => {
         type: "Order",
         amount: -Number(finalCharge),
         status: "Completed",
-        description: `Order ${order.orderId}`,
+        note: `Order #${order._id}`,
         reference: order._id,
         createdAt: new Date(),
       });

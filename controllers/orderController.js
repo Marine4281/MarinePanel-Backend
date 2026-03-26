@@ -31,7 +31,7 @@ export const creditResellerCommission = async (order) => {
       type: "Order",
       amount: order.resellerCommission,
       status: "Completed",
-      description: `Commission from ${order._id}`,
+      note: `Commission from ${order._id}`,
       reference: order._id,
       createdAt: new Date(),
     });

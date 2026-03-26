@@ -112,15 +112,15 @@ export const activateReseller = async (req, res) => {
 
     /* ===== WALLET DEDUCTION ===== */
 
-    wallet.balance -= activationFee;
-
     wallet.transactions.push({
-      type: "Withdrawal",
+      type: "Activation",
       amount: -Number(activationFee),
       status: "Completed",
-      description: "Reseller activation fee",
+      note: "Reseller activation fee",
       date: new Date(),
     });
+
+    wallet.balance = calculateBalance(wallet.transactions);
 
     await wallet.save();
     await user.save();

@@ -276,7 +276,7 @@ export const createOrder = async (req, res) => {
     type: "Order",
     amount: -Number(finalCharge),
     status: "Completed",
-    note: `Order ${order.orderId}`, // ✅ better than _id
+    note: `Order ${order._id}`, // ✅ better than _id
     reference: order._id,
     createdAt: new Date(),
   });

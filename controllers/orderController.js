@@ -272,21 +272,20 @@ export const createOrder = async (req, res) => {
     /* ================= WALLET DEDUCTION ================= */
 
     if (!isFreeOrder) {
-  const transaction = {
-      type: "Order",
-      amount: -Number(finalCharge),
-      status: "Completed",
-      note: `Order #${order._id}`,
-      date: new Date(),
-    };
+  wallet.transactions.push({
+    type: "Order",
+    amount: -Number(finalCharge),
+    status: "Completed",
+    note: `Order ${order._id}`, // ✅ better than _id
+    reference: order._id,
+    createdAt: new Date(),
+  });
 
-    wallet.transactions.push(transaction);
-    wallet.balance = calculateBalance(wallet.transactions);
-    await wallet.save();
+  // ✅ ALWAYS derive balance from transactions
+  wallet.balance = calculateBalance(wallet.transactions);
 
-    // Sync User.balance
-    await User.findByIdAndUpdate(req.user._id, { balance: wallet.balance });
-
+  await wallet.save();
+    }
 
     /* ================= ADMIN REVENUE ================= */
 

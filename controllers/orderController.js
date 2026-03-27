@@ -285,6 +285,9 @@ export const createOrder = async (req, res) => {
   wallet.balance = calculateBalance(wallet.transactions);
 
   await wallet.save();
+      await User.findByIdAndUpdate(user._id, {
+    balance: wallet.balance,
+  });
     }
 
     /* ================= ADMIN REVENUE ================= */

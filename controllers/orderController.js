@@ -65,43 +65,6 @@ export const reverseResellerCommission = async (order) => {
     const wallet = await Wallet.findOne({ user: order.resellerOwner });
     if (!wallet) return;
 
-    wallet.balance -= order.resellerCommission;
-wallet.transactions.push({
-  type: "Commission Reversal",
-  amount: -Number(order.resellerCommission),
-  status: "Completed",
-  note: `Reversal for ${order.orderId}`,
-  reference: order._id,
-  createdAt: new Date(),
-});
-
-wallet.balance = 
-calculateBalance(wallet.transactions);
-    });
-
-    order.earningsCredited = false; // 🔥 prevents double reversal
-    await Promise.all([wallet.save(), order.save()]);
-
-  } catch (err) {
-    console.error("Commission Reversal Error:", err);
-  }
-};
-/* =========================================================
-CREATE ORDER
-========================================================= */
-export const reverseResellerCommission = async (order) => {
-  try {
-    if (
-      !order.earningsCredited ||
-      !order.resellerOwner ||
-      order.resellerCommission <= 0
-    ) {
-      return;
-    }
-
-    const wallet = await Wallet.findOne({ user: order.resellerOwner });
-    if (!wallet) return;
-
     wallet.transactions.push({
       type: "Commission Reversal",
       amount: -Number(order.resellerCommission),
@@ -113,14 +76,43 @@ export const reverseResellerCommission = async (order) => {
 
     wallet.balance = calculateBalance(wallet.transactions);
 
-    order.earningsCredited = false;
-
+    order.earningsCredited = false; // 🔥 prevents double reversal
     await Promise.all([wallet.save(), order.save()]);
 
   } catch (err) {
     console.error("Commission Reversal Error:", err);
   }
 };
+/* =========================================================
+CREATE ORDER
+========================================================= */
+export const createOrder = async (req, res) => {
+  try {
+    const { category, service, link, quantity } = req.body;
+
+    if (!category || !service || !link || !quantity) {
+      return res.status(400).json({ message: "All fields are required" });
+    }
+
+    const qty = Number(quantity);
+    if (qty <= 0) {
+      return res.status(400).json({ message: "Invalid quantity" });
+    }
+
+    const user = await User.findById(req.user._id);
+    if (!user) return res.status(404).json({ message: "User not found" });
+
+    /* ================= WALLET ================= */
+
+    let wallet = await Wallet.findOne({ user: user._id });
+
+    if (!wallet) {
+      wallet = await Wallet.create({
+        user: user._id,
+        balance: 0,
+        transactions: [],
+      });
+    }
 
     /* ================= SERVICE ================= */
 

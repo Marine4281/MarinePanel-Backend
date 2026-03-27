@@ -29,15 +29,17 @@ export const creditResellerCommission = async (order) => {
     const wallet = await Wallet.findOne({ user: order.resellerOwner });
     if (!wallet) return;
 
-    wallet.balance += order.resellerCommission;
-
     wallet.transactions.push({
-      type: "Order",
-      amount: order.resellerCommission,
+      type: "Commission",
+      amount: Number(order.resellerCommission),
       status: "Completed",
-      note: `Commission from ${order._id}`,
+      note: `Commission from ${order.orderId}`,
       reference: order._id,
       createdAt: new Date(),
+});
+
+    wallet.balance = 
+    calculateBalance(wallet.transactions);
     });
 
     order.earningsCredited = true;
@@ -66,14 +68,17 @@ export const reverseResellerCommission = async (order) => {
     if (!wallet) return;
 
     wallet.balance -= order.resellerCommission;
+wallet.transactions.push({
+  type: "Commission Reversal",
+  amount: -Number(order.resellerCommission),
+  status: "Completed",
+  note: `Reversal for ${order.orderId}`,
+  reference: order._id,
+  createdAt: new Date(),
+});
 
-    wallet.transactions.push({
-      type: "Commission Reversal",
-      amount: -order.resellerCommission,
-      status: "Completed",
-      note: `Reversal for refunded order ${order._id}`,
-      reference: order._id,
-      createdAt: new Date(),
+wallet.balance = 
+calculateBalance(wallet.transactions);
     });
 
     order.earningsCredited = false; // 🔥 prevents double reversal

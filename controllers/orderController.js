@@ -33,14 +33,12 @@ export const creditResellerCommission = async (order) => {
       type: "Commission",
       amount: Number(order.resellerCommission),
       status: "Completed",
-      note: `Commission from ${order.orderId}`,
+      note: `Commission - ${order.orderId}`,
       reference: order._id,
       createdAt: new Date(),
-});
-
-    wallet.balance = 
-    calculateBalance(wallet.transactions);
     });
+
+    wallet.balance = calculateBalance(wallet.transactions);
 
     order.earningsCredited = true;
 
@@ -91,33 +89,38 @@ calculateBalance(wallet.transactions);
 /* =========================================================
 CREATE ORDER
 ========================================================= */
-export const createOrder = async (req, res) => {
+export const reverseResellerCommission = async (order) => {
   try {
-    const { category, service, link, quantity } = req.body;
-
-    if (!category || !service || !link || !quantity) {
-      return res.status(400).json({ message: "All fields are required" });
+    if (
+      !order.earningsCredited ||
+      !order.resellerOwner ||
+      order.resellerCommission <= 0
+    ) {
+      return;
     }
 
-    const qty = Number(quantity);
-    if (qty <= 0) {
-      return res.status(400).json({ message: "Invalid quantity" });
-    }
+    const wallet = await Wallet.findOne({ user: order.resellerOwner });
+    if (!wallet) return;
 
-    const user = await User.findById(req.user._id);
-    if (!user) return res.status(404).json({ message: "User not found" });
+    wallet.transactions.push({
+      type: "Commission Reversal",
+      amount: -Number(order.resellerCommission),
+      status: "Completed",
+      note: `Reversal - ${order.orderId}`,
+      reference: order._id,
+      createdAt: new Date(),
+    });
 
-    /* ================= WALLET ================= */
+    wallet.balance = calculateBalance(wallet.transactions);
 
-    let wallet = await Wallet.findOne({ user: user._id });
+    order.earningsCredited = false;
 
-    if (!wallet) {
-      wallet = await Wallet.create({
-        user: user._id,
-        balance: 0,
-        transactions: [],
-      });
-    }
+    await Promise.all([wallet.save(), order.save()]);
+
+  } catch (err) {
+    console.error("Commission Reversal Error:", err);
+  }
+};
 
     /* ================= SERVICE ================= */
 

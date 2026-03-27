@@ -208,7 +208,9 @@ export const createOrder = async (req, res) => {
       finalCharge = (qty / 1000) * finalRate;
       baseCharge = (qty / 1000) * providerRate;
 
-      if (wallet.balance < finalCharge) {
+      const currentBalance = calculateBalance(wallet.transactions);
+
+      if (currentBalance < finalCharge) {
         return res.status(400).json({ message: "Insufficient balance" });
       }
     }

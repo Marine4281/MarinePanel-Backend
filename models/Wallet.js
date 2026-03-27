@@ -28,7 +28,7 @@ const walletSchema = new mongoose.Schema(
             "Withdrawal",
             "Order",
             "Refund",          
-            "Admin Adjustment"
+            "Admin Adjustment",
             "Rp Fee"
           ],
           required: true,

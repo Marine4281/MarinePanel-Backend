@@ -8,6 +8,10 @@ import Service from "../models/Service.js";
 import axios from "axios";
 import { v4 as uuidv4 } from "uuid";
 
+// ================= HELPER =================
+const calculateBalance = (transactions = []) =>
+  transactions.reduce((acc, t) => acc + (t.amount || 0), 0);
+
 /* =========================================================
 CREDIT RESELLER (SAFE - CALLED ON COMPLETION)
 ========================================================= */

@@ -29,7 +29,7 @@ const walletSchema = new mongoose.Schema(
             "Order",
             "Refund",          
             "Admin Adjustment",
-            "Rp Fee"
+            "RPA Fee"
           ],
           required: true,
         },

@@ -173,10 +173,9 @@ export const getResellerDashboard = async (req, res) => {
     let totalRevenue = 0;
     let earnings = 0;
 
-    for (const order of orders) {
-      if (order.status !== "failed" && order.status !== "refunded") {
-        totalRevenue += Number(order.charge || 0);
-      }
+    if (order.status === "completed") {
+  totalRevenue += Number(order.charge || 0);
+    }
 
       if (order.earningsCredited) {
         earnings += Number(order.resellerCommission || 0);

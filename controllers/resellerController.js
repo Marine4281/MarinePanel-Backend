@@ -26,6 +26,12 @@ const normalizeDomain = (domain) => {
     .trim();
 };
 
+const calculateBalance = (transactions) => {
+  return transactions.reduce((balance, transaction) => {
+    return balance + (transaction.amount || 0);
+  }, 0);
+};
+
 /* ================================================
    ACTIVATE RESELLER
 ================================================ */

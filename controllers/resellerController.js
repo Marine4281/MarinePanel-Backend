@@ -108,9 +108,6 @@ export const activateReseller = async (req, res) => {
     }
 
     /* ===== ACTIVATE ===== */
-   const rpaFee = Number(serviceData.rpaFee || 0);
-
-   finalCharge += rpaFee;
 
     user.isReseller = true;
     user.brandName = brandName;
@@ -122,17 +119,24 @@ export const activateReseller = async (req, res) => {
     /* ===== WALLET DEDUCTION ===== */
 
     wallet.transactions.push({
-      type: "RPA Fee",
-      amount: -Number(activationFee),
+      type: "RPA Fee", // (your naming kept same, but this is RSP fee)
+      amount: -Number(activationFee), // ✅ MUST be negative
       status: "Completed",
       note: "Reseller activation fee",
-      date: new Date(),
+      reference: `RSP-${user._id}`,
+      createdAt: new Date(), // ✅ fixed field
     });
 
+    // ✅ ALWAYS recalculate
     wallet.balance = calculateBalance(wallet.transactions);
 
     await wallet.save();
     await user.save();
+
+    // ✅ sync user balance (important)
+    await User.findByIdAndUpdate(user._id, {
+      balance: wallet.balance,
+    });
 
     res.json({
       message: "Reseller activated successfully",
@@ -164,7 +168,7 @@ export const getActivationFee = async (req, res) => {
 };
 
 /* ================================================
-   DASHBOARD (FIXED)
+   DASHBOARD (UNCHANGED)
 ================================================ */
 
 export const getResellerDashboard = async (req, res) => {
@@ -183,10 +187,9 @@ export const getResellerDashboard = async (req, res) => {
     let earnings = 0;
 
     for (const order of orders) {
-      // ✅ Revenue = ONLY completed orders
       if (order.status === "completed") {
-       totalRevenue += Number(order.charge || 0);
-     }
+        totalRevenue += Number(order.charge || 0);
+      }
 
       if (order.earningsCredited) {
         earnings += Number(order.resellerCommission || 0);
@@ -209,7 +212,7 @@ export const getResellerDashboard = async (req, res) => {
 };
 
 /* ================================================
-   USERS
+   USERS (UNCHANGED)
 ================================================ */
 
 export const getResellerUsers = async (req, res) => {
@@ -227,7 +230,7 @@ export const getResellerUsers = async (req, res) => {
 };
 
 /* ================================================
-   ORDERS
+   ORDERS (UNCHANGED)
 ================================================ */
 
 export const getResellerOrders = async (req, res) => {
@@ -279,15 +282,16 @@ export const withdrawResellerFunds = async (req, res) => {
       });
     }
 
-    wallet.balance -= amount;
-
+    // ✅ Correct transaction-based deduction
     wallet.transactions.push({
       type: "Withdrawal",
-      amount,
+      amount: -Number(amount), // ✅ MUST be negative
       status: "Completed",
-      description: "Reseller withdrawal",
-      date: new Date(),
+      note: "Reseller withdrawal",
+      createdAt: new Date(),
     });
+
+    wallet.balance = calculateBalance(wallet.transactions);
 
     await wallet.save();
 
@@ -302,7 +306,7 @@ export const withdrawResellerFunds = async (req, res) => {
 };
 
 /* ================================================
-   BRANDING
+   BRANDING (UNCHANGED)
 ================================================ */
 
 export const updateBranding = async (req, res) => {

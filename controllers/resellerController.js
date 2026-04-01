@@ -173,8 +173,9 @@ export const getResellerDashboard = async (req, res) => {
     let totalRevenue = 0;
     let earnings = 0;
 
-      if (order.status === "completed") {
-    totalRevenue += Number(order.charge || 0);
+    for (const order of orders) {
+      if (order.status !== "failed" && order.status !== "refunded") {
+        totalRevenue += Number(order.charge || 0);
       }
 
       if (order.earningsCredited) {
@@ -225,7 +226,15 @@ export const getResellerOrders = async (req, res) => {
       resellerOwner: req.user._id,
     }).lean();
 
-    res.json(orders);
+    const formatted = orders.map((o) => ({
+      ...o,
+      resellerCommission:
+        o.status === "completed" && o.earningsCredited
+          ? o.resellerCommission
+          : 0,
+    }));
+
+    res.json(formatted);
   } catch {
     res.status(500).json({ message: "Failed" });
   }

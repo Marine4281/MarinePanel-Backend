@@ -108,6 +108,9 @@ export const activateReseller = async (req, res) => {
     }
 
     /* ===== ACTIVATE ===== */
+   const rpaFee = Number(serviceData.rpaFee || 0);
+
+   finalCharge += rpaFee;
 
     user.isReseller = true;
     user.brandName = brandName;

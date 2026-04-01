@@ -119,7 +119,7 @@ export const activateReseller = async (req, res) => {
     /* ===== WALLET DEDUCTION ===== */
 
     wallet.transactions.push({
-      type: "Activation",
+      type: "RPA Fee",
       amount: -Number(activationFee),
       status: "Completed",
       note: "Reseller activation fee",

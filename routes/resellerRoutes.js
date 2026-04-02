@@ -1,4 +1,6 @@
-//routes/resellerRoutes.js
+
+// routes/resellerRoutes.js
+
 import express from "express";
 import {
   activateReseller,
@@ -7,6 +9,7 @@ import {
   getResellerUsers,
   getResellerOrders,
   withdrawResellerFunds,
+  switchResellerDomain, // ✅ ADD THIS
 } from "../controllers/resellerController.js";
 
 import { protect } from "../middlewares/authMiddleware.js";
@@ -16,7 +19,6 @@ const router = express.Router();
 /*
 --------------------------------
 Get Reseller Activation Fee
-Used on activation screen
 --------------------------------
 */
 router.get("/activation-fee", protect, getActivationFee);
@@ -24,7 +26,6 @@ router.get("/activation-fee", protect, getActivationFee);
 /*
 --------------------------------
 Activate Reseller
-User pays activation fee then activates
 --------------------------------
 */
 router.post("/activate", protect, activateReseller);
@@ -51,11 +52,11 @@ Reseller Orders
 router.get("/orders", protect, getResellerOrders);
 
 /*
---------------------
-Switch domains 
----------------------
+--------------------------------
+Switch Domain (FIXED PATH ✅)
+--------------------------------
 */
-router.put("/domain/switch", protect, switchDomainType);
+router.put("/switch-domain", protect, switchResellerDomain);
 
 /*
 --------------------------------
@@ -63,7 +64,5 @@ Withdraw Earnings
 --------------------------------
 */
 router.post("/withdraw", protect, withdrawResellerFunds);
-
-
 
 export default router;

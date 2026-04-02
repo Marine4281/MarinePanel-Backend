@@ -92,6 +92,13 @@ export const login = async (req, res) => {
     const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) return res.status(401).json({ message: "Invalid credentials" });
 
+    // 🚫 BLOCKED CHECK
+    if (user.isBlocked) {
+      return res.status(403).json({
+        message: "Your account has been blocked. Contact support.",
+      });
+    }
+
     const token = generateToken(user._id);
 
     // ✅ Set cookie
@@ -102,7 +109,6 @@ export const login = async (req, res) => {
       maxAge: 7 * 24 * 60 * 60 * 1000,
     });
 
-    // ✅ Send response
     res.json({
       _id: user._id,
       email: user.email,

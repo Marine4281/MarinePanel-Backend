@@ -51,6 +51,13 @@ Reseller Orders
 router.get("/orders", protect, getResellerOrders);
 
 /*
+--------------------
+Switch domains 
+---------------------
+*/
+router.put("/domain/switch", protect, switchDomainType);
+
+/*
 --------------------------------
 Withdraw Earnings
 --------------------------------

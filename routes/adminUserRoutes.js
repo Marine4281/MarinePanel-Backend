@@ -2,7 +2,7 @@
 import express from "express";
 import {
   getAllUsers,
-  getUserById, 
+  getUserById,
   blockUser,
   unblockUser,
   deleteUser,
@@ -11,6 +11,8 @@ import {
   getUserTransactions,
   promoteToAdmin,
   demoteFromAdmin,
+  freezeUser,        // 🆕
+  unfreezeUser,      // 🆕
 } from "../controllers/adminUserController.js";
 
 import { protect } from "../middlewares/authMiddleware.js";
@@ -22,29 +24,31 @@ const router = express.Router();
 router.use(protect, adminOnly);
 
 // ✅ GET all users
-router.get("/", getAllUsers); // GET /api/admin/users
+router.get("/", getAllUsers);
 
-// ✅ BLOCK / UNBLOCK user
-router.patch("/:id/block", blockUser);   // PATCH /api/admin/users/:id/block
-router.patch("/:id/unblock", unblockUser); // PATCH /api/admin/users/:id/unblock
+// ✅ IMPORTANT: Specific routes FIRST
+router.get("/:id/orders", getUserOrders);
+router.get("/:id/transactions", getUserTransactions);
 
-// ✅ UPDATE balance
-router.put("/:id/balance", updateUserBalance); // PUT /api/admin/users/:id/balance
-
-// ✅ DELETE user and related data
-router.delete("/:id", deleteUser); // DELETE /api/admin/users/:id
-
-// ✅ GET user orders
-router.get("/:id/orders", getUserOrders); // GET /api/admin/users/:id/orders
-
-// ✅ GET single user
+// ✅ GET single user (AFTER specific routes)
 router.get("/:id", getUserById);
 
-// ✅ GET user transactions
-router.get("/:id/transactions", getUserTransactions); // GET /api/admin/users/:id/transactions
+// ✅ BLOCK / UNBLOCK
+router.patch("/:id/block", blockUser);
+router.patch("/:id/unblock", unblockUser);
 
-// ✅ PROMOTE / DEMOTE admin
-router.patch("/:id/promote", promoteToAdmin); // PATCH /api/admin/users/:id/promote
-router.patch("/:id/demote", demoteFromAdmin); // PATCH /api/admin/users/:id/demote
+// 🆕 FREEZE / UNFREEZE
+router.patch("/:id/freeze", freezeUser);
+router.patch("/:id/unfreeze", unfreezeUser);
+
+// ✅ UPDATE balance
+router.put("/:id/balance", updateUserBalance);
+
+// ✅ PROMOTE / DEMOTE
+router.patch("/:id/promote", promoteToAdmin);
+router.patch("/:id/demote", demoteFromAdmin);
+
+// ✅ DELETE
+router.delete("/:id", deleteUser);
 
 export default router;

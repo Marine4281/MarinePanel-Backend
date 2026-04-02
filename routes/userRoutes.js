@@ -11,5 +11,7 @@ router.put("/profile", protect, updateProfile);
 
 // ✅ Admin-only route to promote a user
 router.patch("/:id/promote", protect, adminOnly, promoteToAdmin);
+// Demote admin to user
+router.patch("/:id/demote", protect, adminOnly, demoteFromAdmin);
 
 export default router;

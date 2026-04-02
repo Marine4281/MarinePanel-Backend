@@ -29,15 +29,8 @@ export const register = async (req, res) => {
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(password, salt);
 
-    /* =====================================
-       🏪 Detect reseller owner from domain
-    ===================================== */
-
-    let resellerOwner = null;
-
-    if (req.reseller) {
-      resellerOwner = req.reseller._id;
-    }
+    // Detect reseller owner from request (if any)
+    const resellerOwner = req.reseller ? req.reseller._id : null;
 
     // Create user
     const user = await User.create({
@@ -46,7 +39,7 @@ export const register = async (req, res) => {
       country,
       countryCode,
       password: hashedPassword,
-      resellerOwner, // 🔥 automatically link to reseller
+      resellerOwner,
     });
 
     // Create wallet
@@ -55,7 +48,7 @@ export const register = async (req, res) => {
     // Generate token
     const token = generateToken(user._id);
 
-    // ✅ Set cookie
+    // Set cookie
     res.cookie("token", token, {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
@@ -63,7 +56,7 @@ export const register = async (req, res) => {
       maxAge: 7 * 24 * 60 * 60 * 1000,
     });
 
-    // ✅ Send response
+    // Send response
     res.status(201).json({
       _id: user._id,
       email: user.email,
@@ -85,8 +78,7 @@ export const register = async (req, res) => {
 export const login = async (req, res) => {
   try {
     const { email, password } = req.body;
-    if (!email || !password)
-      return res.status(400).json({ message: "Email and password required" });
+    if (!email || !password) return res.status(400).json({ message: "Email and password required" });
 
     const user = await User.findOne({ email });
     if (!user) return res.status(401).json({ message: "Invalid credentials" });
@@ -96,7 +88,6 @@ export const login = async (req, res) => {
 
     const token = generateToken(user._id);
 
-    // ✅ Set cookie
     res.cookie("token", token, {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
@@ -104,7 +95,6 @@ export const login = async (req, res) => {
       maxAge: 7 * 24 * 60 * 60 * 1000,
     });
 
-    // ✅ Send response
     res.json({
       _id: user._id,
       email: user.email,
@@ -127,12 +117,11 @@ export const forgotPassword = async (req, res) => {
   try {
     const { email } = req.body;
     const user = await User.findOne({ email });
-
     if (!user) return res.status(404).json({ message: "User not found" });
 
     const resetToken = crypto.randomBytes(32).toString("hex");
     user.resetPasswordToken = resetToken;
-    user.resetPasswordExpire = Date.now() + 3600000;
+    user.resetPasswordExpire = Date.now() + 3600000; // 1 hour
 
     await user.save();
 
@@ -140,18 +129,12 @@ export const forgotPassword = async (req, res) => {
     const message = `Click here to reset your password: ${resetUrl}`;
 
     try {
-      await sendEmail({
-        to: user.email,
-        subject: "Password Reset",
-        text: message,
-      });
-
+      await sendEmail({ to: user.email, subject: "Password Reset", text: message });
       res.json({ message: "Password reset link sent to email" });
     } catch (err) {
       user.resetPasswordToken = undefined;
       user.resetPasswordExpire = undefined;
       await user.save();
-
       res.status(500).json({ message: "Failed to send email" });
     }
 
@@ -167,16 +150,14 @@ export const resetPassword = async (req, res) => {
     const { token } = req.params;
     const { newPassword } = req.body;
 
-    if (!newPassword)
-      return res.status(400).json({ message: "New password is required" });
+    if (!newPassword) return res.status(400).json({ message: "New password is required" });
 
     const user = await User.findOne({
       resetPasswordToken: token,
       resetPasswordExpire: { $gt: Date.now() },
     });
 
-    if (!user)
-      return res.status(400).json({ message: "Invalid or expired token" });
+    if (!user) return res.status(400).json({ message: "Invalid or expired token" });
 
     const salt = await bcrypt.genSalt(10);
     user.password = await bcrypt.hash(newPassword, salt);
@@ -185,7 +166,6 @@ export const resetPassword = async (req, res) => {
     user.resetPasswordExpire = undefined;
 
     await user.save();
-
     res.json({ message: "Password reset successful" });
 
   } catch (error) {
@@ -194,16 +174,10 @@ export const resetPassword = async (req, res) => {
   }
 };
 
-// Helper to calculate balance
-const calculateBalance = (transactions) => {
-  return transactions?.reduce((acc, t) => acc + (t.amount || 0), 0) || 0;
-};
-
 // ======================= GET USER PROFILE =======================
 export const getProfile = async (req, res) => {
   try {
     const user = await User.findById(req.user.id).select("-password");
-
     if (!user) return res.status(404).json({ message: "User not found" });
 
     const wallet = await Wallet.findOne({ user: user._id });
@@ -220,18 +194,15 @@ export const getProfile = async (req, res) => {
     res.status(500).json({ message: "Server error" });
   }
 };
-//Promote User to admin
+
+// ======================= PROMOTE USER TO ADMIN =======================
 export const promoteToAdmin = async (req, res) => {
   try {
     const { id } = req.params;
-
-    if (req.user._id.toString() === id) {
-      return res.status(400).json({ message: "You cannot promote yourself" });
-    }
+    if (req.user._id.toString() === id) return res.status(400).json({ message: "You cannot promote yourself" });
 
     const user = await User.findById(id);
     if (!user) return res.status(404).json({ message: "User not found" });
-
     if (user.isAdmin) return res.status(400).json({ message: "User is already an admin" });
 
     user.isAdmin = true;
@@ -241,17 +212,9 @@ export const promoteToAdmin = async (req, res) => {
       message: `${user.email} has been promoted to admin`,
       user: { id: user._id, email: user.email, isAdmin: user.isAdmin },
     });
+
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: "Server error" });
   }
-};
-// Exporting files
-export {
-  register,
-  login,
-  forgotPassword,
-  resetPassword,
-  getProfile,
-  promoteToAdmin, 
 };

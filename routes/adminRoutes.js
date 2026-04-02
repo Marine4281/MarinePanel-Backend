@@ -1,16 +1,34 @@
 import express from "express";
-import { getUsers, getOrders, getStats } from "../controllers/adminController.js";
+import {
+  getUsers,
+  getUserById,
+  updateUserBalance,
+  promoteToAdmin,
+  demoteFromAdmin,
+  getUserTransactions
+} from "../controllers/userController.js";
 import { protect } from "../middlewares/authMiddleware.js";
 import { adminOnly } from "../middlewares/adminMiddleware.js";
 
 const router = express.Router();
 
-// Only admin users can access these routes
+// Protect all routes to admin
 router.use(protect, adminOnly);
 
-// Admin routes
-router.get("/users", getUsers);            // Get all users
-router.get("/orders", getOrders);          // Get orders separately if needed
-router.get("/stats", getStats);            // Get stats + revenue + recent orders
+// Get all users
+router.get("/users", getUsers);
+
+// Get single user (with transactions)
+router.get("/users/:id", getUserById);
+
+// Update user balance
+router.put("/users/:id/balance", updateUserBalance);
+
+// Promote / demote user
+router.patch("/users/:id/promote", promoteToAdmin);
+router.patch("/users/:id/demote", demoteFromAdmin);
+
+// Get user transactions
+router.get("/users/:id/transactions", getUserTransactions);
 
 export default router;

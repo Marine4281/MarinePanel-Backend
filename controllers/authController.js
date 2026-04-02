@@ -246,3 +246,12 @@ export const promoteToAdmin = async (req, res) => {
     res.status(500).json({ message: "Server error" });
   }
 };
+// Exporting files
+export {
+  register,
+  login,
+  forgotPassword,
+  resetPassword,
+  getProfile,
+  promoteToAdmin, 
+};

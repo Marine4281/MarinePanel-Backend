@@ -10,7 +10,6 @@ const calculateBalance = (transactions = []) =>
 
 /**
  * GET /api/admin/users
- * Fetch users with balances synced
  */
 export const getAllUsers = async (req, res) => {
   try {
@@ -60,10 +59,12 @@ export const getAllUsers = async (req, res) => {
 
 /**
  * GET /api/admin/users/:id
- * Fetch single user + wallet transactions
+ * ✅ NOW includes paginated orders
  */
 export const getUserById = async (req, res) => {
   try {
+    const { page = 1, limit = 10 } = req.query;
+
     const user = await User.findById(req.params.id).select("-password");
     if (!user) return res.status(404).json({ message: "User not found" });
 
@@ -71,11 +72,39 @@ export const getUserById = async (req, res) => {
     const transactions = wallet?.transactions || [];
     const balance = calculateBalance(transactions);
 
+    // ✅ PAGINATION
+    const skip = (Number(page) - 1) * Number(limit);
+
+    const [orders, totalOrders] = await Promise.all([
+      Order.find({ user: user._id })
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(Number(limit))
+        .select("service serviceLink charge quantity status createdAt"),
+
+      Order.countDocuments({ user: user._id }),
+    ]);
+
     res.json({
-      user: { ...user.toObject(), balance, name: user.email.split("@")[0] },
+      user: {
+        ...user.toObject(),
+        balance,
+        name: user.email.split("@")[0],
+      },
+
       transactions: transactions.sort(
-        (a, b) => new Date(b.createdAt || b.date) - new Date(a.createdAt || a.date)
+        (a, b) =>
+          new Date(b.createdAt || b.date) -
+          new Date(a.createdAt || a.date)
       ),
+
+      orders,
+
+      pagination: {
+        total: totalOrders,
+        page: Number(page),
+        pages: Math.ceil(totalOrders / limit),
+      },
     });
   } catch (err) {
     console.error(err);
@@ -85,7 +114,6 @@ export const getUserById = async (req, res) => {
 
 /**
  * PUT /api/admin/users/:id/balance
- * Admin sets user balance (creates Admin Adjustment)
  */
 export const updateUserBalance = async (req, res) => {
   try {
@@ -97,6 +125,7 @@ export const updateUserBalance = async (req, res) => {
     if (!user) return res.status(404).json({ message: "User not found" });
 
     let wallet = await Wallet.findOne({ user: user._id });
+
     if (!wallet) {
       wallet = await Wallet.create({
         user: user._id,
@@ -128,10 +157,16 @@ export const updateUserBalance = async (req, res) => {
     wallet.balance = calculateBalance(wallet.transactions);
     await wallet.save();
 
-    // Sync User balance
     await User.findByIdAndUpdate(user._id, { balance: wallet.balance });
 
-    res.json({ user: { ...user.toObject(), balance: wallet.balance, name: user.email.split("@")[0] }, wallet });
+    res.json({
+      user: {
+        ...user.toObject(),
+        balance: wallet.balance,
+        name: user.email.split("@")[0],
+      },
+      wallet,
+    });
   } catch (err) {
     console.error(err);
     res.status(500).json({ message: "Balance update failed" });
@@ -140,22 +175,26 @@ export const updateUserBalance = async (req, res) => {
 
 /**
  * PATCH /api/admin/users/:id/promote
- * Promote user to admin
  */
 export const promoteToAdmin = async (req, res) => {
   try {
     const { id } = req.params;
+
     if (req.user._id.toString() === id)
       return res.status(400).json({ message: "Cannot promote yourself" });
 
     const user = await User.findById(id);
     if (!user) return res.status(404).json({ message: "User not found" });
-    if (user.isAdmin) return res.status(400).json({ message: "User is already admin" });
+    if (user.isAdmin)
+      return res.status(400).json({ message: "User is already admin" });
 
     user.isAdmin = true;
     await user.save();
 
-    res.json({ message: "User promoted", user: { id: user._id, isAdmin: user.isAdmin } });
+    res.json({
+      message: "User promoted",
+      user: { id: user._id, isAdmin: user.isAdmin },
+    });
   } catch (err) {
     console.error(err);
     res.status(500).json({ message: "Promotion failed" });
@@ -164,22 +203,26 @@ export const promoteToAdmin = async (req, res) => {
 
 /**
  * PATCH /api/admin/users/:id/demote
- * Demote admin to normal user
  */
 export const demoteFromAdmin = async (req, res) => {
   try {
     const { id } = req.params;
+
     if (req.user._id.toString() === id)
       return res.status(400).json({ message: "Cannot demote yourself" });
 
     const user = await User.findById(id);
     if (!user) return res.status(404).json({ message: "User not found" });
-    if (!user.isAdmin) return res.status(400).json({ message: "User is not admin" });
+    if (!user.isAdmin)
+      return res.status(400).json({ message: "User is not admin" });
 
     user.isAdmin = false;
     await user.save();
 
-    res.json({ message: "User demoted", user: { id: user._id, isAdmin: user.isAdmin } });
+    res.json({
+      message: "User demoted",
+      user: { id: user._id, isAdmin: user.isAdmin },
+    });
   } catch (err) {
     console.error(err);
     res.status(500).json({ message: "Demotion failed" });
@@ -196,6 +239,7 @@ export const blockUser = async (req, res) => {
       { isBlocked: true },
       { new: true }
     );
+
     res.json({ ...user.toObject(), name: user.email.split("@")[0] });
   } catch (err) {
     console.error(err);
@@ -213,10 +257,47 @@ export const unblockUser = async (req, res) => {
       { isBlocked: false },
       { new: true }
     );
+
     res.json({ ...user.toObject(), name: user.email.split("@")[0] });
   } catch (err) {
     console.error(err);
     res.status(500).json({ message: "Unblock failed" });
+  }
+};
+
+/**
+ * 🆕 PATCH /api/admin/users/:id/freeze
+ */
+export const freezeUser = async (req, res) => {
+  try {
+    const user = await User.findByIdAndUpdate(
+      req.params.id,
+      { isFrozen: true },
+      { new: true }
+    );
+
+    res.json({ ...user.toObject(), name: user.email.split("@")[0] });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Freeze failed" });
+  }
+};
+
+/**
+ * 🆕 PATCH /api/admin/users/:id/unfreeze
+ */
+export const unfreezeUser = async (req, res) => {
+  try {
+    const user = await User.findByIdAndUpdate(
+      req.params.id,
+      { isFrozen: false },
+      { new: true }
+    );
+
+    res.json({ ...user.toObject(), name: user.email.split("@")[0] });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Unfreeze failed" });
   }
 };
 
@@ -228,6 +309,7 @@ export const deleteUser = async (req, res) => {
     await User.findByIdAndDelete(req.params.id);
     await Order.deleteMany({ user: req.params.id });
     await Wallet.deleteOne({ user: req.params.id });
+
     res.json({ message: "User deleted" });
   } catch (err) {
     console.error(err);
@@ -240,7 +322,10 @@ export const deleteUser = async (req, res) => {
  */
 export const getUserOrders = async (req, res) => {
   try {
-    const orders = await Order.find({ user: req.params.id }).sort({ createdAt: -1 });
+    const orders = await Order.find({ user: req.params.id }).sort({
+      createdAt: -1,
+    });
+
     res.json(orders);
   } catch (err) {
     console.error(err);
@@ -254,7 +339,10 @@ export const getUserOrders = async (req, res) => {
 export const getUserTransactions = async (req, res) => {
   try {
     const wallet = await Wallet.findOne({ user: req.params.id });
-    if (!wallet) return res.status(404).json({ message: "Wallet not found" });
+
+    if (!wallet)
+      return res.status(404).json({ message: "Wallet not found" });
+
     res.json(wallet.transactions || []);
   } catch (err) {
     console.error(err);

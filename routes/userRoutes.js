@@ -1,11 +1,15 @@
 import express from "express";
-import { getProfile, updateProfile } from "../controllers/userController.js";
-import { protect } from "../middlewares/authMiddleware.js"; // JWT auth middleware
+import { getProfile, updateProfile, promoteToAdmin } from "../controllers/userController.js";
+import { protect } from "../middlewares/authMiddleware.js";
+import { adminOnly } from "../middlewares/adminMiddleware.js";
 
 const router = express.Router();
 
-// ✅ Use JWT to get user, no :id needed
+// ✅ Self-profile routes
 router.get("/profile", protect, getProfile);
 router.put("/profile", protect, updateProfile);
+
+// ✅ Admin-only route to promote a user
+router.patch("/:id/promote", protect, adminOnly, promoteToAdmin);
 
 export default router;

@@ -221,7 +221,7 @@ export const getProfile = async (req, res) => {
   }
 };
 //Promote User to admin
-const promoteToAdmin = async (req, res) => {
+export const promoteToAdmin = async (req, res) => {
   try {
     const { id } = req.params;
 

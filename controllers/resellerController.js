@@ -355,6 +355,59 @@ export const switchResellerDomain = async (req, res) => {
     SWITCH TO CUSTOM DOMAIN
     ============================
     */
+export const switchResellerDomain = async (req, res) => {
+  try {
+    const userId = req.user._id;
+    const { domainType, customDomain } = req.body;
+
+    if (!["custom", "subdomain"].includes(domainType)) {
+      return res.status(400).json({
+        message: "Invalid domain type",
+      });
+    }
+
+    const user = await User.findById(userId);
+
+    if (!user || !user.isReseller) {
+      return res.status(403).json({ message: "Not authorized" });
+    }
+
+    const settings = await Settings.findOne().lean();
+    const platformDomain = settings?.platformDomain || "marinepanel.online";
+
+    let finalDomain = "";
+
+    /*
+    ============================
+    SWITCH TO SUBDOMAIN
+    ============================
+    */
+    if (domainType === "subdomain") {
+      if (!user.brandSlug) {
+        return res.status(400).json({
+          message: "Brand slug missing",
+        });
+      }
+
+      finalDomain = `${user.brandSlug}.${platformDomain}`;
+
+      const exists = await User.findOne({
+        resellerDomain: finalDomain,
+        _id: { $ne: user._id },
+      });
+
+      if (exists) {
+        return res.status(400).json({
+          message: "Subdomain already in use",
+        });
+      }
+    }
+
+    /*
+    ============================
+    SWITCH TO CUSTOM DOMAIN
+    ============================
+    */
     if (domainType === "custom") {
       if (!customDomain) {
         return res.status(400).json({
@@ -376,6 +429,17 @@ export const switchResellerDomain = async (req, res) => {
       }
 
       finalDomain = cleanDomain;
+    }
+
+    /*
+    ============================
+    PREVENT SAME DOMAIN
+    ============================
+    */
+    if (user.resellerDomain === finalDomain) {
+      return res.status(400).json({
+        message: "You are already using this domain",
+      });
     }
 
     /*

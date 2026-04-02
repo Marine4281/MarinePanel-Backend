@@ -114,6 +114,20 @@ export const createOrder = async (req, res) => {
       });
     }
 
+    /* ================= 🔒 BLOCK / FREEZE CHECK ================= */
+
+    if (user.isBlocked) {
+      return res.status(403).json({
+        message: "Account is blocked. Contact support.",
+      });
+    }
+
+    if (user.isFrozen) {
+      return res.status(403).json({
+        message: "Account is frozen. You cannot place orders.",
+      });
+      }
+
     /* ================= SERVICE ================= */
 
     const serviceData = await Service.findOne({

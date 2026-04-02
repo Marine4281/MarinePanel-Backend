@@ -322,11 +322,24 @@ export const deleteUser = async (req, res) => {
  */
 export const getUserOrders = async (req, res) => {
   try {
-    const orders = await Order.find({ user: req.params.id }).sort({
-      createdAt: -1,
-    });
+    const { page = 1, limit = 10 } = req.query;
 
-    res.json(orders);
+    const skip = (Number(page) - 1) * Number(limit);
+
+    const [orders, total] = await Promise.all([
+      Order.find({ user: req.params.id })
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(Number(limit)),
+
+      Order.countDocuments({ user: req.params.id }),
+    ]);
+
+    res.json({
+      orders,
+      page: Number(page),
+      pages: Math.ceil(total / limit),
+    });
   } catch (err) {
     console.error(err);
     res.status(500).json({ message: "Failed to fetch orders" });

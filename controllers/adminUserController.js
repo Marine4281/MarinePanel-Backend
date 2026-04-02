@@ -351,7 +351,7 @@ export const getUserOrders = async (req, res) => {
  */
 export const getUserTransactions = async (req, res) => {
   try {
-    const wallet = await Wallet.findOne({ userId: req.params.id });
+    const wallet = await Wallet.findOne({ user: req.params.id });
 
     if (!wallet)
       return res.status(404).json({ message: "Wallet not found" });

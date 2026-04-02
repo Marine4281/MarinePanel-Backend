@@ -38,6 +38,7 @@ import resellerAdminRoutes from "./routes/resellerAdminRoutes.js";
 import adminOrderRoutes from "./routes/adminOrderRoutes.js";
 import adminUserOrdersRoutes from "./routes/adminUserOrdersRoutes.js";
 import providerRoutes from "./routes/providerRoutes.js";
+import adminLogRoutes from "./routes/adminLogRoutes.js";
 
 dotenv.config();
 const app = express();
@@ -128,5 +129,6 @@ app.use("/api/provider", providerRoutes);
 // ← NEW: Admin Orders
 app.use("/api/admin/orders", adminOrderRoutes);
 app.use("/api/admin/user-orders", adminUserOrdersRoutes);
+app.use("/api/admin-logs", adminLogRoutes);
 
 export default app;

@@ -348,3 +348,55 @@ export const updateBranding = async (req, res) => {
     res.status(500).json({ message: "Failed" });
   }
 };
+
+// SWITCH TO CUSTOM DOMAIN
+    // ============================
+    if (domainType === "custom") {
+      if (!customDomain) {
+        return res.status(400).json({ message: "Custom domain required" });
+      }
+
+      // Check if already used
+      const exists = await User.findOne({ customDomain });
+      if (exists && exists._id.toString() !== user._id.toString()) {
+        return res.status(400).json({ message: "Domain already in use" });
+      }
+
+      user.domainType = "custom";
+      user.customDomain = customDomain;
+
+      // optional: clear subdomain
+      user.subdomain = null;
+    }
+
+    // ============================
+    // SWITCH TO SUBDOMAIN
+    // ============================
+    if (domainType === "subdomain") {
+      if (!subdomain) {
+        return res.status(400).json({ message: "Subdomain required" });
+      }
+
+      const exists = await User.findOne({ subdomain });
+      if (exists && exists._id.toString() !== user._id.toString()) {
+        return res.status(400).json({ message: "Subdomain already taken" });
+      }
+
+      user.domainType = "subdomain";
+      user.subdomain = subdomain;
+
+      // optional: clear custom domain
+      user.customDomain = null;
+    }
+
+    await user.save();
+
+    res.json({
+      message: "Domain updated successfully",
+      user,
+    });
+
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};

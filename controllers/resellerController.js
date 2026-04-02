@@ -304,99 +304,101 @@ export const withdrawResellerFunds = async (req, res) => {
     res.status(500).json({ message: "Withdraw failed" });
   }
 };
+// ================================================
+// SWITCH DOMAIN (NEW)
+// ================================================
 
-/* ================================================
-   BRANDING (UNCHANGED)
-================================================ */
-
-export const updateBranding = async (req, res) => {
+export const switchResellerDomain = async (req, res) => {
   try {
-    const user = req.user;
-    const { brandName, logo, themeColor } = req.body;
+    const userId = req.user._id;
+    const { domainType, customDomain } = req.body;
 
-    if (brandName !== undefined) {
-      const slug = generateSlug(brandName);
+    const user = await User.findById(userId);
+
+    if (!user || !user.isReseller) {
+      return res.status(403).json({ message: "Not authorized" });
+    }
+
+    const settings = await Settings.findOne().lean();
+    const platformDomain = settings?.platformDomain || "marinepanel.online";
+
+    let finalDomain = "";
+
+    /*
+    ============================
+    SWITCH TO SUBDOMAIN
+    ============================
+    */
+    if (domainType === "subdomain") {
+      if (!user.brandSlug) {
+        return res.status(400).json({
+          message: "Brand slug missing",
+        });
+      }
+
+      finalDomain = `${user.brandSlug}.${platformDomain}`;
 
       const exists = await User.findOne({
-        brandSlug: slug,
+        resellerDomain: finalDomain,
         _id: { $ne: user._id },
       });
 
       if (exists) {
         return res.status(400).json({
-          message: "Brand already exists",
+          message: "Subdomain already in use",
+        });
+      }
+    }
+
+    /*
+    ============================
+    SWITCH TO CUSTOM DOMAIN
+    ============================
+    */
+    if (domainType === "custom") {
+      if (!customDomain) {
+        return res.status(400).json({
+          message: "Custom domain required",
         });
       }
 
-      user.brandName = brandName;
-      user.brandSlug = slug;
+      const cleanDomain = normalizeDomain(customDomain);
+
+      const exists = await User.findOne({
+        resellerDomain: cleanDomain,
+        _id: { $ne: user._id },
+      });
+
+      if (exists) {
+        return res.status(400).json({
+          message: "Domain already in use",
+        });
+      }
+
+      finalDomain = cleanDomain;
     }
 
-    if (logo !== undefined) user.logo = logo;
-    if (themeColor !== undefined) user.themeColor = themeColor;
+    /*
+    ============================
+    SAVE
+    ============================
+    */
+
+    user.domainType = domainType;
+    user.resellerDomain = finalDomain;
 
     await user.save();
 
     res.json({
-      message: "Branding updated",
-      brandName: user.brandName,
-      logo: user.logo,
-      themeColor: user.themeColor,
-    });
-
-  } catch {
-    res.status(500).json({ message: "Failed" });
-  }
-};
-
-// SWITCH TO CUSTOM DOMAIN
-    // ============================
-    if (domainType === "custom") {
-      if (!customDomain) {
-        return res.status(400).json({ message: "Custom domain required" });
-      }
-
-      // Check if already used
-      const exists = await User.findOne({ customDomain });
-      if (exists && exists._id.toString() !== user._id.toString()) {
-        return res.status(400).json({ message: "Domain already in use" });
-      }
-
-      user.domainType = "custom";
-      user.customDomain = customDomain;
-
-      // optional: clear subdomain
-      user.subdomain = null;
-    }
-
-    // ============================
-    // SWITCH TO SUBDOMAIN
-    // ============================
-    if (domainType === "subdomain") {
-      if (!subdomain) {
-        return res.status(400).json({ message: "Subdomain required" });
-      }
-
-      const exists = await User.findOne({ subdomain });
-      if (exists && exists._id.toString() !== user._id.toString()) {
-        return res.status(400).json({ message: "Subdomain already taken" });
-      }
-
-      user.domainType = "subdomain";
-      user.subdomain = subdomain;
-
-      // optional: clear custom domain
-      user.customDomain = null;
-    }
-
-    await user.save();
-
-    res.json({
-      message: "Domain updated successfully",
-      user,
+      message: "Domain switched successfully",
+      domain: finalDomain,
+      domainType,
     });
 
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    console.error(error);
+    res.status(500).json({
+      message: "Failed to switch domain",
+    });
   }
 };

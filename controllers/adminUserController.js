@@ -68,7 +68,7 @@ export const getUserById = async (req, res) => {
     const user = await User.findById(req.params.id).select("-password");
     if (!user) return res.status(404).json({ message: "User not found" });
 
-    const wallet = await Wallet.findOne({ user: user._id });
+    const wallet = await Wallet.findOne({ userId: user._id });
     const transactions = wallet?.transactions || [];
     const balance = calculateBalance(transactions);
 
@@ -76,13 +76,13 @@ export const getUserById = async (req, res) => {
     const skip = (Number(page) - 1) * Number(limit);
 
     const [orders, totalOrders] = await Promise.all([
-      Order.find({ user: user._id })
+      Order.find({ userId: user._id })
         .sort({ createdAt: -1 })
         .skip(skip)
         .limit(Number(limit))
         .select("service serviceLink charge quantity status createdAt"),
 
-      Order.countDocuments({ user: user._id }),
+      Order.countDocuments({ userId: user._id }),
     ]);
 
     res.json({
@@ -327,12 +327,12 @@ export const getUserOrders = async (req, res) => {
     const skip = (Number(page) - 1) * Number(limit);
 
     const [orders, total] = await Promise.all([
-      Order.find({ user: req.params.id })
+      Order.find({ userId: req.params.id })
         .sort({ createdAt: -1 })
         .skip(skip)
         .limit(Number(limit)),
 
-      Order.countDocuments({ user: req.params.id }),
+      Order.countDocuments({ userId: req.params.id }),
     ]);
 
     res.json({
@@ -351,7 +351,7 @@ export const getUserOrders = async (req, res) => {
  */
 export const getUserTransactions = async (req, res) => {
   try {
-    const wallet = await Wallet.findOne({ user: req.params.id });
+    const wallet = await Wallet.findOne({ userId: req.params.id });
 
     if (!wallet)
       return res.status(404).json({ message: "Wallet not found" });

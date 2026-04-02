@@ -39,29 +39,38 @@ export const detectResellerDomain = async (req, res, next) => {
     STRICT SUBDOMAIN CHECK
     -----------------------------
     */
-    const isSubdomain = host.endsWith(`.${BASE_DOMAIN}`);
+    const parts = host.split(".");
+    const baseParts = BASE_DOMAIN.split(".");
 
-    if (isSubdomain) {
-      subdomain = host.replace(`.${BASE_DOMAIN}`, "");
+    if (
+      parts.length === 3 &&
+      parts[1] === baseParts[0] &&
+      parts[2] === baseParts[1]
+    ) {
+      subdomain = parts[0];
     }
 
     /*
     -----------------------------
-    DATABASE SEARCH (SAFE)
+    1. CHECK FULL DOMAIN FIRST
     -----------------------------
     */
-    const query = {
+    reseller = await User.findOne({
       isReseller: true,
-      $or: [],
-    };
+      resellerDomain: host,
+    });
 
-    if (subdomain) {
-      query.$or.push({ brandSlug: subdomain });
+    /*
+    -----------------------------
+    2. FALLBACK TO SUBDOMAIN
+    -----------------------------
+    */
+    if (!reseller && subdomain) {
+      reseller = await User.findOne({
+        isReseller: true,
+        brandSlug: subdomain,
+      });
     }
-
-    query.$or.push({ resellerDomain: host });
-
-    reseller = await User.findOne(query);
 
     /*
     -----------------------------
@@ -79,7 +88,6 @@ export const detectResellerDomain = async (req, res, next) => {
           reseller.resellerDomain ||
           `${reseller.brandSlug}.${BASE_DOMAIN}`,
 
-        // ✅ ADD SUPPORT HERE
         supportWhatsapp: reseller.supportWhatsapp || "",
         supportTelegram: reseller.supportTelegram || "",
         supportWhatsappChannel:

@@ -68,7 +68,7 @@ export const getUserById = async (req, res) => {
     const user = await User.findById(req.params.id).select("-password");
     if (!user) return res.status(404).json({ message: "User not found" });
 
-    const wallet = await Wallet.findOne({ userId: user._id });
+    const wallet = await Wallet.findOne({ user: user._id });
     const transactions = wallet?.transactions || [];
     const balance = calculateBalance(transactions);
 

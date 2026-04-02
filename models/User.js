@@ -21,14 +21,14 @@ const userSchema = new mongoose.Schema(
       type: String,
       required: true,
       trim: true,
-     },
+    },
 
-   countryCode: {
-     type: String,
-     required: true,
-     uppercase: true,
-    trim: true,
-   },
+    countryCode: {
+      type: String,
+      required: true,
+      uppercase: true,
+      trim: true,
+    },
 
     password: {
       type: String,
@@ -38,6 +38,26 @@ const userSchema = new mongoose.Schema(
     isAdmin: {
       type: Boolean,
       default: false,
+    },
+
+    /*
+    --------------------------------
+    ACCOUNT CONTROL
+    --------------------------------
+    */
+
+    // ❗ You were already using this in controller but it didn't exist
+    isBlocked: {
+      type: Boolean,
+      default: false,
+      index: true,
+    },
+
+    // 🆕 NEW: Freeze user (can login but cannot order)
+    isFrozen: {
+      type: Boolean,
+      default: false,
+      index: true,
     },
 
     /*
@@ -94,6 +114,7 @@ const userSchema = new mongoose.Schema(
       enum: ["custom", "subdomain"],
       default: "subdomain",
     },
+
     resellerDomain: {
       type: String,
       default: null,
@@ -167,7 +188,7 @@ const userSchema = new mongoose.Schema(
       trim: true,
       validate: {
         validator: function (v) {
-          if (!v) return true; // allow null
+          if (!v) return true;
           const cleaned = v.replace(/\D/g, "");
           return cleaned.length >= 7 && cleaned.length <= 15;
         },

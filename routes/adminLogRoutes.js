@@ -1,12 +1,11 @@
-//routes//adminLogRoutes.js
 import express from "express";
 import { getAdminLogs } from "../controllers/adminLogController.js";
 import authMiddleware from "../middlewares/authMiddleware.js";
-import roleMiddleware from "../middlewares/roleMiddleware.js";
+import adminMiddleware from "../middlewares/adminMiddleware.js"; // ✅ use this
 
 const router = express.Router();
 
-// Only admins
-router.get("/", authMiddleware, roleMiddleware("admin"), getAdminLogs);
+// ✅ Only authenticated admins can access
+router.get("/", authMiddleware, adminMiddleware, getAdminLogs);
 
 export default router;

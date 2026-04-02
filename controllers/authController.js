@@ -13,9 +13,9 @@ const generateToken = (id) => {
 // ======================= REGISTER =======================
 export const register = async (req, res) => {
   try {
-    const { email, phone, country, password } = req.body;
+    const { email, phone, country, countryCode, password } = req.body;
 
-    if (!email || !phone || !country || !password) {
+    if (!email || !phone || !country || !countryCode || !password) {
       return res.status(400).json({ message: "All fields are required" });
     }
 
@@ -44,6 +44,7 @@ export const register = async (req, res) => {
       email,
       phone,
       country,
+      countryCode,
       password: hashedPassword,
       resellerOwner, // 🔥 automatically link to reseller
     });
@@ -68,6 +69,7 @@ export const register = async (req, res) => {
       email: user.email,
       phone: user.phone,
       country: user.country,
+      countryCode: user.countryCode,
       isAdmin: user.isAdmin || false,
       isReseller: user.isReseller || false,
       token,
@@ -108,6 +110,7 @@ export const login = async (req, res) => {
       email: user.email,
       phone: user.phone,
       country: user.country,
+      countryCode: user.countryCode,
       isReseller: user.isReseller,
       isAdmin: user.isAdmin,
       token,

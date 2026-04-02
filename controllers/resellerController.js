@@ -355,7 +355,7 @@ export const switchResellerDomain = async (req, res) => {
     SWITCH TO CUSTOM DOMAIN
     ============================
     */
-export const switchResellerDomain = async (req, res) => {
+const switchResellerDomain = async (req, res) => {
   try {
     const userId = req.user._id;
     const { domainType, customDomain } = req.body;

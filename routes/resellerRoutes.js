@@ -9,7 +9,7 @@ import {
   getResellerUsers,
   getResellerOrders,
   withdrawResellerFunds,
-  switchResellerDomain, // ✅ ADD THIS
+  switchResellerDomain, 
 } from "../controllers/resellerController.js";
 
 import { protect } from "../middlewares/authMiddleware.js";
@@ -56,7 +56,7 @@ router.get("/orders", protect, getResellerOrders);
 Switch Domain (FIXED PATH ✅)
 --------------------------------
 */
-router.put("/switch-domain", protect, switchResellerDomain);
+router.post("/switch-domain", protect, switchResellerDomain);
 
 /*
 --------------------------------

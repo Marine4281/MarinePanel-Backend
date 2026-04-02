@@ -70,6 +70,33 @@ export const updateProfile = async (req, res) => {
 };
 
 // =======================
+// ADMIN: PROMOTE USER TO ADMIN
+// =======================
+export const promoteToAdmin = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    if (req.user._id.toString() === id) {
+      return res.status(400).json({ message: "You cannot promote yourself" });
+    }
+
+    const user = await User.findById(id);
+    if (!user) return res.status(404).json({ message: "User not found" });
+    if (user.isAdmin) return res.status(400).json({ message: "User is already an admin" });
+
+    user.isAdmin = true;
+    await user.save();
+
+    res.status(200).json({
+      message: `${user.email} has been promoted to admin`,
+      user: { id: user._id, email: user.email, isAdmin: user.isAdmin },
+    });
+  } catch (error) {
+    console.error("PROMOTE TO ADMIN ERROR:", error);
+    res.status(500).json({ message: "Server error" });
+  }
+};
+// =======================
 // ADMIN: EDIT USER BALANCE
 // =======================
 export const updateUserBalance = async (req, res) => {

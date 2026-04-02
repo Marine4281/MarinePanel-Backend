@@ -2,6 +2,7 @@
 import express from "express";
 import {
   getAllUsers,
+  getUserById, 
   blockUser,
   unblockUser,
   deleteUser,
@@ -35,6 +36,9 @@ router.delete("/:id", deleteUser); // DELETE /api/admin/users/:id
 
 // ✅ GET user orders
 router.get("/:id/orders", getUserOrders); // GET /api/admin/users/:id/orders
+
+// ✅ GET single user
+router.get("/:id", getUserById);
 
 // ✅ GET user transactions
 router.get("/:id/transactions", getUserTransactions); // GET /api/admin/users/:id/transactions

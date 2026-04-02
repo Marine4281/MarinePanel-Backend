@@ -89,6 +89,11 @@ const userSchema = new mongoose.Schema(
     },
 
     // Subdomain and custom domain
+    domainType: {
+      type: String,
+      enum: ["custom", "subdomain"],
+      default: "subdomain",
+    },
     resellerDomain: {
       type: String,
       default: null,

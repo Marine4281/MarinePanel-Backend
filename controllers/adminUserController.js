@@ -10,7 +10,7 @@ const calculateBalance = (transactions = []) =>
 
 /**
  * GET /api/admin/users
- * Fetch users and auto-fix wallet balances
+ * Fetch users with balances synced
  */
 export const getAllUsers = async (req, res) => {
   try {
@@ -35,22 +35,18 @@ export const getAllUsers = async (req, res) => {
         if (wallet) {
           const computed = calculateBalance(wallet.transactions);
 
-          // Fix wallet balance if outdated
           if (wallet.balance !== computed) {
             wallet.balance = computed;
             await wallet.save();
           }
           balance = computed;
 
-          // Sync User.balance
           if (user.balance !== balance) {
             await User.findByIdAndUpdate(user._id, { balance });
           }
         }
 
-        // Always return a name derived from email
         const name = user.email.split("@")[0];
-
         return { ...user.toObject(), balance, name };
       })
     );
@@ -63,8 +59,33 @@ export const getAllUsers = async (req, res) => {
 };
 
 /**
+ * GET /api/admin/users/:id
+ * Fetch single user + wallet transactions
+ */
+export const getUserById = async (req, res) => {
+  try {
+    const user = await User.findById(req.params.id).select("-password");
+    if (!user) return res.status(404).json({ message: "User not found" });
+
+    const wallet = await Wallet.findOne({ user: user._id });
+    const transactions = wallet?.transactions || [];
+    const balance = calculateBalance(transactions);
+
+    res.json({
+      user: { ...user.toObject(), balance, name: user.email.split("@")[0] },
+      transactions: transactions.sort(
+        (a, b) => new Date(b.createdAt || b.date) - new Date(a.createdAt || a.date)
+      ),
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Failed to fetch user" });
+  }
+};
+
+/**
  * PUT /api/admin/users/:id/balance
- * Admin sets user balance (always creates Admin Adjustment)
+ * Admin sets user balance (creates Admin Adjustment)
  */
 export const updateUserBalance = async (req, res) => {
   try {
@@ -76,9 +97,7 @@ export const updateUserBalance = async (req, res) => {
     if (!user) return res.status(404).json({ message: "User not found" });
 
     let wallet = await Wallet.findOne({ user: user._id });
-
     if (!wallet) {
-      // 🆕 create wallet with initial transaction
       wallet = await Wallet.create({
         user: user._id,
         transactions: [
@@ -87,11 +106,11 @@ export const updateUserBalance = async (req, res) => {
             amount: newBalance,
             status: "Completed",
             note: "Initial balance set by admin",
+            createdAt: new Date(),
           },
         ],
       });
     } else {
-      // 🔁 calculate current balance and create adjustment if needed
       const current = calculateBalance(wallet.transactions);
       const diff = newBalance - current;
 
@@ -101,27 +120,18 @@ export const updateUserBalance = async (req, res) => {
           amount: diff,
           status: "Completed",
           note: "Balance updated by admin",
+          createdAt: new Date(),
         });
       }
     }
 
-    // persist balance from transactions (single source of truth)
     wallet.balance = calculateBalance(wallet.transactions);
     await wallet.save();
 
-    // 🔔 Real-time update
-    const io = req.app.get("io");
-    io?.emit("wallet:update", {
-      userId: user._id.toString(),
-      balance: wallet.balance,
-      transactions: wallet.transactions,
-    });
-
-    // Sync to User
+    // Sync User balance
     await User.findByIdAndUpdate(user._id, { balance: wallet.balance });
 
-    const name = user.email.split("@")[0]; // ← derived name
-    res.json({ user: { ...user.toObject(), balance: wallet.balance, name }, wallet });
+    res.json({ user: { ...user.toObject(), balance: wallet.balance, name: user.email.split("@")[0] }, wallet });
   } catch (err) {
     console.error(err);
     res.status(500).json({ message: "Balance update failed" });
@@ -129,7 +139,55 @@ export const updateUserBalance = async (req, res) => {
 };
 
 /**
- * Block / Unblock user
+ * PATCH /api/admin/users/:id/promote
+ * Promote user to admin
+ */
+export const promoteToAdmin = async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (req.user._id.toString() === id)
+      return res.status(400).json({ message: "Cannot promote yourself" });
+
+    const user = await User.findById(id);
+    if (!user) return res.status(404).json({ message: "User not found" });
+    if (user.isAdmin) return res.status(400).json({ message: "User is already admin" });
+
+    user.isAdmin = true;
+    await user.save();
+
+    res.json({ message: "User promoted", user: { id: user._id, isAdmin: user.isAdmin } });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Promotion failed" });
+  }
+};
+
+/**
+ * PATCH /api/admin/users/:id/demote
+ * Demote admin to normal user
+ */
+export const demoteFromAdmin = async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (req.user._id.toString() === id)
+      return res.status(400).json({ message: "Cannot demote yourself" });
+
+    const user = await User.findById(id);
+    if (!user) return res.status(404).json({ message: "User not found" });
+    if (!user.isAdmin) return res.status(400).json({ message: "User is not admin" });
+
+    user.isAdmin = false;
+    await user.save();
+
+    res.json({ message: "User demoted", user: { id: user._id, isAdmin: user.isAdmin } });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Demotion failed" });
+  }
+};
+
+/**
+ * PATCH /api/admin/users/:id/block
  */
 export const blockUser = async (req, res) => {
   try {
@@ -145,6 +203,9 @@ export const blockUser = async (req, res) => {
   }
 };
 
+/**
+ * PATCH /api/admin/users/:id/unblock
+ */
 export const unblockUser = async (req, res) => {
   try {
     const user = await User.findByIdAndUpdate(
@@ -160,7 +221,7 @@ export const unblockUser = async (req, res) => {
 };
 
 /**
- * DELETE user and related data
+ * DELETE /api/admin/users/:id
  */
 export const deleteUser = async (req, res) => {
   try {
@@ -175,7 +236,7 @@ export const deleteUser = async (req, res) => {
 };
 
 /**
- * GET user orders
+ * GET /api/admin/users/:id/orders
  */
 export const getUserOrders = async (req, res) => {
   try {
@@ -183,18 +244,17 @@ export const getUserOrders = async (req, res) => {
     res.json(orders);
   } catch (err) {
     console.error(err);
-    res.status(500).json({ message: "Failed to fetch user orders" });
+    res.status(500).json({ message: "Failed to fetch orders" });
   }
 };
 
 /**
- * GET user transactions
+ * GET /api/admin/users/:id/transactions
  */
 export const getUserTransactions = async (req, res) => {
   try {
     const wallet = await Wallet.findOne({ user: req.params.id });
     if (!wallet) return res.status(404).json({ message: "Wallet not found" });
-
     res.json(wallet.transactions || []);
   } catch (err) {
     console.error(err);

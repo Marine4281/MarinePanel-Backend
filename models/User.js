@@ -20,8 +20,15 @@ const userSchema = new mongoose.Schema(
     country: {
       type: String,
       required: true,
-      default: "us",
-    },
+      trim: true,
+     },
+
+   countryCode: {
+     type: String,
+     required: true,
+     uppercase: true,
+    trim: true,
+   },
 
     password: {
       type: String,

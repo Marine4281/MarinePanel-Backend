@@ -305,7 +305,7 @@ export const withdrawResellerFunds = async (req, res) => {
   }
 };
 // ================================================
-// SWITCH DOMAIN (NEW)
+// SWITCH DOMAIN (FINAL CLEAN)
 // ================================================
 
 export const switchResellerDomain = async (req, res) => {
@@ -313,53 +313,7 @@ export const switchResellerDomain = async (req, res) => {
     const userId = req.user._id;
     const { domainType, customDomain } = req.body;
 
-    const user = await User.findById(userId);
-
-    if (!user || !user.isReseller) {
-      return res.status(403).json({ message: "Not authorized" });
-    }
-
-    const settings = await Settings.findOne().lean();
-    const platformDomain = settings?.platformDomain || "marinepanel.online";
-
-    let finalDomain = "";
-
-    /*
-    ============================
-    SWITCH TO SUBDOMAIN
-    ============================
-    */
-    if (domainType === "subdomain") {
-      if (!user.brandSlug) {
-        return res.status(400).json({
-          message: "Brand slug missing",
-        });
-      }
-
-      finalDomain = `${user.brandSlug}.${platformDomain}`;
-
-      const exists = await User.findOne({
-        resellerDomain: finalDomain,
-        _id: { $ne: user._id },
-      });
-
-      if (exists) {
-        return res.status(400).json({
-          message: "Subdomain already in use",
-        });
-      }
-    }
-
-    /*
-    ============================
-    SWITCH TO CUSTOM DOMAIN
-    ============================
-    */
-const switchResellerDomain = async (req, res) => {
-  try {
-    const userId = req.user._id;
-    const { domainType, customDomain } = req.body;
-
+    // ✅ Validate domain type
     if (!["custom", "subdomain"].includes(domainType)) {
       return res.status(400).json({
         message: "Invalid domain type",
@@ -447,7 +401,6 @@ const switchResellerDomain = async (req, res) => {
     SAVE
     ============================
     */
-
     user.domainType = domainType;
     user.resellerDomain = finalDomain;
 

@@ -1,6 +1,8 @@
+//controllers/userController.js
 import User from "../models/User.js";
 import Wallet from "../models/Wallet.js";
 import bcrypt from "bcryptjs";
+import logAdminAction from "../utils/logAdminAction.js";
 
 // =======================
 // GET LOGGED-IN USER PROFILE
@@ -15,10 +17,19 @@ export const getProfile = async (req, res) => {
     const wallet = await Wallet.findOne({ user: user._id });
     const balance = wallet?.transactions.reduce((acc, t) => acc + t.amount, 0) || 0;
 
+    // 🔥 Log if admin views profile
+    if (user.isAdmin) {
+      await logAdminAction(
+        user._id,
+        "VIEW_PROFILE",
+        `Admin ${user.email} viewed profile`
+      );
+    }
+
     res.json({
       ...user.toObject(),
       balance,
-      name: user.email.split("@")[0], // ← derived from email
+      name: user.email.split("@")[0],
     });
 
   } catch (error) {
@@ -52,6 +63,15 @@ export const updateProfile = async (req, res) => {
     const wallet = await Wallet.findOne({ user: user._id });
     const balance = wallet?.transactions.reduce((acc, t) => acc + t.amount, 0) || 0;
 
+    // 🔥 Log if admin updates profile
+    if (user.isAdmin) {
+      await logAdminAction(
+        user._id,
+        "UPDATE_PROFILE",
+        `Admin ${user.email} updated profile`
+      );
+    }
+
     res.json({
       _id: user._id,
       email: user.email,
@@ -60,7 +80,7 @@ export const updateProfile = async (req, res) => {
       isAdmin: user.isAdmin,
       createdAt: user.createdAt,
       balance,
-      name: user.email.split("@")[0], // ← derived from email
+      name: user.email.split("@")[0],
     });
 
   } catch (error) {
@@ -99,12 +119,19 @@ export const updateUserBalance = async (req, res) => {
 
     await wallet.save();
 
+    // 🔥 Log admin balance update
+    await logAdminAction(
+      req.user._id,
+      "UPDATE_BALANCE",
+      `Updated balance for ${user.email} to ${balance}`
+    );
+
     res.json({
       _id: user._id,
       email: user.email,
       phone: user.phone,
       balance,
-      name: user.email.split("@")[0], // ← derived from email
+      name: user.email.split("@")[0],
     });
 
   } catch (error) {
@@ -120,6 +147,13 @@ export const getUserTransactions = async (req, res) => {
   try {
     const wallet = await Wallet.findOne({ user: req.params.id });
     if (!wallet) return res.status(404).json({ message: "Wallet not found" });
+
+    // 🔥 Log admin viewing transactions
+    await logAdminAction(
+      req.user._id,
+      "VIEW_TRANSACTIONS",
+      `Viewed transactions for user ${req.params.id}`
+    );
 
     res.json(wallet.transactions || []);
   } catch (error) {

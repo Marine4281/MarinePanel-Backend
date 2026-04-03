@@ -3,6 +3,7 @@
 import Service from "../models/Service.js";
 import Counter from "../models/Counter.js";
 import { clearCache } from "../utils/cache.js";
+import logAdminAction from "../utils/logAdminAction.js";
 
 /* =========================================================
 AUTO INCREMENT SERVICE ID
@@ -25,6 +26,12 @@ export const getAllServices = async (req, res) => {
     const services = await Service.find()
       .sort({ createdAt: -1 })
       .lean();
+
+    await logAdminAction(
+      req.user._id,
+      "VIEW_SERVICES",
+      "Viewed all services"
+    );
 
     res.json(services);
 
@@ -62,7 +69,6 @@ export const importService = async (req, res) => {
       });
     }
 
-    // Prevent duplicate provider services
     const existing = await Service.findOne({
       providerServiceId,
       providerApiUrl,
@@ -78,31 +84,30 @@ export const importService = async (req, res) => {
 
     const service = await Service.create({
       serviceId,
-
       name,
       category,
       platform: platform || "General",
-
       description: description || "",
-
       rate: Number(rate) || 0,
       min: Number(min) || 1,
       max: Number(max) || 100000,
-
       provider: provider || "Custom Provider",
-
       providerServiceId,
       providerApiUrl,
       providerApiKey,
-
       status: true,
-
       isFree: false,
       freeQuantity: 0,
       cooldownHours: 0,
     });
 
     clearCache("public_services");
+
+    await logAdminAction(
+      req.user._id,
+      "IMPORT_SERVICE",
+      `Imported service ${service.name}`
+    );
 
     res.status(201).json({
       message: "Service imported successfully",
@@ -135,11 +140,9 @@ export const addService = async (req, res) => {
       isDefault,
       isDefaultCategoryGlobal,
       isDefaultCategoryPlatform,
-
       isFree,
       freeQuantity,
       cooldownHours,
-
     } = req.body;
 
     if (!category || !platform || !name || !provider) {
@@ -151,8 +154,6 @@ export const addService = async (req, res) => {
     let finalRate = rate || 0;
     let finalMin = min || 1;
     let finalMax = max || 100000;
-
-    /* ================= FREE SERVICE ================= */
 
     if (isFree) {
       if (
@@ -168,8 +169,6 @@ export const addService = async (req, res) => {
       finalMin = 1;
       finalMax = Number(freeQuantity);
     }
-
-    /* ================= DEFAULT RULES ================= */
 
     if (isDefault) {
       await Service.updateMany(
@@ -197,19 +196,22 @@ export const addService = async (req, res) => {
     const service = await Service.create({
       ...req.body,
       serviceId,
-
       description: description || "",
-
       rate: finalRate,
       min: finalMin,
       max: finalMax,
-
       isFree: Boolean(isFree),
       freeQuantity: isFree ? freeQuantity : 0,
       cooldownHours: isFree ? cooldownHours : 0,
     });
 
     clearCache("public_services");
+
+    await logAdminAction(
+      req.user._id,
+      "ADD_SERVICE",
+      `Added service ${service.name}`
+    );
 
     res.status(201).json(service);
 
@@ -245,8 +247,6 @@ export const updateService = async (req, res) => {
       return res.status(404).json({ message: "Service not found" });
     }
 
-    /* ================= DEFAULT RULES ================= */
-
     if (isDefault) {
       await Service.updateMany(
         { category, _id: { $ne: req.params.id } },
@@ -267,8 +267,6 @@ export const updateService = async (req, res) => {
         { $set: { isDefaultCategoryPlatform: false } }
       );
     }
-
-    /* ================= FREE UPDATE ================= */
 
     if (typeof isFree === "boolean") {
       service.isFree = isFree;
@@ -309,6 +307,12 @@ export const updateService = async (req, res) => {
 
     clearCache("public_services");
 
+    await logAdminAction(
+      req.user._id,
+      "UPDATE_SERVICE",
+      `Updated service ${service.name}`
+    );
+
     res.json(service);
 
   } catch (err) {
@@ -333,6 +337,12 @@ export const deleteService = async (req, res) => {
     }
 
     clearCache("public_services");
+
+    await logAdminAction(
+      req.user._id,
+      "DELETE_SERVICE",
+      `Deleted service ${deleted.name}`
+    );
 
     res.json({ message: "Service deleted" });
 
@@ -389,6 +399,12 @@ export const toggleServiceStatus = async (req, res) => {
 
     service.status = !service.status;
     await service.save();
+
+    await logAdminAction(
+      req.user._id,
+      "TOGGLE_SERVICE",
+      `Toggled service ${service.name} to ${service.status ? "active" : "inactive"}`
+    );
 
     res.json({
       message: `Service ${service.status ? "shown" : "hidden"} successfully`,

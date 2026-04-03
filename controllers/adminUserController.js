@@ -1,6 +1,7 @@
 import User from "../models/User.js";
 import Order from "../models/Order.js";
 import Wallet from "../models/Wallet.js";
+import logAdminAction from "../utils/logAdminAction.js";
 
 // ✅ Single source of truth for balance
 const calculateBalance = (transactions = []) =>
@@ -50,6 +51,8 @@ export const getAllUsers = async (req, res) => {
       })
     );
 
+    await logAdminAction(req.user._id, "VIEW_USERS", "Admin fetched all users");
+
     res.json(users);
   } catch (err) {
     console.error(err);
@@ -59,7 +62,6 @@ export const getAllUsers = async (req, res) => {
 
 /**
  * GET /api/admin/users/:id
- * ✅ NOW includes paginated orders
  */
 export const getUserById = async (req, res) => {
   try {
@@ -72,7 +74,6 @@ export const getUserById = async (req, res) => {
     const transactions = wallet?.transactions || [];
     const balance = calculateBalance(transactions);
 
-    // ✅ PAGINATION
     const skip = (Number(page) - 1) * Number(limit);
 
     const [orders, totalOrders] = await Promise.all([
@@ -84,6 +85,12 @@ export const getUserById = async (req, res) => {
 
       Order.countDocuments({ userId: user._id }),
     ]);
+
+    await logAdminAction(
+      req.user._id,
+      "VIEW_USER",
+      `Viewed user ${user.email}`
+    );
 
     res.json({
       user: {
@@ -159,6 +166,12 @@ export const updateUserBalance = async (req, res) => {
 
     await User.findByIdAndUpdate(user._id, { balance: wallet.balance });
 
+    await logAdminAction(
+      req.user._id,
+      "UPDATE_BALANCE",
+      `Updated balance for ${user.email} to ${wallet.balance}`
+    );
+
     res.json({
       user: {
         ...user.toObject(),
@@ -191,6 +204,12 @@ export const promoteToAdmin = async (req, res) => {
     user.isAdmin = true;
     await user.save();
 
+    await logAdminAction(
+      req.user._id,
+      "PROMOTE_ADMIN",
+      `Promoted ${user.email} to admin`
+    );
+
     res.json({
       message: "User promoted",
       user: { id: user._id, isAdmin: user.isAdmin },
@@ -219,6 +238,12 @@ export const demoteFromAdmin = async (req, res) => {
     user.isAdmin = false;
     await user.save();
 
+    await logAdminAction(
+      req.user._id,
+      "DEMOTE_ADMIN",
+      `Demoted ${user.email} from admin`
+    );
+
     res.json({
       message: "User demoted",
       user: { id: user._id, isAdmin: user.isAdmin },
@@ -240,6 +265,12 @@ export const blockUser = async (req, res) => {
       { new: true }
     );
 
+    await logAdminAction(
+      req.user._id,
+      "BLOCK_USER",
+      `Blocked ${user.email}`
+    );
+
     res.json({ ...user.toObject(), name: user.email.split("@")[0] });
   } catch (err) {
     console.error(err);
@@ -258,6 +289,12 @@ export const unblockUser = async (req, res) => {
       { new: true }
     );
 
+    await logAdminAction(
+      req.user._id,
+      "UNBLOCK_USER",
+      `Unblocked ${user.email}`
+    );
+
     res.json({ ...user.toObject(), name: user.email.split("@")[0] });
   } catch (err) {
     console.error(err);
@@ -266,7 +303,7 @@ export const unblockUser = async (req, res) => {
 };
 
 /**
- * 🆕 PATCH /api/admin/users/:id/freeze
+ * PATCH /api/admin/users/:id/freeze
  */
 export const freezeUser = async (req, res) => {
   try {
@@ -274,6 +311,12 @@ export const freezeUser = async (req, res) => {
       req.params.id,
       { isFrozen: true },
       { new: true }
+    );
+
+    await logAdminAction(
+      req.user._id,
+      "FREEZE_USER",
+      `Froze ${user.email}`
     );
 
     res.json({ ...user.toObject(), name: user.email.split("@")[0] });
@@ -284,7 +327,7 @@ export const freezeUser = async (req, res) => {
 };
 
 /**
- * 🆕 PATCH /api/admin/users/:id/unfreeze
+ * PATCH /api/admin/users/:id/unfreeze
  */
 export const unfreezeUser = async (req, res) => {
   try {
@@ -292,6 +335,12 @@ export const unfreezeUser = async (req, res) => {
       req.params.id,
       { isFrozen: false },
       { new: true }
+    );
+
+    await logAdminAction(
+      req.user._id,
+      "UNFREEZE_USER",
+      `Unfroze ${user.email}`
     );
 
     res.json({ ...user.toObject(), name: user.email.split("@")[0] });
@@ -306,59 +355,21 @@ export const unfreezeUser = async (req, res) => {
  */
 export const deleteUser = async (req, res) => {
   try {
+    const user = await User.findById(req.params.id);
+
     await User.findByIdAndDelete(req.params.id);
     await Order.deleteMany({ user: req.params.id });
     await Wallet.deleteOne({ user: req.params.id });
+
+    await logAdminAction(
+      req.user._id,
+      "DELETE_USER",
+      `Deleted user ${user?.email}`
+    );
 
     res.json({ message: "User deleted" });
   } catch (err) {
     console.error(err);
     res.status(500).json({ message: "Delete failed" });
-  }
-};
-
-/**
- * GET /api/admin/users/:id/orders
- */
-export const getUserOrders = async (req, res) => {
-  try {
-    const { page = 1, limit = 10 } = req.query;
-
-    const skip = (Number(page) - 1) * Number(limit);
-
-    const [orders, total] = await Promise.all([
-      Order.find({ userId: req.params.id })
-        .sort({ createdAt: -1 })
-        .skip(skip)
-        .limit(Number(limit)),
-
-      Order.countDocuments({ userId: req.params.id }),
-    ]);
-
-    res.json({
-      orders,
-      page: Number(page),
-      pages: Math.ceil(total / limit),
-    });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ message: "Failed to fetch orders" });
-  }
-};
-
-/**
- * GET /api/admin/users/:id/transactions
- */
-export const getUserTransactions = async (req, res) => {
-  try {
-    const wallet = await Wallet.findOne({ user: req.params.id });
-
-    if (!wallet)
-      return res.status(404).json({ message: "Wallet not found" });
-
-    res.json(wallet.transactions || []);
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ message: "Failed to fetch transactions" });
   }
 };

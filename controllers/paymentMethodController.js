@@ -1,4 +1,6 @@
+//controllers/paymentMethodController.js
 import PaymentMethod from "../models/PaymentMethod.js";
+import logAdminAction from "../utils/logAdminAction.js";
 
 // ====== User: Get Visible Methods ======
 export const getUserPaymentMethods = async (req, res) => {
@@ -15,6 +17,13 @@ export const getUserPaymentMethods = async (req, res) => {
 export const getAllPaymentMethods = async (req, res) => {
   try {
     const methods = await PaymentMethod.find().sort({ createdAt: -1 });
+
+    await logAdminAction(
+      req.user._id,
+      "VIEW_PAYMENT_METHODS",
+      "Viewed all payment methods"
+    );
+
     res.status(200).json({ methods });
   } catch (error) {
     console.error("getAllPaymentMethods error:", error);
@@ -44,6 +53,13 @@ export const addPaymentMethod = async (req, res) => {
     });
 
     await newMethod.save();
+
+    await logAdminAction(
+      req.user._id,
+      "ADD_PAYMENT_METHOD",
+      `Added payment method ${newMethod.name}`
+    );
+
     res.status(201).json({ message: "Payment method added", method: newMethod });
   } catch (error) {
     console.error("addPaymentMethod error:", error);
@@ -75,6 +91,12 @@ export const updatePaymentMethod = async (req, res) => {
 
     if (!updated) return res.status(404).json({ message: "Method not found" });
 
+    await logAdminAction(
+      req.user._id,
+      "UPDATE_PAYMENT_METHOD",
+      `Updated payment method ${updated.name}`
+    );
+
     res.status(200).json({ message: "Payment method updated", method: updated });
   } catch (error) {
     console.error("updatePaymentMethod error:", error);
@@ -92,6 +114,12 @@ export const togglePaymentMethod = async (req, res) => {
 
     method.isVisible = !method.isVisible;
     await method.save();
+
+    await logAdminAction(
+      req.user._id,
+      "TOGGLE_PAYMENT_METHOD",
+      `Toggled ${method.name} to ${method.isVisible ? "visible" : "hidden"}`
+    );
 
     res.status(200).json({ message: "Visibility toggled", method });
   } catch (error) {

@@ -2,6 +2,7 @@
 import Settings from "../models/Settings.js";
 import Order from "../models/Order.js";
 import { emitCommissionUpdate } from "./commission.js";
+import logAdminAction from "../utils/logAdminAction.js";
 
 /**
  * GET /api/admin/settings/commission
@@ -18,12 +19,18 @@ export const getCommission = async (req, res) => {
         resellerWithdrawMin: 10,
         platformDomain: "marinepanel.online",
 
-        // ✅ ensure support defaults exist
         supportWhatsapp: "",
         supportTelegram: "",
         supportWhatsappChannel: "",
       });
     }
+
+    // 🔥 Log admin viewing commission
+    await logAdminAction(
+      req.user._id,
+      "VIEW_COMMISSION",
+      "Viewed commission settings"
+    );
 
     res.json({ commission: settings.commission });
   } catch (err) {
@@ -59,6 +66,13 @@ export const updateCommission = async (req, res) => {
 
     emitCommissionUpdate();
 
+    // 🔥 Log admin updating commission
+    await logAdminAction(
+      req.user._id,
+      "UPDATE_COMMISSION",
+      `Updated commission to ${commission}%`
+    );
+
     res.json({ commission: settings.commission });
   } catch (err) {
     console.error("Error updating commission:", err);
@@ -81,19 +95,24 @@ export const getResellerSettings = async (req, res) => {
         resellerWithdrawMin: 10,
         platformDomain: "marinepanel.online",
 
-        // ✅ support defaults
         supportWhatsapp: "",
         supportTelegram: "",
         supportWhatsappChannel: "",
       });
     }
 
+    // 🔥 Log admin viewing reseller settings
+    await logAdminAction(
+      req.user._id,
+      "VIEW_RESELLER_SETTINGS",
+      "Viewed reseller settings"
+    );
+
     res.json({
       resellerActivationFee: settings.resellerActivationFee,
       resellerWithdrawMin: settings.resellerWithdrawMin,
       platformDomain: settings.platformDomain,
 
-      // ✅ RETURN SUPPORT
       supportWhatsapp: settings.supportWhatsapp || "",
       supportTelegram: settings.supportTelegram || "",
       supportWhatsappChannel: settings.supportWhatsappChannel || "",
@@ -113,8 +132,6 @@ export const updateResellerSettings = async (req, res) => {
       resellerActivationFee,
       resellerWithdrawMin,
       platformDomain,
-
-      // ✅ NEW SUPPORT FIELDS
       supportWhatsapp,
       supportTelegram,
       supportWhatsappChannel,
@@ -141,7 +158,6 @@ export const updateResellerSettings = async (req, res) => {
       settings.platformDomain = platformDomain;
     }
 
-    // ✅ SAVE SUPPORT
     if (supportWhatsapp !== undefined) {
       settings.supportWhatsapp = supportWhatsapp;
     }
@@ -156,13 +172,19 @@ export const updateResellerSettings = async (req, res) => {
 
     await settings.save();
 
+    // 🔥 Log admin updating reseller settings
+    await logAdminAction(
+      req.user._id,
+      "UPDATE_RESELLER_SETTINGS",
+      "Updated reseller settings"
+    );
+
     res.json({
       message: "Reseller settings updated successfully",
       resellerActivationFee: settings.resellerActivationFee,
       resellerWithdrawMin: settings.resellerWithdrawMin,
       platformDomain: settings.platformDomain,
 
-      // ✅ RETURN UPDATED SUPPORT
       supportWhatsapp: settings.supportWhatsapp || "",
       supportTelegram: settings.supportTelegram || "",
       supportWhatsappChannel: settings.supportWhatsappChannel || "",
@@ -189,6 +211,13 @@ export const resetRevenue = async (req, res) => {
       settings.totalRevenue = 0;
       await settings.save();
     }
+
+    // 🔥 Log admin resetting revenue
+    await logAdminAction(
+      req.user._id,
+      "RESET_REVENUE",
+      "Reset total revenue to 0"
+    );
 
     res.json({
       message: "Revenue reset successfully",

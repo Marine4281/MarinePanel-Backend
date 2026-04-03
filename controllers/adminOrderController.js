@@ -1,7 +1,9 @@
+//controllers/adminOrderController.js
 import mongoose from "mongoose";
 import Order from "../models/Order.js";
 import Wallet from "../models/Wallet.js";
 import User from "../models/User.js";
+import logAdminAction from "../utils/logAdminAction.js";
 
 // Helper: Calculate completed balance from transactions
 const calculateBalance = (transactions = []) =>
@@ -66,7 +68,6 @@ export const getAllOrders = async (req, res) => {
     const totalOrders = await Order.countDocuments(orderQuery);
     const totalPages = Math.ceil(totalOrders / limitNum);
 
-    // Use lean() so populate returns plain objects
     const ordersRaw = await Order.find(orderQuery)
       .populate({ path: "userId", select: "email balance", options: { lean: true } })
       .sort({ createdAt: -1 })
@@ -74,7 +75,6 @@ export const getAllOrders = async (req, res) => {
       .limit(limitNum)
       .lean();
 
-    // Format orders safely
     const orders = ordersRaw.map((order) => ({
       _id: order._id,
       orderId: order.orderId,
@@ -100,6 +100,12 @@ export const getAllOrders = async (req, res) => {
             balance: 0,
           },
     }));
+
+    await logAdminAction(
+      req.user._id,
+      "VIEW_ORDERS",
+      "Viewed all orders"
+    );
 
     res.json({ orders, totalPages });
   } catch (err) {
@@ -157,6 +163,12 @@ export const completeOrder = async (req, res) => {
       });
     }
 
+    await logAdminAction(
+      req.user._id,
+      "COMPLETE_ORDER",
+      `Completed order #${order.orderId} for ${order.userId?.email}`
+    );
+
     res.json({ message: "Order completed", order: formatOrder(order) });
   } catch (err) {
     console.error(err);
@@ -212,6 +224,12 @@ export const refundOrder = async (req, res) => {
       });
     }
 
+    await logAdminAction(
+      req.user._id,
+      "REFUND_ORDER",
+      `Refunded order #${order.orderId} for ${order.userId?.email}`
+    );
+
     res.json({ message: "Order refunded", order: formatOrder(order) });
   } catch (err) {
     console.error(err);
@@ -233,6 +251,12 @@ export const getWalletStats = async (req, res) => {
       { $match: { status: "completed" } },
       { $group: { _id: null, totalUsed: { $sum: "$charge" } } },
     ]);
+
+    await logAdminAction(
+      req.user._id,
+      "VIEW_WALLET_STATS",
+      "Viewed wallet statistics"
+    );
 
     res.json({
       balance: balanceData[0]?.balance || 0,

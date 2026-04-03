@@ -401,3 +401,19 @@ export const deleteUser = async (req, res) => {
     res.status(500).json({ message: "Delete failed" });
   }
 };
+/**
+ * GET /api/admin/users/:id/transactions
+ */
+export const getUserTransactions = async (req, res) => {
+  try {
+    const wallet = await Wallet.findOne({ user: req.params.id });
+
+    if (!wallet)
+      return res.status(404).json({ message: "Wallet not found" });
+
+    res.json(wallet.transactions || []);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Failed to fetch transactions" });
+  }
+};

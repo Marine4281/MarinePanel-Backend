@@ -4,6 +4,7 @@ import jwt from "jsonwebtoken";
 import crypto from "crypto";
 import sendEmail from "../utils/sendEmail.js";
 import Wallet from "../models/Wallet.js";
+import logAdminAction from "../utils/logAdminAction.js";
 
 // Generate JWT token
 const generateToken = (id) => {
@@ -19,19 +20,13 @@ export const register = async (req, res) => {
       return res.status(400).json({ message: "All fields are required" });
     }
 
-    // Check if user exists
     const userExists = await User.findOne({ $or: [{ email }, { phone }] });
     if (userExists) {
       return res.status(400).json({ message: "User with email or phone already exists" });
     }
 
-    // Hash password
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(password, salt);
-
-    /* =====================================
-       🏪 Detect reseller owner from domain
-    ===================================== */
 
     let resellerOwner = null;
 
@@ -39,22 +34,18 @@ export const register = async (req, res) => {
       resellerOwner = req.reseller._id;
     }
 
-    // Create user
     const user = await User.create({
       email,
       phone,
       country,
       password: hashedPassword,
-      resellerOwner, // 🔥 automatically link to reseller
+      resellerOwner,
     });
 
-    // Create wallet
     await Wallet.create({ user: user._id, balance: 0 });
 
-    // Generate token
     const token = generateToken(user._id);
 
-    // ✅ Set cookie
     res.cookie("token", token, {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
@@ -62,7 +53,15 @@ export const register = async (req, res) => {
       maxAge: 7 * 24 * 60 * 60 * 1000,
     });
 
-    // ✅ Send response
+    // 🔥 Log only if admin creates user (optional safe check)
+    if (req.user?.isAdmin) {
+      await logAdminAction(
+        req.user._id,
+        "REGISTER_USER",
+        `Admin created user ${user.email}`
+      );
+    }
+
     res.status(201).json({
       _id: user._id,
       email: user.email,
@@ -92,7 +91,6 @@ export const login = async (req, res) => {
     const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) return res.status(401).json({ message: "Invalid credentials" });
 
-    // 🚫 BLOCKED CHECK
     if (user.isBlocked) {
       return res.status(403).json({
         message: "Your account has been blocked. Contact support.",
@@ -101,13 +99,21 @@ export const login = async (req, res) => {
 
     const token = generateToken(user._id);
 
-    // ✅ Set cookie
     res.cookie("token", token, {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
       sameSite: "none",
       maxAge: 7 * 24 * 60 * 60 * 1000,
     });
+
+    // 🔥 Log admin login
+    if (user.isAdmin) {
+      await logAdminAction(
+        user._id,
+        "ADMIN_LOGIN",
+        `Admin ${user.email} logged in`
+      );
+    }
 
     res.json({
       _id: user._id,
@@ -149,6 +155,15 @@ export const forgotPassword = async (req, res) => {
         text: message,
       });
 
+      // 🔥 Admin-triggered password reset
+      if (req.user?.isAdmin) {
+        await logAdminAction(
+          req.user._id,
+          "FORGOT_PASSWORD",
+          `Admin triggered password reset for ${user.email}`
+        );
+      }
+
       res.json({ message: "Password reset link sent to email" });
     } catch (err) {
       user.resetPasswordToken = undefined;
@@ -189,6 +204,15 @@ export const resetPassword = async (req, res) => {
 
     await user.save();
 
+    // 🔥 Log if admin reset
+    if (req.user?.isAdmin) {
+      await logAdminAction(
+        req.user._id,
+        "RESET_PASSWORD",
+        `Admin reset password for ${user.email}`
+      );
+    }
+
     res.json({ message: "Password reset successful" });
 
   } catch (error) {
@@ -210,6 +234,15 @@ export const getProfile = async (req, res) => {
     if (!user) return res.status(404).json({ message: "User not found" });
 
     const wallet = await Wallet.findOne({ user: user._id });
+
+    // 🔥 Admin viewing own profile (optional)
+    if (user.isAdmin) {
+      await logAdminAction(
+        user._id,
+        "VIEW_PROFILE",
+        `Admin ${user.email} viewed profile`
+      );
+    }
 
     res.json({
       ...user.toObject(),

@@ -15,15 +15,20 @@ export const getProfile = async (req, res) => {
     }
 
     const wallet = await Wallet.findOne({ user: user._id });
-    const balance = wallet?.transactions.reduce((acc, t) => acc + t.amount, 0) || 0;
+    const balance =
+      wallet?.transactions.reduce((acc, t) => acc + t.amount, 0) || 0;
 
     // 🔥 Log if admin views profile
-    if (user.isAdmin) {
-      await logAdminAction(
-        user._id,
-        "VIEW_PROFILE",
-        `Admin ${user.email} viewed profile`
-      );
+    if (req.user?.isAdmin && req.user?._id) {
+      await logAdminAction({
+        adminId: req.user._id,
+        adminEmail: req.user.email,
+        action: "VIEW_PROFILE",
+        description: `Admin ${req.user.email} viewed profile`,
+        targetType: "user",
+        targetId: user._id,
+        ipAddress: req.ip,
+      });
     }
 
     res.json({
@@ -31,7 +36,6 @@ export const getProfile = async (req, res) => {
       balance,
       name: user.email.split("@")[0],
     });
-
   } catch (error) {
     console.error("GET PROFILE ERROR:", error);
     res.status(500).json({ message: "Server error" });
@@ -61,15 +65,20 @@ export const updateProfile = async (req, res) => {
     await user.save();
 
     const wallet = await Wallet.findOne({ user: user._id });
-    const balance = wallet?.transactions.reduce((acc, t) => acc + t.amount, 0) || 0;
+    const balance =
+      wallet?.transactions.reduce((acc, t) => acc + t.amount, 0) || 0;
 
     // 🔥 Log if admin updates profile
-    if (user.isAdmin) {
-      await logAdminAction(
-        user._id,
-        "UPDATE_PROFILE",
-        `Admin ${user.email} updated profile`
-      );
+    if (req.user?.isAdmin && req.user?._id) {
+      await logAdminAction({
+        adminId: req.user._id,
+        adminEmail: req.user.email,
+        action: "UPDATE_PROFILE",
+        description: `Admin ${req.user.email} updated profile`,
+        targetType: "user",
+        targetId: user._id,
+        ipAddress: req.ip,
+      });
     }
 
     res.json({
@@ -82,13 +91,11 @@ export const updateProfile = async (req, res) => {
       balance,
       name: user.email.split("@")[0],
     });
-
   } catch (error) {
     console.error("UPDATE PROFILE ERROR:", error);
     res.status(500).json({ message: "Server error" });
   }
 };
-
 
 // =======================
 // ADMIN: EDIT USER BALANCE
@@ -104,7 +111,10 @@ export const updateUserBalance = async (req, res) => {
       wallet = await Wallet.create({ user: user._id, transactions: [] });
     }
 
-    const currentBalance = wallet.transactions.reduce((acc, t) => acc + t.amount, 0);
+    const currentBalance = wallet.transactions.reduce(
+      (acc, t) => acc + t.amount,
+      0
+    );
     const difference = balance - currentBalance;
 
     if (difference !== 0) {
@@ -120,11 +130,17 @@ export const updateUserBalance = async (req, res) => {
     await wallet.save();
 
     // 🔥 Log admin balance update
-    await logAdminAction(
-      req.user._id,
-      "UPDATE_BALANCE",
-      `Updated balance for ${user.email} to ${balance}`
-    );
+    if (req.user?._id) {
+      await logAdminAction({
+        adminId: req.user._id,
+        adminEmail: req.user.email,
+        action: "UPDATE_BALANCE",
+        description: `Updated balance for ${user.email} to ${balance}`,
+        targetType: "user",
+        targetId: user._id,
+        ipAddress: req.ip,
+      });
+    }
 
     res.json({
       _id: user._id,
@@ -133,7 +149,6 @@ export const updateUserBalance = async (req, res) => {
       balance,
       name: user.email.split("@")[0],
     });
-
   } catch (error) {
     console.error("UPDATE USER BALANCE ERROR:", error);
     res.status(500).json({ message: "Server error" });
@@ -146,14 +161,21 @@ export const updateUserBalance = async (req, res) => {
 export const getUserTransactions = async (req, res) => {
   try {
     const wallet = await Wallet.findOne({ user: req.params.id });
-    if (!wallet) return res.status(404).json({ message: "Wallet not found" });
+    if (!wallet)
+      return res.status(404).json({ message: "Wallet not found" });
 
     // 🔥 Log admin viewing transactions
-    await logAdminAction(
-      req.user._id,
-      "VIEW_TRANSACTIONS",
-      `Viewed transactions for user ${req.params.id}`
-    );
+    if (req.user?._id) {
+      await logAdminAction({
+        adminId: req.user._id,
+        adminEmail: req.user.email,
+        action: "VIEW_TRANSACTIONS",
+        description: `Viewed transactions for user ${req.params.id}`,
+        targetType: "user",
+        targetId: req.params.id,
+        ipAddress: req.ip,
+      });
+    }
 
     res.json(wallet.transactions || []);
   } catch (error) {

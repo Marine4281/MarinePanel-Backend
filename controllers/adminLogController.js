@@ -1,20 +1,25 @@
 // controllers/adminLogController.js
+
 import AdminLog from "../models/AdminLog.js";
 import logAdminAction from "../utils/logAdminAction.js";
 
+// ======================= GET ADMIN LOGS =======================
 // GET /api/admin-logs
 export const getAdminLogs = async (req, res) => {
   try {
     let { page = 1, limit = 20, action, admin } = req.query;
 
-    // Convert query params to numbers
-    page = parseInt(page, 10);
-    limit = parseInt(limit, 10);
+    // ✅ Ensure valid numbers
+    page = Math.max(1, parseInt(page, 10) || 1);
+    limit = Math.max(1, Math.min(100, parseInt(limit, 10) || 20)); // max 100
 
     const query = {};
+
+    // ✅ Filters
     if (action) query.action = action;
     if (admin) query.admin = admin;
 
+    // ✅ Fetch logs
     const logs = await AdminLog.find(query)
       .populate("admin", "name email")
       .sort({ createdAt: -1 })
@@ -23,12 +28,20 @@ export const getAdminLogs = async (req, res) => {
 
     const total = await AdminLog.countDocuments(query);
 
-    // 🔥 Log admin viewing logs
-    await logAdminAction(
-      req.user._id,
-      "VIEW_ADMIN_LOGS",
-      `Viewed admin logs${action ? ` for action: ${action}` : ""}`
-    );
+    // 🔥 SAFE: Non-blocking admin log
+    if (req.user?.isAdmin) {
+      logAdminAction({
+        adminId: req.user._id,
+        adminEmail: req.user.email,
+        action: "VIEW_ADMIN_LOGS",
+        description: `Viewed admin logs${
+          action ? ` (filtered by: ${action})` : ""
+        }`,
+        ipAddress: req.ip,
+      }).catch((err) =>
+        console.error("Admin log error (VIEW LOGS):", err.message)
+      );
+    }
 
     res.json({
       logs,
@@ -38,6 +51,8 @@ export const getAdminLogs = async (req, res) => {
     });
   } catch (error) {
     console.error("GET ADMIN LOGS ERROR:", error);
-    res.status(500).json({ message: "Failed to fetch admin logs" });
+    res.status(500).json({
+      message: "Failed to fetch admin logs",
+    });
   }
 };

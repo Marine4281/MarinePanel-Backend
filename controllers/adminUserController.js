@@ -1,3 +1,5 @@
+// controllers/adminUserController.js
+
 import User from "../models/User.js";
 import Order from "../models/Order.js";
 import Wallet from "../models/Wallet.js";
@@ -6,7 +8,7 @@ import logAdminAction from "../utils/logAdminAction.js";
 // ✅ Single source of truth for balance
 const calculateBalance = (transactions = []) =>
   transactions
-    .filter(t => t.status === "Completed")
+    .filter((t) => t.status === "Completed")
     .reduce((acc, t) => acc + (Number(t.amount) || 0), 0);
 
 /**
@@ -39,6 +41,7 @@ export const getAllUsers = async (req, res) => {
             wallet.balance = computed;
             await wallet.save();
           }
+
           balance = computed;
 
           if (user.balance !== balance) {
@@ -51,7 +54,15 @@ export const getAllUsers = async (req, res) => {
       })
     );
 
-    await logAdminAction(req.user._id, "VIEW_USERS", "Admin fetched all users");
+    if (req.user) {
+      await logAdminAction({
+        adminId: req.user._id,
+        adminEmail: req.user.email,
+        action: "VIEW_USERS",
+        description: "Admin fetched all users",
+        ipAddress: req.ip,
+      });
+    }
 
     res.json(users);
   } catch (err) {
@@ -86,14 +97,16 @@ export const getUserById = async (req, res) => {
       Order.countDocuments({ userId: user._id }),
     ]);
 
-  if (req.user) {
-    await logAdminAction({
-      adminId: req.user._id,
-      adminEmail: req.user.email,
-      action: "VIEW_USER",
-      description:`Viewed user ${user.email}`
-      
-     });
+    if (req.user) {
+      await logAdminAction({
+        adminId: req.user._id,
+        adminEmail: req.user.email,
+        action: "VIEW_USER",
+        description: `Viewed user ${user.email}`,
+        targetType: "user",
+        targetId: user._id,
+        ipAddress: req.ip,
+      });
     }
 
     res.json({
@@ -102,15 +115,12 @@ export const getUserById = async (req, res) => {
         balance,
         name: user.email.split("@")[0],
       },
-
       transactions: transactions.sort(
         (a, b) =>
           new Date(b.createdAt || b.date) -
           new Date(a.createdAt || a.date)
       ),
-
       orders,
-
       pagination: {
         total: totalOrders,
         page: Number(page),
@@ -170,14 +180,17 @@ export const updateUserBalance = async (req, res) => {
 
     await User.findByIdAndUpdate(user._id, { balance: wallet.balance });
 
-  if (req.user) {
-    await logAdminAction({
-      adminId:req.user._id,
-      adminEmail: req.user.email,
-      action: "UPDATE_BALANCE",
-      description:`Updated balance for ${user.email} to ${wallet.balance}`
-    });
-  }
+    if (req.user) {
+      await logAdminAction({
+        adminId: req.user._id,
+        adminEmail: req.user.email,
+        action: "UPDATE_BALANCE",
+        description: `Updated balance for ${user.email} to ${wallet.balance}`,
+        targetType: "user",
+        targetId: user._id,
+        ipAddress: req.ip,
+      });
+    }
 
     res.json({
       user: {
@@ -210,14 +223,18 @@ export const promoteToAdmin = async (req, res) => {
 
     user.isAdmin = true;
     await user.save();
-  if (req.user) {
-    await logAdminAction({
-      adminId:req.user._id,
-      adminEmail: req.user.email,
-      action:"PROMOTE_ADMIN",
-      description:`Promoted ${user.email} to admin`
-    });
-  }
+
+    if (req.user) {
+      await logAdminAction({
+        adminId: req.user._id,
+        adminEmail: req.user.email,
+        action: "PROMOTE_ADMIN",
+        description: `Promoted ${user.email} to admin`,
+        targetType: "user",
+        targetId: user._id,
+        ipAddress: req.ip,
+      });
+    }
 
     res.json({
       message: "User promoted",
@@ -246,14 +263,18 @@ export const demoteFromAdmin = async (req, res) => {
 
     user.isAdmin = false;
     await user.save();
-  if (req.user) {
-    await logAdminAction({
-      adminId:req.user._id,
-      adminEmail: req.user.email,
-      action:"DEMOTE_ADMIN",
-      description:`Demoted ${user.email} from admin`
-    });
-  }
+
+    if (req.user) {
+      await logAdminAction({
+        adminId: req.user._id,
+        adminEmail: req.user.email,
+        action: "DEMOTE_ADMIN",
+        description: `Demoted ${user.email} from admin`,
+        targetType: "user",
+        targetId: user._id,
+        ipAddress: req.ip,
+      });
+    }
 
     res.json({
       message: "User demoted",
@@ -266,34 +287,6 @@ export const demoteFromAdmin = async (req, res) => {
 };
 
 /**
- * GET /api/admin/users/:id/orders
- */
-export const getUserOrders = async (req, res) => {
-  try {
-    const { page = 1, limit = 10 } = req.query;
-
-    const skip = (Number(page) - 1) * Number(limit);
-
-    const [orders, total] = await Promise.all([
-      Order.find({ userId: req.params.id })
-        .sort({ createdAt: -1 })
-        .skip(skip)
-        .limit(Number(limit)),
-
-      Order.countDocuments({ userId: req.params.id }),
-    ]);
-
-    res.json({
-      orders,
-      page: Number(page),
-      pages: Math.ceil(total / limit),
-    });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ message: "Failed to fetch orders" });
-  }
-};
-/**
  * PATCH /api/admin/users/:id/block
  */
 export const blockUser = async (req, res) => {
@@ -303,14 +296,18 @@ export const blockUser = async (req, res) => {
       { isBlocked: true },
       { new: true }
     );
-  if (req.user) {
-    await logAdminAction({
-      adminId:req.user._id,
-      adminEmail: req.user.email,
-      action:"BLOCK_USER",
-      description:`Blocked ${user.email}`
-    });
-  }
+
+    if (req.user && user) {
+      await logAdminAction({
+        adminId: req.user._id,
+        adminEmail: req.user.email,
+        action: "BLOCK_USER",
+        description: `Blocked ${user.email}`,
+        targetType: "user",
+        targetId: user._id,
+        ipAddress: req.ip,
+      });
+    }
 
     res.json({ ...user.toObject(), name: user.email.split("@")[0] });
   } catch (err) {
@@ -329,14 +326,18 @@ export const unblockUser = async (req, res) => {
       { isBlocked: false },
       { new: true }
     );
-  if (req.user) {
-    await logAdminAction({
-      adminId:req.user._id,
-      adminEmail: req.user.email,
-      action:"UNBLOCK_USER",
-      description:`Unblocked ${user.email}`
-    });
-  }
+
+    if (req.user && user) {
+      await logAdminAction({
+        adminId: req.user._id,
+        adminEmail: req.user.email,
+        action: "UNBLOCK_USER",
+        description: `Unblocked ${user.email}`,
+        targetType: "user",
+        targetId: user._id,
+        ipAddress: req.ip,
+      });
+    }
 
     res.json({ ...user.toObject(), name: user.email.split("@")[0] });
   } catch (err) {
@@ -355,14 +356,18 @@ export const freezeUser = async (req, res) => {
       { isFrozen: true },
       { new: true }
     );
-  if (req.user) {
-    await logAdminAction({
-      adminId:req.user._id,
-      adminEmail: req.user.email,
-      action:"FREEZE_USER",
-      description:`Froze ${user.email}`
-    });
-  }
+
+    if (req.user && user) {
+      await logAdminAction({
+        adminId: req.user._id,
+        adminEmail: req.user.email,
+        action: "FREEZE_USER",
+        description: `Froze ${user.email}`,
+        targetType: "user",
+        targetId: user._id,
+        ipAddress: req.ip,
+      });
+    }
 
     res.json({ ...user.toObject(), name: user.email.split("@")[0] });
   } catch (err) {
@@ -381,14 +386,18 @@ export const unfreezeUser = async (req, res) => {
       { isFrozen: false },
       { new: true }
     );
-  if (req.user) {
-    await logAdminAction({
-      adminId:req.user._id,
-      adminEmail: req.user.email,
-      action:"UNFREEZE_USER",
-      description:`Unfroze ${user.email}`
-    });
-  }
+
+    if (req.user && user) {
+      await logAdminAction({
+        adminId: req.user._id,
+        adminEmail: req.user.email,
+        action: "UNFREEZE_USER",
+        description: `Unfroze ${user.email}`,
+        targetType: "user",
+        targetId: user._id,
+        ipAddress: req.ip,
+      });
+    }
 
     res.json({ ...user.toObject(), name: user.email.split("@")[0] });
   } catch (err) {
@@ -407,13 +416,18 @@ export const deleteUser = async (req, res) => {
     await User.findByIdAndDelete(req.params.id);
     await Order.deleteMany({ user: req.params.id });
     await Wallet.deleteOne({ user: req.params.id });
-  if (req.user) {
-    await logAdminAction({
-      adminId:req.user._id,
-      adminEmail: req.user.email,
-      action:"DELETE_USER",
-      description:`Deleted user ${user?.email}`
-    );
+
+    if (req.user) {
+      await logAdminAction({
+        adminId: req.user._id,
+        adminEmail: req.user.email,
+        action: "DELETE_USER",
+        description: `Deleted user ${user?.email}`,
+        targetType: "user",
+        targetId: user?._id,
+        ipAddress: req.ip,
+      });
+    }
 
     res.json({ message: "User deleted" });
   } catch (err) {
@@ -421,6 +435,7 @@ export const deleteUser = async (req, res) => {
     res.status(500).json({ message: "Delete failed" });
   }
 };
+
 /**
  * GET /api/admin/users/:id/transactions
  */

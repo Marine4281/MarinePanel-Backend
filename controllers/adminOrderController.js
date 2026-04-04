@@ -101,11 +101,16 @@ export const getAllOrders = async (req, res) => {
           },
     }));
 
-    await logAdminAction(
-      req.user._id,
-      "VIEW_ORDERS",
-      "Viewed all orders"
-    );
+    if (req.user?._id) {
+      await logAdminAction({
+        adminId: req.user._id,
+        adminEmail: req.user.email,
+        action: "VIEW_ORDERS",
+        description: "Viewed all orders",
+        targetType: "order",
+        ipAddress: req.ip,
+      });
+    }
 
     res.json({ orders, totalPages });
   } catch (err) {
@@ -163,11 +168,17 @@ export const completeOrder = async (req, res) => {
       });
     }
 
-    await logAdminAction(
-      req.user._id,
-      "COMPLETE_ORDER",
-      `Completed order #${order.orderId} for ${order.userId?.email}`
-    );
+    if (req.user?._id) {
+      await logAdminAction({
+        adminId: req.user._id,
+        adminEmail: req.user.email,
+        action: "COMPLETE_ORDER",
+        description: `Completed order #${order.orderId} for ${order.userId?.email}`,
+        targetType: "order",
+        targetId: order._id,
+        ipAddress: req.ip,
+      });
+    }
 
     res.json({ message: "Order completed", order: formatOrder(order) });
   } catch (err) {
@@ -224,11 +235,17 @@ export const refundOrder = async (req, res) => {
       });
     }
 
-    await logAdminAction(
-      req.user._id,
-      "REFUND_ORDER",
-      `Refunded order #${order.orderId} for ${order.userId?.email}`
-    );
+    if (req.user?._id) {
+      await logAdminAction({
+        adminId: req.user._id,
+        adminEmail: req.user.email,
+        action: "REFUND_ORDER",
+        description: `Refunded order #${order.orderId} for ${order.userId?.email}`,
+        targetType: "order",
+        targetId: order._id,
+        ipAddress: req.ip,
+      });
+    }
 
     res.json({ message: "Order refunded", order: formatOrder(order) });
   } catch (err) {
@@ -252,11 +269,15 @@ export const getWalletStats = async (req, res) => {
       { $group: { _id: null, totalUsed: { $sum: "$charge" } } },
     ]);
 
-    await logAdminAction(
-      req.user._id,
-      "VIEW_WALLET_STATS",
-      "Viewed wallet statistics"
-    );
+    if (req.user?._id) {
+      await logAdminAction({
+        adminId: req.user._id,
+        adminEmail: req.user.email,
+        action: "VIEW_WALLET_STATS",
+        description: "Viewed wallet statistics",
+        ipAddress: req.ip,
+      });
+    }
 
     res.json({
       balance: balanceData[0]?.balance || 0,

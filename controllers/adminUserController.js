@@ -86,11 +86,15 @@ export const getUserById = async (req, res) => {
       Order.countDocuments({ userId: user._id }),
     ]);
 
-    await logAdminAction(
-      req.user._id,
-      "VIEW_USER",
-      `Viewed user ${user.email}`
-    );
+  if (req.user) {
+    await logAdminAction({
+      adminId: req.user._id,
+      adminEmail: req.user.email,
+      action: "VIEW_USER",
+      description:`Viewed user ${user.email}`
+      
+     });
+    }
 
     res.json({
       user: {
@@ -166,11 +170,14 @@ export const updateUserBalance = async (req, res) => {
 
     await User.findByIdAndUpdate(user._id, { balance: wallet.balance });
 
-    await logAdminAction(
-      req.user._id,
-      "UPDATE_BALANCE",
-      `Updated balance for ${user.email} to ${wallet.balance}`
-    );
+  if (req.user) {
+    await logAdminAction({
+      adminId:req.user._id,
+      adminEmail: req.user.email,
+      action: "UPDATE_BALANCE",
+      description:`Updated balance for ${user.email} to ${wallet.balance}`
+    });
+  }
 
     res.json({
       user: {
@@ -203,12 +210,14 @@ export const promoteToAdmin = async (req, res) => {
 
     user.isAdmin = true;
     await user.save();
-
-    await logAdminAction(
-      req.user._id,
-      "PROMOTE_ADMIN",
-      `Promoted ${user.email} to admin`
-    );
+  if (req.user) {
+    await logAdminAction({
+      adminId:req.user._id,
+      adminEmail: req.user.email,
+      action:"PROMOTE_ADMIN",
+      description:`Promoted ${user.email} to admin`
+    });
+  }
 
     res.json({
       message: "User promoted",
@@ -237,12 +246,14 @@ export const demoteFromAdmin = async (req, res) => {
 
     user.isAdmin = false;
     await user.save();
-
-    await logAdminAction(
-      req.user._id,
-      "DEMOTE_ADMIN",
-      `Demoted ${user.email} from admin`
-    );
+  if (req.user) {
+    await logAdminAction({
+      adminId:req.user._id,
+      adminEmail: req.user.email,
+      action:"DEMOTE_ADMIN",
+      description:`Demoted ${user.email} from admin`
+    });
+  }
 
     res.json({
       message: "User demoted",
@@ -292,12 +303,14 @@ export const blockUser = async (req, res) => {
       { isBlocked: true },
       { new: true }
     );
-
-    await logAdminAction(
-      req.user._id,
-      "BLOCK_USER",
-      `Blocked ${user.email}`
-    );
+  if (req.user) {
+    await logAdminAction({
+      adminId:req.user._id,
+      adminEmail: req.user.email,
+      action:"BLOCK_USER",
+      description:`Blocked ${user.email}`
+    });
+  }
 
     res.json({ ...user.toObject(), name: user.email.split("@")[0] });
   } catch (err) {
@@ -316,12 +329,14 @@ export const unblockUser = async (req, res) => {
       { isBlocked: false },
       { new: true }
     );
-
-    await logAdminAction(
-      req.user._id,
-      "UNBLOCK_USER",
-      `Unblocked ${user.email}`
-    );
+  if (req.user) {
+    await logAdminAction({
+      adminId:req.user._id,
+      adminEmail: req.user.email,
+      action:"UNBLOCK_USER",
+      description:`Unblocked ${user.email}`
+    });
+  }
 
     res.json({ ...user.toObject(), name: user.email.split("@")[0] });
   } catch (err) {
@@ -340,12 +355,14 @@ export const freezeUser = async (req, res) => {
       { isFrozen: true },
       { new: true }
     );
-
-    await logAdminAction(
-      req.user._id,
-      "FREEZE_USER",
-      `Froze ${user.email}`
-    );
+  if (req.user) {
+    await logAdminAction({
+      adminId:req.user._id,
+      adminEmail: req.user.email,
+      action:"FREEZE_USER",
+      description:`Froze ${user.email}`
+    });
+  }
 
     res.json({ ...user.toObject(), name: user.email.split("@")[0] });
   } catch (err) {
@@ -364,12 +381,14 @@ export const unfreezeUser = async (req, res) => {
       { isFrozen: false },
       { new: true }
     );
-
-    await logAdminAction(
-      req.user._id,
-      "UNFREEZE_USER",
-      `Unfroze ${user.email}`
-    );
+  if (req.user) {
+    await logAdminAction({
+      adminId:req.user._id,
+      adminEmail: req.user.email,
+      action:"UNFREEZE_USER",
+      description:`Unfroze ${user.email}`
+    });
+  }
 
     res.json({ ...user.toObject(), name: user.email.split("@")[0] });
   } catch (err) {
@@ -388,11 +407,12 @@ export const deleteUser = async (req, res) => {
     await User.findByIdAndDelete(req.params.id);
     await Order.deleteMany({ user: req.params.id });
     await Wallet.deleteOne({ user: req.params.id });
-
-    await logAdminAction(
-      req.user._id,
-      "DELETE_USER",
-      `Deleted user ${user?.email}`
+  if (req.user) {
+    await logAdminAction({
+      adminId:req.user._id,
+      adminEmail: req.user.email,
+      action:"DELETE_USER",
+      description:`Deleted user ${user?.email}`
     );
 
     res.json({ message: "User deleted" });

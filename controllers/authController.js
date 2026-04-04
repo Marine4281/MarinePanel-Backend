@@ -1,10 +1,12 @@
-//controllers/authController.js
+// controllers/authController.js
+
 import User from "../models/User.js";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import crypto from "crypto";
 import sendEmail from "../utils/sendEmail.js";
 import Wallet from "../models/Wallet.js";
+import logAdminAction from "../utils/logAdminAction.js";
 
 // Generate JWT token
 const generateToken = (id) => {
@@ -20,42 +22,30 @@ export const register = async (req, res) => {
       return res.status(400).json({ message: "All fields are required" });
     }
 
-    // Check if user exists
     const userExists = await User.findOne({ $or: [{ email }, { phone }] });
     if (userExists) {
-      return res.status(400).json({ message: "User with email or phone already exists" });
+      return res.status(400).json({
+        message: "User with email or phone already exists",
+      });
     }
 
-    // Hash password
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(password, salt);
 
-    /* =====================================
-       🏪 Detect reseller owner from domain
-    ===================================== */
+    const resellerOwner = req.reseller?._id || null;
 
-    let resellerOwner = null;
-
-    if (req.reseller) {
-      resellerOwner = req.reseller._id;
-    }
-
-    // Create user
     const user = await User.create({
       email,
       phone,
       country,
       password: hashedPassword,
-      resellerOwner, // 🔥 automatically link to reseller
+      resellerOwner,
     });
 
-    // Create wallet
     await Wallet.create({ user: user._id, balance: 0 });
 
-    // Generate token
     const token = generateToken(user._id);
 
-    // ✅ Set cookie
     res.cookie("token", token, {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
@@ -63,7 +53,21 @@ export const register = async (req, res) => {
       maxAge: 7 * 24 * 60 * 60 * 1000,
     });
 
-    // ✅ Send response
+    // 🔥 SAFE: Non-blocking admin log
+    if (req.user?.isAdmin) {
+      logAdminAction({
+        adminId: req.user._id,
+        adminEmail: req.user.email,
+        action: "REGISTER_USER",
+        description: `Admin created user ${user.email}`,
+        targetType: "user",
+        targetId: user._id,
+        ipAddress: req.ip,
+      }).catch((err) =>
+        console.error("Admin log error (REGISTER):", err.message)
+      );
+    }
+
     res.status(201).json({
       _id: user._id,
       email: user.email,
@@ -73,9 +77,8 @@ export const register = async (req, res) => {
       isReseller: user.isReseller || false,
       token,
     });
-
   } catch (error) {
-    console.error(error);
+    console.error("REGISTER ERROR:", error);
     res.status(500).json({ message: "Server error" });
   }
 };
@@ -84,16 +87,20 @@ export const register = async (req, res) => {
 export const login = async (req, res) => {
   try {
     const { email, password } = req.body;
-    if (!email || !password)
-      return res.status(400).json({ message: "Email and password required" });
+
+    if (!email || !password) {
+      return res.status(400).json({
+        message: "Email and password required",
+      });
+    }
 
     const user = await User.findOne({ email });
     if (!user) return res.status(401).json({ message: "Invalid credentials" });
 
     const isMatch = await bcrypt.compare(password, user.password);
-    if (!isMatch) return res.status(401).json({ message: "Invalid credentials" });
+    if (!isMatch)
+      return res.status(401).json({ message: "Invalid credentials" });
 
-    // 🚫 BLOCKED CHECK
     if (user.isBlocked) {
       return res.status(403).json({
         message: "Your account has been blocked. Contact support.",
@@ -102,13 +109,25 @@ export const login = async (req, res) => {
 
     const token = generateToken(user._id);
 
-    // ✅ Set cookie
     res.cookie("token", token, {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
       sameSite: "none",
       maxAge: 7 * 24 * 60 * 60 * 1000,
     });
+
+    // 🔥 SAFE logging
+    if (user.isAdmin) {
+      logAdminAction({
+        adminId: user._id,
+        adminEmail: user.email,
+        action: "ADMIN_LOGIN",
+        description: `Admin ${user.email} logged in`,
+        ipAddress: req.ip,
+      }).catch((err) =>
+        console.error("Admin log error (LOGIN):", err.message)
+      );
+    }
 
     res.json({
       _id: user._id,
@@ -119,9 +138,8 @@ export const login = async (req, res) => {
       isAdmin: user.isAdmin,
       token,
     });
-
   } catch (error) {
-    console.error(error);
+    console.error("LOGIN ERROR:", error);
     res.status(500).json({ message: "Server error" });
   }
 };
@@ -130,11 +148,13 @@ export const login = async (req, res) => {
 export const forgotPassword = async (req, res) => {
   try {
     const { email } = req.body;
-    const user = await User.findOne({ email });
 
-    if (!user) return res.status(404).json({ message: "User not found" });
+    const user = await User.findOne({ email });
+    if (!user)
+      return res.status(404).json({ message: "User not found" });
 
     const resetToken = crypto.randomBytes(32).toString("hex");
+
     user.resetPasswordToken = resetToken;
     user.resetPasswordExpire = Date.now() + 3600000;
 
@@ -150,6 +170,21 @@ export const forgotPassword = async (req, res) => {
         text: message,
       });
 
+      // 🔥 SAFE logging
+      if (req.user?.isAdmin) {
+        logAdminAction({
+          adminId: req.user._id,
+          adminEmail: req.user.email,
+          action: "FORGOT_PASSWORD",
+          description: `Admin triggered password reset for ${user.email}`,
+          targetType: "user",
+          targetId: user._id,
+          ipAddress: req.ip,
+        }).catch((err) =>
+          console.error("Admin log error (FORGOT):", err.message)
+        );
+      }
+
       res.json({ message: "Password reset link sent to email" });
     } catch (err) {
       user.resetPasswordToken = undefined;
@@ -158,9 +193,8 @@ export const forgotPassword = async (req, res) => {
 
       res.status(500).json({ message: "Failed to send email" });
     }
-
   } catch (error) {
-    console.error(error);
+    console.error("FORGOT PASSWORD ERROR:", error);
     res.status(500).json({ message: "Server error" });
   }
 };
@@ -171,16 +205,22 @@ export const resetPassword = async (req, res) => {
     const { token } = req.params;
     const { newPassword } = req.body;
 
-    if (!newPassword)
-      return res.status(400).json({ message: "New password is required" });
+    if (!newPassword) {
+      return res.status(400).json({
+        message: "New password is required",
+      });
+    }
 
     const user = await User.findOne({
       resetPasswordToken: token,
       resetPasswordExpire: { $gt: Date.now() },
     });
 
-    if (!user)
-      return res.status(400).json({ message: "Invalid or expired token" });
+    if (!user) {
+      return res.status(400).json({
+        message: "Invalid or expired token",
+      });
+    }
 
     const salt = await bcrypt.genSalt(10);
     user.password = await bcrypt.hash(newPassword, salt);
@@ -190,17 +230,26 @@ export const resetPassword = async (req, res) => {
 
     await user.save();
 
-    res.json({ message: "Password reset successful" });
+    // 🔥 SAFE logging
+    if (req.user?.isAdmin) {
+      logAdminAction({
+        adminId: req.user._id,
+        adminEmail: req.user.email,
+        action: "RESET_PASSWORD",
+        description: `Admin reset password for ${user.email}`,
+        targetType: "user",
+        targetId: user._id,
+        ipAddress: req.ip,
+      }).catch((err) =>
+        console.error("Admin log error (RESET):", err.message)
+      );
+    }
 
+    res.json({ message: "Password reset successful" });
   } catch (error) {
-    console.error(error);
+    console.error("RESET PASSWORD ERROR:", error);
     res.status(500).json({ message: "Server error" });
   }
-};
-
-// Helper to calculate balance
-const calculateBalance = (transactions) => {
-  return transactions?.reduce((acc, t) => acc + (t.amount || 0), 0) || 0;
 };
 
 // ======================= GET USER PROFILE =======================
@@ -208,9 +257,23 @@ export const getProfile = async (req, res) => {
   try {
     const user = await User.findById(req.user.id).select("-password");
 
-    if (!user) return res.status(404).json({ message: "User not found" });
+    if (!user)
+      return res.status(404).json({ message: "User not found" });
 
     const wallet = await Wallet.findOne({ user: user._id });
+
+    // 🔥 SAFE logging
+    if (user.isAdmin) {
+      logAdminAction({
+        adminId: user._id,
+        adminEmail: user.email,
+        action: "VIEW_PROFILE",
+        description: `Admin ${user.email} viewed profile`,
+        ipAddress: req.ip,
+      }).catch((err) =>
+        console.error("Admin log error (PROFILE):", err.message)
+      );
+    }
 
     res.json({
       ...user.toObject(),
@@ -218,9 +281,8 @@ export const getProfile = async (req, res) => {
       balance: wallet?.balance || 0,
       transaction: wallet?.transactions || [],
     });
-
   } catch (error) {
-    console.error(error);
+    console.error("GET PROFILE ERROR:", error);
     res.status(500).json({ message: "Server error" });
   }
 };

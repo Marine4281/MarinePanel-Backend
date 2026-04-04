@@ -285,6 +285,34 @@ export const demoteFromAdmin = async (req, res) => {
     res.status(500).json({ message: "Demotion failed" });
   }
 };
+/**
+ * GET /api/admin/users/:id/orders
+ */
+export const getUserOrders = async (req, res) => {
+  try {
+    const { page = 1, limit = 10 } = req.query;
+
+    const skip = (Number(page) - 1) * Number(limit);
+
+    const [orders, total] = await Promise.all([
+      Order.find({ userId: req.params.id })
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(Number(limit)),
+
+      Order.countDocuments({ userId: req.params.id }),
+    ]);
+
+    res.json({
+      orders,
+      page: Number(page),
+      pages: Math.ceil(total / limit),
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Failed to fetch orders" });
+  }
+};
 
 /**
  * PATCH /api/admin/users/:id/block

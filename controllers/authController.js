@@ -1,3 +1,4 @@
+//controllers/authController.js
 import User from "../models/User.js";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
@@ -28,11 +29,7 @@ export const register = async (req, res) => {
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(password, salt);
 
-    let resellerOwner = null;
-
-    if (req.reseller) {
-      resellerOwner = req.reseller._id;
-    }
+    let resellerOwner = req.reseller?._id || null;
 
     const user = await User.create({
       email,
@@ -53,13 +50,17 @@ export const register = async (req, res) => {
       maxAge: 7 * 24 * 60 * 60 * 1000,
     });
 
-    // 🔥 Log only if admin creates user (optional safe check)
+    // 🔥 Log only if admin creates user
     if (req.user?.isAdmin) {
-      await logAdminAction(
-        req.user._id,
-        "REGISTER_USER",
-        `Admin created user ${user.email}`
-      );
+      await logAdminAction({
+        adminId: req.user._id,
+        adminEmail: req.user.email,
+        action: "REGISTER_USER",
+        description: `Admin created user ${user.email}`,
+        targetType: "user",
+        targetId: user._id,
+        ipAddress: req.ip,
+      });
     }
 
     res.status(201).json({
@@ -108,11 +109,13 @@ export const login = async (req, res) => {
 
     // 🔥 Log admin login
     if (user.isAdmin) {
-      await logAdminAction(
-        user._id,
-        "ADMIN_LOGIN",
-        `Admin ${user.email} logged in`
-      );
+      await logAdminAction({
+        adminId: user._id,
+        adminEmail: user.email,
+        action: "ADMIN_LOGIN",
+        description: `Admin ${user.email} logged in`,
+        ipAddress: req.ip,
+      });
     }
 
     res.json({
@@ -157,11 +160,15 @@ export const forgotPassword = async (req, res) => {
 
       // 🔥 Admin-triggered password reset
       if (req.user?.isAdmin) {
-        await logAdminAction(
-          req.user._id,
-          "FORGOT_PASSWORD",
-          `Admin triggered password reset for ${user.email}`
-        );
+        await logAdminAction({
+          adminId: req.user._id,
+          adminEmail: req.user.email,
+          action: "FORGOT_PASSWORD",
+          description: `Admin triggered password reset for ${user.email}`,
+          targetType: "user",
+          targetId: user._id,
+          ipAddress: req.ip,
+        });
       }
 
       res.json({ message: "Password reset link sent to email" });
@@ -206,11 +213,15 @@ export const resetPassword = async (req, res) => {
 
     // 🔥 Log if admin reset
     if (req.user?.isAdmin) {
-      await logAdminAction(
-        req.user._id,
-        "RESET_PASSWORD",
-        `Admin reset password for ${user.email}`
-      );
+      await logAdminAction({
+        adminId: req.user._id,
+        adminEmail: req.user.email,
+        action: "RESET_PASSWORD",
+        description: `Admin reset password for ${user.email}`,
+        targetType: "user",
+        targetId: user._id,
+        ipAddress: req.ip,
+      });
     }
 
     res.json({ message: "Password reset successful" });
@@ -219,11 +230,6 @@ export const resetPassword = async (req, res) => {
     console.error(error);
     res.status(500).json({ message: "Server error" });
   }
-};
-
-// Helper to calculate balance
-const calculateBalance = (transactions) => {
-  return transactions?.reduce((acc, t) => acc + (t.amount || 0), 0) || 0;
 };
 
 // ======================= GET USER PROFILE =======================
@@ -235,13 +241,15 @@ export const getProfile = async (req, res) => {
 
     const wallet = await Wallet.findOne({ user: user._id });
 
-    // 🔥 Admin viewing own profile (optional)
+    // 🔥 Admin viewing own profile
     if (user.isAdmin) {
-      await logAdminAction(
-        user._id,
-        "VIEW_PROFILE",
-        `Admin ${user.email} viewed profile`
-      );
+      await logAdminAction({
+        adminId: user._id,
+        adminEmail: user.email,
+        action: "VIEW_PROFILE",
+        description: `Admin ${user.email} viewed profile`,
+        ipAddress: req.ip,
+      });
     }
 
     res.json({

@@ -18,7 +18,6 @@ export const getCommission = async (req, res) => {
         resellerActivationFee: 25,
         resellerWithdrawMin: 10,
         platformDomain: "marinepanel.online",
-
         supportWhatsapp: "",
         supportTelegram: "",
         supportWhatsappChannel: "",
@@ -26,11 +25,15 @@ export const getCommission = async (req, res) => {
     }
 
     // 🔥 Log admin viewing commission
-    await logAdminAction(
-      req.user._id,
-      "VIEW_COMMISSION",
-      "Viewed commission settings"
-    );
+    if (req.user?._id) {
+      await logAdminAction({
+        adminId: req.user._id,
+        adminEmail: req.user.email,
+        action: "VIEW_COMMISSION",
+        description: "Viewed commission settings",
+        ipAddress: req.ip,
+      });
+    }
 
     res.json({ commission: settings.commission });
   } catch (err) {
@@ -67,11 +70,15 @@ export const updateCommission = async (req, res) => {
     emitCommissionUpdate();
 
     // 🔥 Log admin updating commission
-    await logAdminAction(
-      req.user._id,
-      "UPDATE_COMMISSION",
-      `Updated commission to ${commission}%`
-    );
+    if (req.user?._id) {
+      await logAdminAction({
+        adminId: req.user._id,
+        adminEmail: req.user.email,
+        action: "UPDATE_COMMISSION",
+        description: `Updated commission to ${commission}%`,
+        ipAddress: req.ip,
+      });
+    }
 
     res.json({ commission: settings.commission });
   } catch (err) {
@@ -94,7 +101,6 @@ export const getResellerSettings = async (req, res) => {
         resellerActivationFee: 25,
         resellerWithdrawMin: 10,
         platformDomain: "marinepanel.online",
-
         supportWhatsapp: "",
         supportTelegram: "",
         supportWhatsappChannel: "",
@@ -102,17 +108,20 @@ export const getResellerSettings = async (req, res) => {
     }
 
     // 🔥 Log admin viewing reseller settings
-    await logAdminAction(
-      req.user._id,
-      "VIEW_RESELLER_SETTINGS",
-      "Viewed reseller settings"
-    );
+    if (req.user?._id) {
+      await logAdminAction({
+        adminId: req.user._id,
+        adminEmail: req.user.email,
+        action: "VIEW_RESELLER_SETTINGS",
+        description: "Viewed reseller settings",
+        ipAddress: req.ip,
+      });
+    }
 
     res.json({
       resellerActivationFee: settings.resellerActivationFee,
       resellerWithdrawMin: settings.resellerWithdrawMin,
       platformDomain: settings.platformDomain,
-
       supportWhatsapp: settings.supportWhatsapp || "",
       supportTelegram: settings.supportTelegram || "",
       supportWhatsappChannel: settings.supportWhatsappChannel || "",
@@ -173,18 +182,21 @@ export const updateResellerSettings = async (req, res) => {
     await settings.save();
 
     // 🔥 Log admin updating reseller settings
-    await logAdminAction(
-      req.user._id,
-      "UPDATE_RESELLER_SETTINGS",
-      "Updated reseller settings"
-    );
+    if (req.user?._id) {
+      await logAdminAction({
+        adminId: req.user._id,
+        adminEmail: req.user.email,
+        action: "UPDATE_RESELLER_SETTINGS",
+        description: "Updated reseller settings",
+        ipAddress: req.ip,
+      });
+    }
 
     res.json({
       message: "Reseller settings updated successfully",
       resellerActivationFee: settings.resellerActivationFee,
       resellerWithdrawMin: settings.resellerWithdrawMin,
       platformDomain: settings.platformDomain,
-
       supportWhatsapp: settings.supportWhatsapp || "",
       supportTelegram: settings.supportTelegram || "",
       supportWhatsappChannel: settings.supportWhatsappChannel || "",
@@ -213,11 +225,15 @@ export const resetRevenue = async (req, res) => {
     }
 
     // 🔥 Log admin resetting revenue
-    await logAdminAction(
-      req.user._id,
-      "RESET_REVENUE",
-      "Reset total revenue to 0"
-    );
+    if (req.user?._id) {
+      await logAdminAction({
+        adminId: req.user._id,
+        adminEmail: req.user.email,
+        action: "RESET_REVENUE",
+        description: "Reset total revenue to 0",
+        ipAddress: req.ip,
+      });
+    }
 
     res.json({
       message: "Revenue reset successfully",

@@ -27,10 +27,19 @@ const getCookieOptions = () => {
   };
 };
 
-// 🌍 Normalize country code (BULLETPROOF)
-const normalizeCountryCode = (code) => {
-  if (!code || typeof code !== "string") return "us";
-  return code.trim().toLowerCase();
+// 🌍 Normalize country code (MATCHES MODEL)
+const normalizeCountryCode = (value) => {
+  if (!value || typeof value !== "string") return "US";
+
+  const map = {
+    "united states": "US",
+    "usa": "US",
+    "us": "US",
+    "kenya": "KE",
+  };
+
+  const cleaned = value.trim().toLowerCase();
+  return map[cleaned] || cleaned.toUpperCase();
 };
 
 // ======================= REGISTER =======================
@@ -38,7 +47,7 @@ export const register = async (req, res) => {
   try {
     let { email, phone, country, countryCode, password } = req.body;
 
-    if (!email || !phone || !country || !countryCode || !password) {
+    if (!email || !phone || !country || !password) {
       return res.status(400).json({ message: "All fields are required" });
     }
 
@@ -46,7 +55,9 @@ export const register = async (req, res) => {
     email = email.trim().toLowerCase();
     phone = phone.trim();
     country = country.trim();
-    countryCode = normalizeCountryCode(countryCode);
+
+    // ✅ normalize properly (SOURCE OF TRUTH)
+    countryCode = normalizeCountryCode(countryCode || country);
 
     const userExists = await User.findOne({
       $or: [{ email }, { phone }],
@@ -67,7 +78,7 @@ export const register = async (req, res) => {
       email,
       phone,
       country,
-      countryCode, // ✅ always lowercase now
+      countryCode,
       password: hashedPassword,
       resellerOwner,
     });
@@ -96,7 +107,7 @@ export const register = async (req, res) => {
       email: user.email,
       phone: user.phone,
       country: user.country,
-      countryCode: normalizeCountryCode(user.countryCode), // ✅ safe return
+      countryCode: user.countryCode, // ✅ already normalized
       isAdmin: user.isAdmin || false,
       isReseller: user.isReseller || false,
       token,
@@ -150,7 +161,7 @@ export const login = async (req, res) => {
       email: user.email,
       phone: user.phone,
       country: user.country,
-      countryCode: normalizeCountryCode(user.countryCode), // ✅ always clean
+      countryCode: user.countryCode, // ✅ already normalized
       isReseller: user.isReseller,
       isAdmin: user.isAdmin,
       token,
@@ -277,7 +288,7 @@ export const getProfile = async (req, res) => {
 
     res.json({
       ...user.toObject(),
-      countryCode: normalizeCountryCode(user.countryCode), // ✅ ALWAYS SAFE
+      countryCode: user.countryCode, // ✅ already normalized
       isReseller: user.isReseller,
       balance: wallet?.balance || 0,
       transaction: wallet?.transactions || [],

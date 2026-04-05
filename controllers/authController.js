@@ -15,14 +15,14 @@ const generateToken = (id) => {
   return jwt.sign({ id }, process.env.JWT_SECRET, { expiresIn: "7d" });
 };
 
-// ✅ CENTRALIZED COOKIE CONFIG (FIXED)
+// ✅ CENTRALIZED COOKIE CONFIG
 const getCookieOptions = () => {
   const isProd = process.env.NODE_ENV === "production";
 
   return {
     httpOnly: true,
-    secure: isProd, // only true in production
-    sameSite: isProd ? "none" : "lax", // ✅ FIXED
+    secure: isProd,
+    sameSite: isProd ? "none" : "lax",
     maxAge: 7 * 24 * 60 * 60 * 1000,
   };
 };
@@ -61,11 +61,11 @@ export const register = async (req, res) => {
 
     const token = generateToken(user._id);
 
-    // ✅ FIXED COOKIE
     res.cookie("token", token, getCookieOptions());
 
-    if (req.user?.isAdmin && req.user._id) {
-      logAdminAction({
+    // ✅ SAFE ADMIN LOG
+    if (req.user && req.user.isAdmin) {
+      await logAdminAction({
         adminId: req.user._id,
         adminEmail: req.user.email,
         action: "REGISTER_USER",
@@ -73,9 +73,7 @@ export const register = async (req, res) => {
         targetType: "user",
         targetId: user._id,
         ipAddress: req.ip,
-      }).catch((err) =>
-        console.error("Admin log error (REGISTER):", err.message)
-      );
+      });
     }
 
     res.status(201).json({
@@ -117,19 +115,17 @@ export const login = async (req, res) => {
 
     const token = generateToken(user._id);
 
-    // ✅ FIXED COOKIE
     res.cookie("token", token, getCookieOptions());
 
-    if (user.isAdmin && user._id) {
-      logAdminAction({
+    // ✅ SAFE ADMIN LOG
+    if (user.isAdmin) {
+      await logAdminAction({
         adminId: user._id,
         adminEmail: user.email,
         action: "ADMIN_LOGIN",
         description: `Admin ${user.email} logged in`,
         ipAddress: req.ip,
-      }).catch((err) =>
-        console.error("Admin log error (LOGIN):", err.message)
-      );
+      });
     }
 
     res.json({
@@ -173,8 +169,9 @@ export const forgotPassword = async (req, res) => {
         text: message,
       });
 
-      if (req.user?.isAdmin && req.user._id) {
-        logAdminAction({
+      // ✅ SAFE ADMIN LOG
+      if (req.user && req.user.isAdmin) {
+        await logAdminAction({
           adminId: req.user._id,
           adminEmail: req.user.email,
           action: "FORGOT_PASSWORD",
@@ -182,9 +179,7 @@ export const forgotPassword = async (req, res) => {
           targetType: "user",
           targetId: user._id,
           ipAddress: req.ip,
-        }).catch((err) =>
-          console.error("Admin log error (FORGOT):", err.message)
-        );
+        });
       }
 
       res.json({ message: "Password reset link sent to email" });
@@ -228,8 +223,9 @@ export const resetPassword = async (req, res) => {
 
     await user.save();
 
-    if (req.user?.isAdmin && req.user._id) {
-      logAdminAction({
+    // ✅ SAFE ADMIN LOG
+    if (req.user && req.user.isAdmin) {
+      await logAdminAction({
         adminId: req.user._id,
         adminEmail: req.user.email,
         action: "RESET_PASSWORD",
@@ -237,9 +233,7 @@ export const resetPassword = async (req, res) => {
         targetType: "user",
         targetId: user._id,
         ipAddress: req.ip,
-      }).catch((err) =>
-        console.error("Admin log error (RESET):", err.message)
-      );
+      });
     }
 
     res.json({ message: "Password reset successful" });
@@ -258,16 +252,14 @@ export const getProfile = async (req, res) => {
 
     const wallet = await Wallet.findOne({ user: user._id });
 
-    if (user.isAdmin && user._id) {
-      logAdminAction({
+    if (user.isAdmin) {
+      await logAdminAction({
         adminId: user._id,
         adminEmail: user.email,
         action: "VIEW_PROFILE",
         description: `Admin ${user.email} viewed profile`,
         ipAddress: req.ip,
-      }).catch((err) =>
-        console.error("Admin log error (PROFILE):", err.message)
-      );
+      });
     }
 
     res.json({

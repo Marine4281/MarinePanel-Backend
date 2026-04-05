@@ -97,6 +97,9 @@ app.use(cookieParser());
 /* Detect reseller subdomain */
 app.use(detectResellerDomain);
 
+//Last Seen
+app.use("/api", authMiddleware, updateLastSeen);
+
 
 /* Public routes */
 app.use("/api/auth", authRoutes);

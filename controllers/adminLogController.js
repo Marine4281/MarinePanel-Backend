@@ -19,6 +19,9 @@ export const getAdminLogs = async (req, res) => {
     if (action) query.action = action;
     if (admin) query.admin = admin;
 
+    // ✅ Exclude VIEW_PROFILE and VIEW_ADMIN_LOGS
+    query.action = { $nin: ["VIEW_PROFILE", "VIEW_ADMIN_LOGS"] };
+
     // ✅ Fetch logs
     const logs = await AdminLog.find(query)
       .populate("admin", "name email")
@@ -28,7 +31,7 @@ export const getAdminLogs = async (req, res) => {
 
     const total = await AdminLog.countDocuments(query);
 
-    // 🔥 SAFE: Non-blocking admin log
+    // 🔥 SAFE: Log that admin viewed logs (optional)
     if (req.user?.isAdmin) {
       logAdminAction({
         adminId: req.user._id,

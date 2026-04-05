@@ -19,8 +19,8 @@ export const getAdminLogs = async (req, res) => {
     if (action) query.action = action;
     if (admin) query.admin = admin;
 
-    // ✅ Exclude VIEW_PROFILE and VIEW_ADMIN_LOGS
-    query.action = { $nin: ["VIEW_PROFILE", "VIEW_ADMIN_LOGS"] };
+    // ✅ Exclude VIEW_PROFILE, VIEW_ADMIN_LOGS, and ADMIN_LOGIN
+    query.action = { $nin: ["VIEW_PROFILE", "VIEW_ADMIN_LOGS", "ADMIN_LOGIN"] };
 
     // ✅ Fetch logs
     const logs = await AdminLog.find(query)

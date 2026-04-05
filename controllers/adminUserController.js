@@ -4,6 +4,7 @@ import User from "../models/User.js";
 import Order from "../models/Order.js";
 import Wallet from "../models/Wallet.js";
 import logAdminAction from "../utils/logAdminAction.js";
+import formatLastSeen from "../utils/formatLastSeen.js";
 
 // ======================= HELPERS =======================
 
@@ -71,6 +72,8 @@ export const getAllUsers = async (req, res) => {
           countryCode: normalizeCountryCode(user.countryCode),
           balance,
           name,
+          lastSeen: 
+       formatLastSeen(user.lastSeen),
         };
       })
     );
@@ -134,6 +137,8 @@ export const getUserById = async (req, res) => {
         countryCode: normalizeCountryCode(user.countryCode),
         balance,
         name: user.email.split("@")[0],
+        lastSeen: 
+   formatLastSeen(user.lastSeen),
       },
       transactions: transactions.sort(
         (a, b) =>
@@ -218,6 +223,8 @@ export const updateUserBalance = async (req, res) => {
         countryCode: normalizeCountryCode(user.countryCode),
         balance: wallet.balance,
         name: user.email.split("@")[0],
+        lastSeen: 
+      formatLastSeen(user.lastSeen),
       },
       wallet,
     });
@@ -363,6 +370,8 @@ export const blockUser = async (req, res) => {
       ...user.toObject(),
       countryCode: normalizeCountryCode(user.countryCode),
       name: user.email.split("@")[0],
+      lastSeen: 
+   formatLastSeen(user.lastSeen),
     });
   } catch (err) {
     console.error("BLOCK USER ERROR:", err);
@@ -431,6 +440,8 @@ export const freezeUser = async (req, res) => {
       ...user.toObject(),
       countryCode: normalizeCountryCode(user.countryCode),
       name: user.email.split("@")[0],
+      lastSeen: 
+    formatLastSeen(user.lastSeen),
     });
   } catch (err) {
     console.error("FREEZE USER ERROR:", err);

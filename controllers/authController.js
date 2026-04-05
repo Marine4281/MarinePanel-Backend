@@ -22,6 +22,7 @@ export const register = async (req, res) => {
       return res.status(400).json({ message: "All fields are required" });
     }
 
+    // Check for existing user
     const userExists = await User.findOne({ $or: [{ email }, { phone }] });
     if (userExists) {
       return res.status(400).json({
@@ -29,24 +30,28 @@ export const register = async (req, res) => {
       });
     }
 
+    // Hash password
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(password, salt);
 
     const resellerOwner = req.reseller?._id || null;
 
+    // Create user
     const user = await User.create({
       email,
       phone,
       country,
-      countryCode, // ✅ new required field
+      countryCode,
       password: hashedPassword,
       resellerOwner,
     });
 
+    // Create wallet
     await Wallet.create({ user: user._id, balance: 0 });
 
     const token = generateToken(user._id);
 
+    // Set JWT cookie
     res.cookie("token", token, {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
@@ -54,8 +59,8 @@ export const register = async (req, res) => {
       maxAge: 7 * 24 * 60 * 60 * 1000,
     });
 
-    // 🔥 SAFE: Admin logging
-    if (req.user?.isAdmin) {
+    // Log admin action safely
+    if (req.user?.isAdmin && req.user._id) {
       logAdminAction({
         adminId: req.user._id,
         adminEmail: req.user.email,
@@ -64,9 +69,7 @@ export const register = async (req, res) => {
         targetType: "user",
         targetId: user._id,
         ipAddress: req.ip,
-      }).catch((err) =>
-        console.error("Admin log error (REGISTER):", err.message)
-      );
+      }).catch((err) => console.error("Admin log error (REGISTER):", err.message));
     }
 
     res.status(201).json({
@@ -89,17 +92,14 @@ export const register = async (req, res) => {
 export const login = async (req, res) => {
   try {
     const { email, password } = req.body;
-
-    if (!email || !password) {
+    if (!email || !password)
       return res.status(400).json({ message: "Email and password required" });
-    }
 
     const user = await User.findOne({ email });
     if (!user) return res.status(401).json({ message: "Invalid credentials" });
 
     const isMatch = await bcrypt.compare(password, user.password);
-    if (!isMatch)
-      return res.status(401).json({ message: "Invalid credentials" });
+    if (!isMatch) return res.status(401).json({ message: "Invalid credentials" });
 
     if (user.isBlocked) {
       return res.status(403).json({
@@ -116,17 +116,15 @@ export const login = async (req, res) => {
       maxAge: 7 * 24 * 60 * 60 * 1000,
     });
 
-    // 🔥 SAFE logging
-    if (user.isAdmin) {
+    // Only log if admin
+    if (user.isAdmin && user._id) {
       logAdminAction({
         adminId: user._id,
         adminEmail: user.email,
         action: "ADMIN_LOGIN",
         description: `Admin ${user.email} logged in`,
         ipAddress: req.ip,
-      }).catch((err) =>
-        console.error("Admin log error (LOGIN):", err.message)
-      );
+      }).catch((err) => console.error("Admin log error (LOGIN):", err.message));
     }
 
     res.json({
@@ -149,15 +147,12 @@ export const login = async (req, res) => {
 export const forgotPassword = async (req, res) => {
   try {
     const { email } = req.body;
-
     const user = await User.findOne({ email });
     if (!user) return res.status(404).json({ message: "User not found" });
 
     const resetToken = crypto.randomBytes(32).toString("hex");
-
     user.resetPasswordToken = resetToken;
     user.resetPasswordExpire = Date.now() + 3600000;
-
     await user.save();
 
     const resetUrl = `${process.env.FRONTEND_URL}/reset-password/${resetToken}`;
@@ -170,7 +165,8 @@ export const forgotPassword = async (req, res) => {
         text: message,
       });
 
-      if (req.user?.isAdmin) {
+      // Log admin if present
+      if (req.user?.isAdmin && req.user._id) {
         logAdminAction({
           adminId: req.user._id,
           adminEmail: req.user.email,
@@ -189,7 +185,6 @@ export const forgotPassword = async (req, res) => {
       user.resetPasswordToken = undefined;
       user.resetPasswordExpire = undefined;
       await user.save();
-
       res.status(500).json({ message: "Failed to send email" });
     }
   } catch (error) {
@@ -203,27 +198,22 @@ export const resetPassword = async (req, res) => {
   try {
     const { token } = req.params;
     const { newPassword } = req.body;
-
-    if (!newPassword)
-      return res.status(400).json({ message: "New password is required" });
+    if (!newPassword) return res.status(400).json({ message: "New password is required" });
 
     const user = await User.findOne({
       resetPasswordToken: token,
       resetPasswordExpire: { $gt: Date.now() },
     });
-
-    if (!user)
-      return res.status(400).json({ message: "Invalid or expired token" });
+    if (!user) return res.status(400).json({ message: "Invalid or expired token" });
 
     const salt = await bcrypt.genSalt(10);
     user.password = await bcrypt.hash(newPassword, salt);
-
     user.resetPasswordToken = undefined;
     user.resetPasswordExpire = undefined;
-
     await user.save();
 
-    if (req.user?.isAdmin) {
+    // Log admin if present
+    if (req.user?.isAdmin && req.user._id) {
       logAdminAction({
         adminId: req.user._id,
         adminEmail: req.user.email,
@@ -252,7 +242,8 @@ export const getProfile = async (req, res) => {
 
     const wallet = await Wallet.findOne({ user: user._id });
 
-    if (user.isAdmin) {
+    // Log admin action only if valid
+    if (user.isAdmin && user._id) {
       logAdminAction({
         adminId: user._id,
         adminEmail: user.email,

@@ -11,6 +11,12 @@ const calculateBalance = (transactions = []) =>
     .filter((t) => t.status === "Completed")
     .reduce((acc, t) => acc + (Number(t.amount) || 0), 0);
 
+// ✅ Normalize country code for flags / phone libraries (always lowercase ISO2)
+const normalizeCountryCode = (code) => {
+  if (!code || typeof code !== "string") return "us";
+  return code.trim().toLowerCase();
+};
+
 /**
  * GET /api/admin/users
  */
@@ -50,7 +56,13 @@ export const getAllUsers = async (req, res) => {
         }
 
         const name = user.email.split("@")[0];
-        return { ...user.toObject(), balance, name };
+
+        return {
+          ...user.toObject(),
+          countryCode: normalizeCountryCode(user.countryCode),
+          balance,
+          name,
+        };
       })
     );
 
@@ -66,7 +78,7 @@ export const getAllUsers = async (req, res) => {
 
     res.json(users);
   } catch (err) {
-    console.error(err);
+    console.error("GET ALL USERS ERROR:", err);
     res.status(500).json({ message: "Failed to fetch users" });
   }
 };
@@ -112,6 +124,7 @@ export const getUserById = async (req, res) => {
     res.json({
       user: {
         ...user.toObject(),
+        countryCode: normalizeCountryCode(user.countryCode),
         balance,
         name: user.email.split("@")[0],
       },
@@ -124,11 +137,11 @@ export const getUserById = async (req, res) => {
       pagination: {
         total: totalOrders,
         page: Number(page),
-        pages: Math.ceil(totalOrders / limit),
+        pages: Math.ceil(totalOrders / Number(limit)),
       },
     });
   } catch (err) {
-    console.error(err);
+    console.error("GET USER BY ID ERROR:", err);
     res.status(500).json({ message: "Failed to fetch user" });
   }
 };
@@ -139,8 +152,10 @@ export const getUserById = async (req, res) => {
 export const updateUserBalance = async (req, res) => {
   try {
     const newBalance = Number(req.body.balance);
-    if (Number.isNaN(newBalance))
+
+    if (Number.isNaN(newBalance)) {
       return res.status(400).json({ message: "Invalid balance" });
+    }
 
     const user = await User.findById(req.params.id);
     if (!user) return res.status(404).json({ message: "User not found" });
@@ -195,13 +210,14 @@ export const updateUserBalance = async (req, res) => {
     res.json({
       user: {
         ...user.toObject(),
+        countryCode: normalizeCountryCode(user.countryCode),
         balance: wallet.balance,
         name: user.email.split("@")[0],
       },
       wallet,
     });
   } catch (err) {
-    console.error(err);
+    console.error("UPDATE USER BALANCE ERROR:", err);
     res.status(500).json({ message: "Balance update failed" });
   }
 };
@@ -213,13 +229,16 @@ export const promoteToAdmin = async (req, res) => {
   try {
     const { id } = req.params;
 
-    if (req.user._id.toString() === id)
+    if (req.user._id.toString() === id) {
       return res.status(400).json({ message: "Cannot promote yourself" });
+    }
 
     const user = await User.findById(id);
     if (!user) return res.status(404).json({ message: "User not found" });
-    if (user.isAdmin)
+
+    if (user.isAdmin) {
       return res.status(400).json({ message: "User is already admin" });
+    }
 
     user.isAdmin = true;
     await user.save();
@@ -241,7 +260,7 @@ export const promoteToAdmin = async (req, res) => {
       user: { id: user._id, isAdmin: user.isAdmin },
     });
   } catch (err) {
-    console.error(err);
+    console.error("PROMOTE TO ADMIN ERROR:", err);
     res.status(500).json({ message: "Promotion failed" });
   }
 };
@@ -253,13 +272,16 @@ export const demoteFromAdmin = async (req, res) => {
   try {
     const { id } = req.params;
 
-    if (req.user._id.toString() === id)
+    if (req.user._id.toString() === id) {
       return res.status(400).json({ message: "Cannot demote yourself" });
+    }
 
     const user = await User.findById(id);
     if (!user) return res.status(404).json({ message: "User not found" });
-    if (!user.isAdmin)
+
+    if (!user.isAdmin) {
       return res.status(400).json({ message: "User is not admin" });
+    }
 
     user.isAdmin = false;
     await user.save();
@@ -281,10 +303,11 @@ export const demoteFromAdmin = async (req, res) => {
       user: { id: user._id, isAdmin: user.isAdmin },
     });
   } catch (err) {
-    console.error(err);
+    console.error("DEMOTE FROM ADMIN ERROR:", err);
     res.status(500).json({ message: "Demotion failed" });
   }
 };
+
 /**
  * GET /api/admin/users/:id/orders
  */
@@ -306,10 +329,10 @@ export const getUserOrders = async (req, res) => {
     res.json({
       orders,
       page: Number(page),
-      pages: Math.ceil(total / limit),
+      pages: Math.ceil(total / Number(limit)),
     });
   } catch (err) {
-    console.error(err);
+    console.error("GET USER ORDERS ERROR:", err);
     res.status(500).json({ message: "Failed to fetch orders" });
   }
 };
@@ -325,7 +348,9 @@ export const blockUser = async (req, res) => {
       { new: true }
     );
 
-    if (req.user && user) {
+    if (!user) return res.status(404).json({ message: "User not found" });
+
+    if (req.user) {
       await logAdminAction({
         adminId: req.user._id,
         adminEmail: req.user.email,
@@ -337,9 +362,13 @@ export const blockUser = async (req, res) => {
       });
     }
 
-    res.json({ ...user.toObject(), name: user.email.split("@")[0] });
+    res.json({
+      ...user.toObject(),
+      countryCode: normalizeCountryCode(user.countryCode),
+      name: user.email.split("@")[0],
+    });
   } catch (err) {
-    console.error(err);
+    console.error("BLOCK USER ERROR:", err);
     res.status(500).json({ message: "Block failed" });
   }
 };
@@ -355,7 +384,9 @@ export const unblockUser = async (req, res) => {
       { new: true }
     );
 
-    if (req.user && user) {
+    if (!user) return res.status(404).json({ message: "User not found" });
+
+    if (req.user) {
       await logAdminAction({
         adminId: req.user._id,
         adminEmail: req.user.email,
@@ -367,9 +398,13 @@ export const unblockUser = async (req, res) => {
       });
     }
 
-    res.json({ ...user.toObject(), name: user.email.split("@")[0] });
+    res.json({
+      ...user.toObject(),
+      countryCode: normalizeCountryCode(user.countryCode),
+      name: user.email.split("@")[0],
+    });
   } catch (err) {
-    console.error(err);
+    console.error("UNBLOCK USER ERROR:", err);
     res.status(500).json({ message: "Unblock failed" });
   }
 };
@@ -385,6 +420,8 @@ export const freezeUser = async (req, res) => {
       { new: true }
     );
 
+    if (!user) return res.status(404).json({ message: "User not found" });
+
     if (req.user && user) {
       await logAdminAction({
         adminId: req.user._id,
@@ -397,9 +434,13 @@ export const freezeUser = async (req, res) => {
       });
     }
 
-    res.json({ ...user.toObject(), name: user.email.split("@")[0] });
+    res.json({
+      ...user.toObject(),
+      countryCode: normalizeCountryCode(user.countryCode),
+      name: user.email.split("@")[0],
+    });
   } catch (err) {
-    console.error(err);
+    console.error("FREEZE USER ERROR:", err);
     res.status(500).json({ message: "Freeze failed" });
   }
 };
@@ -415,6 +456,8 @@ export const unfreezeUser = async (req, res) => {
       { new: true }
     );
 
+    if (!user) return res.status(404).json({ message: "User not found" });
+
     if (req.user && user) {
       await logAdminAction({
         adminId: req.user._id,
@@ -427,9 +470,13 @@ export const unfreezeUser = async (req, res) => {
       });
     }
 
-    res.json({ ...user.toObject(), name: user.email.split("@")[0] });
+    res.json({
+      ...user.toObject(),
+      countryCode: normalizeCountryCode(user.countryCode),
+      name: user.email.split("@")[0],
+    });
   } catch (err) {
-    console.error(err);
+    console.error("UNFREEZE USER ERROR:", err);
     res.status(500).json({ message: "Unfreeze failed" });
   }
 };
@@ -441,8 +488,13 @@ export const deleteUser = async (req, res) => {
   try {
     const user = await User.findById(req.params.id);
 
+    if (!user) return res.status(404).json({ message: "User not found" });
+
     await User.findByIdAndDelete(req.params.id);
-    await Order.deleteMany({ user: req.params.id });
+
+    // ✅ FIXED: your orders use userId, not user
+    await Order.deleteMany({ userId: req.params.id });
+
     await Wallet.deleteOne({ user: req.params.id });
 
     if (req.user) {
@@ -450,16 +502,16 @@ export const deleteUser = async (req, res) => {
         adminId: req.user._id,
         adminEmail: req.user.email,
         action: "DELETE_USER",
-        description: `Deleted user ${user?.email}`,
+        description: `Deleted user ${user.email}`,
         targetType: "user",
-        targetId: user?._id,
+        targetId: user._id,
         ipAddress: req.ip,
       });
     }
 
     res.json({ message: "User deleted" });
   } catch (err) {
-    console.error(err);
+    console.error("DELETE USER ERROR:", err);
     res.status(500).json({ message: "Delete failed" });
   }
 };
@@ -471,12 +523,13 @@ export const getUserTransactions = async (req, res) => {
   try {
     const wallet = await Wallet.findOne({ user: req.params.id });
 
-    if (!wallet)
+    if (!wallet) {
       return res.status(404).json({ message: "Wallet not found" });
+    }
 
     res.json(wallet.transactions || []);
   } catch (err) {
-    console.error(err);
+    console.error("GET USER TRANSACTIONS ERROR:", err);
     res.status(500).json({ message: "Failed to fetch transactions" });
   }
 };

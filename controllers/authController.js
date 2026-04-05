@@ -8,14 +8,14 @@ import sendEmail from "../utils/sendEmail.js";
 import Wallet from "../models/Wallet.js";
 import logAdminAction from "../utils/logAdminAction.js";
 
-// ======================= CONFIG =======================
+// ======================= HELPERS =======================
 
-// Generate JWT token
+// 🔐 Generate JWT token
 const generateToken = (id) => {
   return jwt.sign({ id }, process.env.JWT_SECRET, { expiresIn: "7d" });
 };
 
-// ✅ CENTRALIZED COOKIE CONFIG
+// 🍪 Cookie config
 const getCookieOptions = () => {
   const isProd = process.env.NODE_ENV === "production";
 
@@ -27,16 +27,31 @@ const getCookieOptions = () => {
   };
 };
 
+// 🌍 Normalize country code (BULLETPROOF)
+const normalizeCountryCode = (code) => {
+  if (!code || typeof code !== "string") return "us";
+  return code.trim().toLowerCase();
+};
+
 // ======================= REGISTER =======================
 export const register = async (req, res) => {
   try {
-    const { email, phone, country, countryCode, password } = req.body;
+    let { email, phone, country, countryCode, password } = req.body;
 
     if (!email || !phone || !country || !countryCode || !password) {
       return res.status(400).json({ message: "All fields are required" });
     }
 
-    const userExists = await User.findOne({ $or: [{ email }, { phone }] });
+    // ✅ sanitize inputs
+    email = email.trim().toLowerCase();
+    phone = phone.trim();
+    country = country.trim();
+    countryCode = normalizeCountryCode(countryCode);
+
+    const userExists = await User.findOne({
+      $or: [{ email }, { phone }],
+    });
+
     if (userExists) {
       return res.status(400).json({
         message: "User with email or phone already exists",
@@ -52,7 +67,7 @@ export const register = async (req, res) => {
       email,
       phone,
       country,
-      countryCode,
+      countryCode, // ✅ always lowercase now
       password: hashedPassword,
       resellerOwner,
     });
@@ -63,7 +78,7 @@ export const register = async (req, res) => {
 
     res.cookie("token", token, getCookieOptions());
 
-    // ✅ SAFE ADMIN LOG
+    // ✅ Admin log
     if (req.user && req.user.isAdmin) {
       await logAdminAction({
         adminId: req.user._id,
@@ -81,7 +96,7 @@ export const register = async (req, res) => {
       email: user.email,
       phone: user.phone,
       country: user.country,
-      countryCode: user.countryCode,
+      countryCode: normalizeCountryCode(user.countryCode), // ✅ safe return
       isAdmin: user.isAdmin || false,
       isReseller: user.isReseller || false,
       token,
@@ -95,11 +110,13 @@ export const register = async (req, res) => {
 // ======================= LOGIN =======================
 export const login = async (req, res) => {
   try {
-    const { email, password } = req.body;
+    let { email, password } = req.body;
 
     if (!email || !password) {
       return res.status(400).json({ message: "Email and password required" });
     }
+
+    email = email.trim().toLowerCase();
 
     const user = await User.findOne({ email });
     if (!user) return res.status(401).json({ message: "Invalid credentials" });
@@ -117,7 +134,7 @@ export const login = async (req, res) => {
 
     res.cookie("token", token, getCookieOptions());
 
-    // ✅ SAFE ADMIN LOG
+    // ✅ Admin log
     if (user.isAdmin) {
       await logAdminAction({
         adminId: user._id,
@@ -133,7 +150,7 @@ export const login = async (req, res) => {
       email: user.email,
       phone: user.phone,
       country: user.country,
-      countryCode: user.countryCode,
+      countryCode: normalizeCountryCode(user.countryCode), // ✅ always clean
       isReseller: user.isReseller,
       isAdmin: user.isAdmin,
       token,
@@ -149,7 +166,7 @@ export const forgotPassword = async (req, res) => {
   try {
     const { email } = req.body;
 
-    const user = await User.findOne({ email });
+    const user = await User.findOne({ email: email?.trim().toLowerCase() });
     if (!user) return res.status(404).json({ message: "User not found" });
 
     const resetToken = crypto.randomBytes(32).toString("hex");
@@ -160,16 +177,14 @@ export const forgotPassword = async (req, res) => {
     await user.save();
 
     const resetUrl = `${process.env.FRONTEND_URL}/reset-password/${resetToken}`;
-    const message = `Click here to reset your password: ${resetUrl}`;
 
     try {
       await sendEmail({
         to: user.email,
         subject: "Password Reset",
-        text: message,
+        text: `Click here to reset your password: ${resetUrl}`,
       });
 
-      // ✅ SAFE ADMIN LOG
       if (req.user && req.user.isAdmin) {
         await logAdminAction({
           adminId: req.user._id,
@@ -223,7 +238,6 @@ export const resetPassword = async (req, res) => {
 
     await user.save();
 
-    // ✅ SAFE ADMIN LOG
     if (req.user && req.user.isAdmin) {
       await logAdminAction({
         adminId: req.user._id,
@@ -247,7 +261,6 @@ export const resetPassword = async (req, res) => {
 export const getProfile = async (req, res) => {
   try {
     const user = await User.findById(req.user.id).select("-password");
-
     if (!user) return res.status(404).json({ message: "User not found" });
 
     const wallet = await Wallet.findOne({ user: user._id });
@@ -264,6 +277,7 @@ export const getProfile = async (req, res) => {
 
     res.json({
       ...user.toObject(),
+      countryCode: normalizeCountryCode(user.countryCode), // ✅ ALWAYS SAFE
       isReseller: user.isReseller,
       balance: wallet?.balance || 0,
       transaction: wallet?.transactions || [],

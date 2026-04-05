@@ -72,8 +72,7 @@ export const getAllUsers = async (req, res) => {
           countryCode: normalizeCountryCode(user.countryCode),
           balance,
           name,
-          lastSeen: 
-       formatLastSeen(user.lastSeen),
+          lastSeen: formatLastSeen(user.lastSeen),
         };
       })
     );
@@ -137,8 +136,7 @@ export const getUserById = async (req, res) => {
         countryCode: normalizeCountryCode(user.countryCode),
         balance,
         name: user.email.split("@")[0],
-        lastSeen: 
-   formatLastSeen(user.lastSeen),
+        lastSeen: formatLastSeen(user.lastSeen),
       },
       transactions: transactions.sort(
         (a, b) =>
@@ -223,8 +221,7 @@ export const updateUserBalance = async (req, res) => {
         countryCode: normalizeCountryCode(user.countryCode),
         balance: wallet.balance,
         name: user.email.split("@")[0],
-        lastSeen: 
-      formatLastSeen(user.lastSeen),
+        lastSeen: formatLastSeen(user.lastSeen),
       },
       wallet,
     });
@@ -268,6 +265,7 @@ export const promoteToAdmin = async (req, res) => {
     res.json({
       message: "User promoted",
       user: { id: user._id, isAdmin: user.isAdmin },
+      lastSeen: formatLastSeen(user.lastSeen),
     });
   } catch (err) {
     console.error("PROMOTE TO ADMIN ERROR:", err);
@@ -309,6 +307,7 @@ export const demoteFromAdmin = async (req, res) => {
     res.json({
       message: "User demoted",
       user: { id: user._id, isAdmin: user.isAdmin },
+      lastSeen: formatLastSeen(user.lastSeen),
     });
   } catch (err) {
     console.error("DEMOTE FROM ADMIN ERROR:", err);
@@ -370,8 +369,7 @@ export const blockUser = async (req, res) => {
       ...user.toObject(),
       countryCode: normalizeCountryCode(user.countryCode),
       name: user.email.split("@")[0],
-      lastSeen: 
-   formatLastSeen(user.lastSeen),
+      lastSeen: formatLastSeen(user.lastSeen),
     });
   } catch (err) {
     console.error("BLOCK USER ERROR:", err);
@@ -406,6 +404,7 @@ export const unblockUser = async (req, res) => {
       ...user.toObject(),
       countryCode: normalizeCountryCode(user.countryCode),
       name: user.email.split("@")[0],
+      lastSeen: formatLastSeen(user.lastSeen),
     });
   } catch (err) {
     console.error("UNBLOCK USER ERROR:", err);
@@ -440,8 +439,7 @@ export const freezeUser = async (req, res) => {
       ...user.toObject(),
       countryCode: normalizeCountryCode(user.countryCode),
       name: user.email.split("@")[0],
-      lastSeen: 
-    formatLastSeen(user.lastSeen),
+      lastSeen: formatLastSeen(user.lastSeen),
     });
   } catch (err) {
     console.error("FREEZE USER ERROR:", err);

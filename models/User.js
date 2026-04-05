@@ -1,6 +1,20 @@
 // models/User.js
 import mongoose from "mongoose";
 
+const normalizeCountryCode = (value) => {
+  if (!value) return value;
+
+  const map = {
+    "united states": "US",
+    "usa": "US",
+    "us": "US",
+    "kenya": "KE",
+  };
+
+  const cleaned = value.toString().trim().toLowerCase();
+  return map[cleaned] || cleaned.toUpperCase();
+};
+
 const userSchema = new mongoose.Schema(
   {
     email: {
@@ -17,17 +31,20 @@ const userSchema = new mongoose.Schema(
       unique: true,
     },
 
+    // Display only
     country: {
       type: String,
       required: true,
       trim: true,
     },
 
+    // SOURCE OF TRUTH (for flags, logic)
     countryCode: {
       type: String,
       required: true,
       uppercase: true,
       trim: true,
+      set: normalizeCountryCode,
     },
 
     password: {
@@ -45,15 +62,12 @@ const userSchema = new mongoose.Schema(
     ACCOUNT CONTROL
     --------------------------------
     */
-
-    // ❗ You were already using this in controller but it didn't exist
     isBlocked: {
       type: Boolean,
       default: false,
       index: true,
     },
 
-    // 🆕 NEW: Freeze user (can login but cannot order)
     isFrozen: {
       type: Boolean,
       default: false,
@@ -75,14 +89,12 @@ const userSchema = new mongoose.Schema(
     RESELLER SYSTEM
     --------------------------------
     */
-
     isReseller: {
       type: Boolean,
       default: false,
       index: true,
     },
 
-    // Branding fields (used everywhere)
     brandName: {
       type: String,
       default: null,
@@ -108,7 +120,6 @@ const userSchema = new mongoose.Schema(
       trim: true,
     },
 
-    // Subdomain and custom domain
     domainType: {
       type: String,
       enum: ["custom", "subdomain"],
@@ -128,37 +139,31 @@ const userSchema = new mongoose.Schema(
       trim: true,
     },
 
-    // Commission percentage
     resellerCommissionRate: {
       type: Number,
       default: 0,
     },
 
-    // Reseller wallet (earnings)
     resellerWallet: {
       type: Number,
       default: 0,
     },
 
-    // Total earnings
     resellerTotalEarned: {
       type: Number,
       default: 0,
     },
 
-    // Total users under reseller
     resellerUsersCount: {
       type: Number,
       default: 0,
     },
 
-    // Total orders from reseller users
     resellerOrdersCount: {
       type: Number,
       default: 0,
     },
 
-    // Activation time
     resellerActivatedAt: {
       type: Date,
       default: null,
@@ -169,7 +174,6 @@ const userSchema = new mongoose.Schema(
     RESELLER USER RELATION
     --------------------------------
     */
-
     resellerOwner: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
@@ -179,7 +183,7 @@ const userSchema = new mongoose.Schema(
 
     /*
     --------------------------------
-    Support Links (Improved)
+    Support Links
     --------------------------------
     */
     supportWhatsapp: {
@@ -226,7 +230,6 @@ const userSchema = new mongoose.Schema(
     FUTURE FEATURES
     --------------------------------
     */
-
     apiAccessEnabled: {
       type: Boolean,
       default: false,
@@ -244,7 +247,7 @@ const userSchema = new mongoose.Schema(
 
 /*
 --------------------------------
-Indexes for fast reseller queries
+Indexes
 --------------------------------
 */
 userSchema.index({ resellerOwner: 1 });

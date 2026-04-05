@@ -474,6 +474,7 @@ export const unfreezeUser = async (req, res) => {
       ...user.toObject(),
       countryCode: normalizeCountryCode(user.countryCode),
       name: user.email.split("@")[0],
+      lastSeen: formatLastSeen(user.lastSeen),
     });
   } catch (err) {
     console.error("UNFREEZE USER ERROR:", err);

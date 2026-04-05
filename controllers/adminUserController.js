@@ -5,21 +5,30 @@ import Order from "../models/Order.js";
 import Wallet from "../models/Wallet.js";
 import logAdminAction from "../utils/logAdminAction.js";
 
+// ======================= HELPERS =======================
+
 // ✅ Single source of truth for balance
 const calculateBalance = (transactions = []) =>
   transactions
     .filter((t) => t.status === "Completed")
     .reduce((acc, t) => acc + (Number(t.amount) || 0), 0);
 
-// ✅ Normalize country code for flags / phone libraries (always lowercase ISO2)
-const normalizeCountryCode = (code) => {
-  if (!code || typeof code !== "string") return "us";
-  return code.trim().toLowerCase();
+// ✅ Normalize country code (MATCHES SYSTEM → ALWAYS UPPERCASE)
+const normalizeCountryCode = (value) => {
+  if (!value || typeof value !== "string") return "US";
+
+  const map = {
+    "united states": "US",
+    "usa": "US",
+    "us": "US",
+    "kenya": "KE",
+  };
+
+  const cleaned = value.trim().toLowerCase();
+  return map[cleaned] || cleaned.toUpperCase();
 };
 
-/**
- * GET /api/admin/users
- */
+// ======================= GET ALL USERS =======================
 export const getAllUsers = async (req, res) => {
   try {
     const { search } = req.query;
@@ -83,9 +92,7 @@ export const getAllUsers = async (req, res) => {
   }
 };
 
-/**
- * GET /api/admin/users/:id
- */
+// ======================= GET USER BY ID =======================
 export const getUserById = async (req, res) => {
   try {
     const { page = 1, limit = 10 } = req.query;
@@ -146,9 +153,7 @@ export const getUserById = async (req, res) => {
   }
 };
 
-/**
- * PUT /api/admin/users/:id/balance
- */
+// ======================= UPDATE USER BALANCE =======================
 export const updateUserBalance = async (req, res) => {
   try {
     const newBalance = Number(req.body.balance);
@@ -222,9 +227,7 @@ export const updateUserBalance = async (req, res) => {
   }
 };
 
-/**
- * PATCH /api/admin/users/:id/promote
- */
+// ======================= PROMOTE =======================
 export const promoteToAdmin = async (req, res) => {
   try {
     const { id } = req.params;
@@ -265,9 +268,7 @@ export const promoteToAdmin = async (req, res) => {
   }
 };
 
-/**
- * PATCH /api/admin/users/:id/demote
- */
+// ======================= DEMOTE =======================
 export const demoteFromAdmin = async (req, res) => {
   try {
     const { id } = req.params;
@@ -308,9 +309,7 @@ export const demoteFromAdmin = async (req, res) => {
   }
 };
 
-/**
- * GET /api/admin/users/:id/orders
- */
+// ======================= USER ORDERS =======================
 export const getUserOrders = async (req, res) => {
   try {
     const { page = 1, limit = 10 } = req.query;
@@ -337,9 +336,7 @@ export const getUserOrders = async (req, res) => {
   }
 };
 
-/**
- * PATCH /api/admin/users/:id/block
- */
+// ======================= BLOCK =======================
 export const blockUser = async (req, res) => {
   try {
     const user = await User.findByIdAndUpdate(
@@ -373,9 +370,7 @@ export const blockUser = async (req, res) => {
   }
 };
 
-/**
- * PATCH /api/admin/users/:id/unblock
- */
+// ======================= UNBLOCK =======================
 export const unblockUser = async (req, res) => {
   try {
     const user = await User.findByIdAndUpdate(
@@ -409,9 +404,7 @@ export const unblockUser = async (req, res) => {
   }
 };
 
-/**
- * PATCH /api/admin/users/:id/freeze
- */
+// ======================= FREEZE =======================
 export const freezeUser = async (req, res) => {
   try {
     const user = await User.findByIdAndUpdate(
@@ -445,9 +438,7 @@ export const freezeUser = async (req, res) => {
   }
 };
 
-/**
- * PATCH /api/admin/users/:id/unfreeze
- */
+// ======================= UNFREEZE =======================
 export const unfreezeUser = async (req, res) => {
   try {
     const user = await User.findByIdAndUpdate(
@@ -481,9 +472,7 @@ export const unfreezeUser = async (req, res) => {
   }
 };
 
-/**
- * DELETE /api/admin/users/:id
- */
+// ======================= DELETE =======================
 export const deleteUser = async (req, res) => {
   try {
     const user = await User.findById(req.params.id);
@@ -491,10 +480,7 @@ export const deleteUser = async (req, res) => {
     if (!user) return res.status(404).json({ message: "User not found" });
 
     await User.findByIdAndDelete(req.params.id);
-
-    // ✅ FIXED: your orders use userId, not user
     await Order.deleteMany({ userId: req.params.id });
-
     await Wallet.deleteOne({ user: req.params.id });
 
     if (req.user) {
@@ -516,9 +502,7 @@ export const deleteUser = async (req, res) => {
   }
 };
 
-/**
- * GET /api/admin/users/:id/transactions
- */
+// ======================= TRANSACTIONS =======================
 export const getUserTransactions = async (req, res) => {
   try {
     const wallet = await Wallet.findOne({ user: req.params.id });

@@ -83,6 +83,11 @@ const userSchema = new mongoose.Schema(
       type: Number,
       default: 0,
     },
+    //Last  Seen
+    lastSeen: {
+      type: Date,
+      default: null,
+    },
 
     /*
     --------------------------------

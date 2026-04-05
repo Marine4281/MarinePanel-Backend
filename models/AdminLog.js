@@ -3,40 +3,49 @@ import mongoose from "mongoose";
 
 const adminLogSchema = new mongoose.Schema(
   {
-    // ✅ Keep ObjectId for relations
     admin: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
-      required: true,
+      required: false, // ✅ change here
+      default: null,
     },
 
-    // 🆕 Add email for fast readable logs (no populate needed)
     adminEmail: {
       type: String,
+      default: "unknown", // ✅ safe fallback
     },
 
     action: {
       type: String,
       required: true,
-      index: true, // 🔥 faster filtering
+      index: true,
     },
 
     targetType: {
-      type: String, // user, order, service, withdrawal
+      type: String,
       index: true,
+      default: null,
     },
 
     targetId: {
       type: mongoose.Schema.Types.ObjectId,
       index: true,
+      default: null,
     },
 
     description: {
       type: String,
+      default: "",
     },
 
     ipAddress: {
       type: String,
+      default: null,
+    },
+
+    meta: {
+      type: Object,
+      default: {},
     },
   },
   { timestamps: true }

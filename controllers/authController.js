@@ -16,9 +16,9 @@ const generateToken = (id) => {
 // ======================= REGISTER =======================
 export const register = async (req, res) => {
   try {
-    const { email, phone, country, password } = req.body;
+    const { email, phone, country, countryCode, password } = req.body;
 
-    if (!email || !phone || !country || !password) {
+    if (!email || !phone || !country || !countryCode || !password) {
       return res.status(400).json({ message: "All fields are required" });
     }
 
@@ -38,6 +38,7 @@ export const register = async (req, res) => {
       email,
       phone,
       country,
+      countryCode, // ✅ new required field
       password: hashedPassword,
       resellerOwner,
     });
@@ -53,7 +54,7 @@ export const register = async (req, res) => {
       maxAge: 7 * 24 * 60 * 60 * 1000,
     });
 
-    // 🔥 SAFE: Non-blocking admin log
+    // 🔥 SAFE: Admin logging
     if (req.user?.isAdmin) {
       logAdminAction({
         adminId: req.user._id,
@@ -73,6 +74,7 @@ export const register = async (req, res) => {
       email: user.email,
       phone: user.phone,
       country: user.country,
+      countryCode: user.countryCode,
       isAdmin: user.isAdmin || false,
       isReseller: user.isReseller || false,
       token,
@@ -89,9 +91,7 @@ export const login = async (req, res) => {
     const { email, password } = req.body;
 
     if (!email || !password) {
-      return res.status(400).json({
-        message: "Email and password required",
-      });
+      return res.status(400).json({ message: "Email and password required" });
     }
 
     const user = await User.findOne({ email });
@@ -134,6 +134,7 @@ export const login = async (req, res) => {
       email: user.email,
       phone: user.phone,
       country: user.country,
+      countryCode: user.countryCode,
       isReseller: user.isReseller,
       isAdmin: user.isAdmin,
       token,
@@ -150,8 +151,7 @@ export const forgotPassword = async (req, res) => {
     const { email } = req.body;
 
     const user = await User.findOne({ email });
-    if (!user)
-      return res.status(404).json({ message: "User not found" });
+    if (!user) return res.status(404).json({ message: "User not found" });
 
     const resetToken = crypto.randomBytes(32).toString("hex");
 
@@ -170,7 +170,6 @@ export const forgotPassword = async (req, res) => {
         text: message,
       });
 
-      // 🔥 SAFE logging
       if (req.user?.isAdmin) {
         logAdminAction({
           adminId: req.user._id,
@@ -205,22 +204,16 @@ export const resetPassword = async (req, res) => {
     const { token } = req.params;
     const { newPassword } = req.body;
 
-    if (!newPassword) {
-      return res.status(400).json({
-        message: "New password is required",
-      });
-    }
+    if (!newPassword)
+      return res.status(400).json({ message: "New password is required" });
 
     const user = await User.findOne({
       resetPasswordToken: token,
       resetPasswordExpire: { $gt: Date.now() },
     });
 
-    if (!user) {
-      return res.status(400).json({
-        message: "Invalid or expired token",
-      });
-    }
+    if (!user)
+      return res.status(400).json({ message: "Invalid or expired token" });
 
     const salt = await bcrypt.genSalt(10);
     user.password = await bcrypt.hash(newPassword, salt);
@@ -230,7 +223,6 @@ export const resetPassword = async (req, res) => {
 
     await user.save();
 
-    // 🔥 SAFE logging
     if (req.user?.isAdmin) {
       logAdminAction({
         adminId: req.user._id,
@@ -256,13 +248,10 @@ export const resetPassword = async (req, res) => {
 export const getProfile = async (req, res) => {
   try {
     const user = await User.findById(req.user.id).select("-password");
-
-    if (!user)
-      return res.status(404).json({ message: "User not found" });
+    if (!user) return res.status(404).json({ message: "User not found" });
 
     const wallet = await Wallet.findOne({ user: user._id });
 
-    // 🔥 SAFE logging
     if (user.isAdmin) {
       logAdminAction({
         adminId: user._id,

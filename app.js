@@ -40,6 +40,12 @@ import adminUserOrdersRoutes from "./routes/adminUserOrdersRoutes.js";
 import providerRoutes from "./routes/providerRoutes.js";
 import adminLogRoutes from "./routes/adminLogRoutes.js";
 
+// ✅ Last Seen Middleware (SAFE VERSION)
+import { protect as authMiddleware } from "./middlewares/authMiddleware.js";
+import updateLastSeen from "./middlewares/updateLastSeen.js";
+
+const withLastSeen = [authMiddleware, updateLastSeen];
+
 dotenv.config();
 const app = express();
 
@@ -97,9 +103,6 @@ app.use(cookieParser());
 /* Detect reseller subdomain */
 app.use(detectResellerDomain);
 
-//Last Seen
-app.use("/api", authMiddleware, updateLastSeen);
-
 
 /* Public routes */
 app.use("/api/auth", authRoutes);
@@ -119,6 +122,11 @@ app.use("/api/branding", brandingRoutes);
 app.use("/api/reseller-guides", resellerGuideRoutes);
 app.use("/api/reseller/services", resellerServiceRoutes);
 app.use("/api/end-users", endUserRoutes);
+
+/* Protected routes */
+app.use("/api/users", withLastSeen, userRoutes);
+app.use("/api/orders", withLastSeen, orderRoutes);
+app.use("/api/wallet", withLastSeen, walletRoutes);
 
 
 /* Admin routes */

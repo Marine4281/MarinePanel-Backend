@@ -1,3 +1,4 @@
+//models/Service.js
 import mongoose from "mongoose";
 
 const serviceSchema = new mongoose.Schema(
@@ -32,32 +33,52 @@ const serviceSchema = new mongoose.Schema(
       trim: true,
     },
 
-    // 🟣 Provider Info
+    // =====================================================
+    // 🟣 PROVIDER RELATION (NEW SYSTEM)
+    // =====================================================
+
+    // Reference to ProviderProfile
+    providerProfileId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "ProviderProfile",
+      required: true,
+      index: true,
+    },
+
+    // Provider name (cached for quick display)
     provider: {
       type: String,
       required: true,
       trim: true,
     },
 
-    providerApiUrl: {
-      type: String,
-      default: "",
-    },
-
+    // Provider's service ID
     providerServiceId: {
       type: String,
-      default: "",
+      required: true,
+      index: true,
     },
 
-    providerApiKey: {
-      type: String,
-      default: "",
-    },
+    // =====================================================
+    // 💰 PRICING
+    // =====================================================
 
-    // 💰 Pricing (per 1000)
+    // Current selling rate (your system rate)
     rate: {
       type: Number,
       required: true,
+      default: 0,
+    },
+
+    // Last synced provider rate (VERY IMPORTANT 🔥)
+    lastSyncedRate: {
+      type: Number,
+      default: 0,
+    },
+
+    // Store previous rate for comparison
+    previousRate: {
+      type: Number,
       default: 0,
     },
 
@@ -72,7 +93,7 @@ const serviceSchema = new mongoose.Schema(
     },
 
     // =====================================================
-    // 🎁 FREE SERVICE SYSTEM (Cooldown Based)
+    // 🎁 FREE SERVICE SYSTEM
     // =====================================================
 
     isFree: {
@@ -81,28 +102,20 @@ const serviceSchema = new mongoose.Schema(
       index: true,
     },
 
-    // Max quantity allowed when free
     freeQuantity: {
       type: Number,
       default: 0,
     },
 
-    /*
-      Cooldown Rules:
-      -1  → One time ever
-       24 → Every 24 hours
-       168 → Weekly
-       720 → Monthly
-       0 → Unlimited free (NOT recommended)
-    */
     cooldownHours: {
       type: Number,
       default: 0,
     },
 
     // =====================================================
+    // 📝 OPTIONAL INFO
+    // =====================================================
 
-    // 📝 Optional Info
     description: {
       type: String,
       default: "",
@@ -124,21 +137,22 @@ const serviceSchema = new mongoose.Schema(
       default: true,
     },
 
-    // ⭐ Default Service inside Category
+    // =====================================================
+    // ⭐ DEFAULT SETTINGS
+    // =====================================================
+
     isDefault: {
       type: Boolean,
       default: false,
       index: true,
     },
 
-    // 🌍 One Global Default Category
     isDefaultCategoryGlobal: {
       type: Boolean,
       default: false,
       index: true,
     },
 
-    // 🎯 One Default Category per Platform
     isDefaultCategoryPlatform: {
       type: Boolean,
       default: false,
@@ -148,7 +162,17 @@ const serviceSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-// 🚀 Compound Indexes
+// =====================================================
+// 🚀 INDEXES (IMPORTANT FOR SPEED)
+// =====================================================
+
+// Fast lookup for sync (VERY IMPORTANT 🔥)
+serviceSchema.index({
+  providerProfileId: 1,
+  providerServiceId: 1,
+});
+
+// Category queries
 serviceSchema.index({ platform: 1, category: 1 });
 serviceSchema.index({ platform: 1, isDefaultCategoryPlatform: 1 });
 

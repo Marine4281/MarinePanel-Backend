@@ -43,8 +43,10 @@ import adminLogRoutes from "./routes/adminLogRoutes.js";
 // ✅ Last Seen Middleware (SAFE VERSION)
 import { protect as authMiddleware } from "./middlewares/authMiddleware.js";
 import updateLastSeen from "./middlewares/updateLastSeen.js";
+import { adminOnly } from "./middlewares/adminMiddleware.js";
 
 const withLastSeen = [authMiddleware, updateLastSeen];
+const adminStack = [authMiddleware, updateLastSeen, adminOnly];
 
 dotenv.config();
 const app = express();

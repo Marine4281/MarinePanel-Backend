@@ -11,17 +11,17 @@ import {
   getUserTransactions,
   promoteToAdmin,
   demoteFromAdmin,
-  freezeUser,        // 🆕
-  unfreezeUser,      // 🆕
+  freezeUser,
+  unfreezeUser,
 } from "../controllers/adminUserController.js";
-
-import { protect } from "../middlewares/authMiddleware.js";
-import { adminOnly } from "../middlewares/adminMiddleware.js";
 
 const router = express.Router();
 
-// Apply middleware to all admin user routes
-router.use(protect, adminOnly);
+/*
+  ⚠️ IMPORTANT:
+  Auth + Admin + LastSeen are now applied in app.js
+  DO NOT add protect/adminOnly here anymore
+*/
 
 // ✅ GET all users
 router.get("/", getAllUsers);
@@ -30,14 +30,14 @@ router.get("/", getAllUsers);
 router.get("/:id/orders", getUserOrders);
 router.get("/:id/transactions", getUserTransactions);
 
-// ✅ GET single user (AFTER specific routes)
+// ✅ GET single user
 router.get("/:id", getUserById);
 
 // ✅ BLOCK / UNBLOCK
 router.patch("/:id/block", blockUser);
 router.patch("/:id/unblock", unblockUser);
 
-// 🆕 FREEZE / UNFREEZE
+// ✅ FREEZE / UNFREEZE
 router.patch("/:id/freeze", freezeUser);
 router.patch("/:id/unfreeze", unfreezeUser);
 

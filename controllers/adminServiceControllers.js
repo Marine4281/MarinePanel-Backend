@@ -2,6 +2,7 @@
 
 import Service from "../models/Service.js";
 import Counter from "../models/Counter.js";
+import ProviderProfile from "../models/ProviderProfile.js";
 import { clearCache } from "../utils/cache.js";
 import logAdminAction from "../utils/logAdminAction.js";
 
@@ -24,6 +25,7 @@ GET ALL SERVICES (ADMIN)
 export const getAllServices = async (req, res) => {
   try {
     const services = await Service.find()
+      .populate("providerProfileId", "name apiUrl")
       .sort({ createdAt: -1 })
       .lean();
 
@@ -45,7 +47,7 @@ export const getAllServices = async (req, res) => {
 };
 
 /* =========================================================
-IMPORT SERVICE FROM PROVIDER
+IMPORT SERVICE FROM PROVIDER (UPDATED 🔥)
 ========================================================= */
 export const importService = async (req, res) => {
   try {
@@ -57,21 +59,29 @@ export const importService = async (req, res) => {
       min,
       max,
       providerServiceId,
-      providerApiUrl,
-      providerApiKey,
-      provider,
-      platform
+      providerProfileId,
+      platform,
     } = req.body;
 
-    if (!name || !category || !providerServiceId) {
+    if (!name || !category || !providerServiceId || !providerProfileId) {
       return res.status(400).json({
-        message: "Missing required fields for import",
+        message: "Missing required fields",
       });
     }
 
+    // Get provider info
+    const providerProfile = await ProviderProfile.findById(providerProfileId);
+
+    if (!providerProfile) {
+      return res.status(404).json({
+        message: "Provider not found",
+      });
+    }
+
+    // 🔥 Check duplicate (NEW LOGIC)
     const existing = await Service.findOne({
       providerServiceId,
-      providerApiUrl,
+      providerProfileId,
     });
 
     if (existing) {
@@ -82,19 +92,27 @@ export const importService = async (req, res) => {
 
     const serviceId = await getNextServiceId();
 
+    const numericRate = Number(rate) || 0;
+
     const service = await Service.create({
       serviceId,
       name,
       category,
       platform: platform || "General",
       description: description || "",
-      rate: Number(rate) || 0,
+      rate: numericRate,
+
+      // 🔥 sync tracking
+      lastSyncedRate: numericRate,
+      previousRate: numericRate,
+
       min: Number(min) || 1,
       max: Number(max) || 100000,
-      provider: provider || "Custom Provider",
+
+      provider: providerProfile.name,
+      providerProfileId,
       providerServiceId,
-      providerApiUrl,
-      providerApiKey,
+
       status: true,
       isFree: false,
       freeQuantity: 0,
@@ -124,7 +142,7 @@ export const importService = async (req, res) => {
 };
 
 /* =========================================================
-ADD SERVICE
+ADD SERVICE (MANUAL)
 ========================================================= */
 export const addService = async (req, res) => {
   try {
@@ -132,7 +150,7 @@ export const addService = async (req, res) => {
       category,
       platform,
       name,
-      provider,
+      providerProfileId,
       rate,
       min,
       max,
@@ -145,9 +163,17 @@ export const addService = async (req, res) => {
       cooldownHours,
     } = req.body;
 
-    if (!category || !platform || !name || !provider) {
+    if (!category || !platform || !name || !providerProfileId) {
       return res.status(400).json({
         message: "Missing required fields",
+      });
+    }
+
+    const providerProfile = await ProviderProfile.findById(providerProfileId);
+
+    if (!providerProfile) {
+      return res.status(404).json({
+        message: "Provider not found",
       });
     }
 
@@ -156,10 +182,7 @@ export const addService = async (req, res) => {
     let finalMax = max || 100000;
 
     if (isFree) {
-      if (
-        freeQuantity === undefined ||
-        cooldownHours === undefined
-      ) {
+      if (freeQuantity === undefined || cooldownHours === undefined) {
         return res.status(400).json({
           message: "Free service requires max quantity and cooldown hours",
         });
@@ -171,17 +194,11 @@ export const addService = async (req, res) => {
     }
 
     if (isDefault) {
-      await Service.updateMany(
-        { category },
-        { $set: { isDefault: false } }
-      );
+      await Service.updateMany({ category }, { $set: { isDefault: false } });
     }
 
     if (isDefaultCategoryGlobal) {
-      await Service.updateMany(
-        {},
-        { $set: { isDefaultCategoryGlobal: false } }
-      );
+      await Service.updateMany({}, { $set: { isDefaultCategoryGlobal: false } });
     }
 
     if (isDefaultCategoryPlatform) {
@@ -193,13 +210,23 @@ export const addService = async (req, res) => {
 
     const serviceId = await getNextServiceId();
 
+    const numericRate = Number(finalRate);
+
     const service = await Service.create({
       ...req.body,
       serviceId,
-      description: description || "",
-      rate: finalRate,
+
+      provider: providerProfile.name,
+      providerProfileId,
+
+      rate: numericRate,
+      lastSyncedRate: numericRate,
+      previousRate: numericRate,
+
       min: finalMin,
       max: finalMax,
+
+      description: description || "",
       isFree: Boolean(isFree),
       freeQuantity: isFree ? freeQuantity : 0,
       cooldownHours: isFree ? cooldownHours : 0,
@@ -229,7 +256,6 @@ UPDATE SERVICE
 ========================================================= */
 export const updateService = async (req, res) => {
   try {
-
     const {
       category,
       platform,
@@ -239,12 +265,19 @@ export const updateService = async (req, res) => {
       isFree,
       freeQuantity,
       cooldownHours,
+      rate,
     } = req.body;
 
     const service = await Service.findById(req.params.id);
 
     if (!service) {
       return res.status(404).json({ message: "Service not found" });
+    }
+
+    // 🔥 Track previous rate
+    if (rate !== undefined && Number(rate) !== service.rate) {
+      service.previousRate = service.rate;
+      service.rate = Number(rate);
     }
 
     if (isDefault) {
@@ -272,10 +305,7 @@ export const updateService = async (req, res) => {
       service.isFree = isFree;
 
       if (isFree) {
-        if (
-          freeQuantity === undefined ||
-          cooldownHours === undefined
-        ) {
+        if (freeQuantity === undefined || cooldownHours === undefined) {
           return res.status(400).json({
             message: "Free service requires max quantity and cooldown hours",
           });
@@ -286,7 +316,6 @@ export const updateService = async (req, res) => {
         service.max = Number(freeQuantity);
         service.freeQuantity = Number(freeQuantity);
         service.cooldownHours = Number(cooldownHours);
-
       } else {
         service.freeQuantity = 0;
         service.cooldownHours = 0;
@@ -294,11 +323,7 @@ export const updateService = async (req, res) => {
     }
 
     Object.keys(req.body).forEach((key) => {
-      if (![
-        "isFree",
-        "freeQuantity",
-        "cooldownHours",
-      ].includes(key)) {
+      if (!["isFree", "freeQuantity", "cooldownHours"].includes(key)) {
         service[key] = req.body[key];
       }
     });
@@ -329,7 +354,6 @@ DELETE SERVICE
 ========================================================= */
 export const deleteService = async (req, res) => {
   try {
-
     const deleted = await Service.findByIdAndDelete(req.params.id);
 
     if (!deleted) {
@@ -390,7 +414,6 @@ TOGGLE SERVICE STATUS
 ========================================================= */
 export const toggleServiceStatus = async (req, res) => {
   try {
-
     const service = await Service.findById(req.params.id);
 
     if (!service) {
@@ -403,7 +426,7 @@ export const toggleServiceStatus = async (req, res) => {
     await logAdminAction(
       req.user._id,
       "TOGGLE_SERVICE",
-      `Toggled service ${service.name} to ${service.status ? "active" : "inactive"}`
+      `Toggled service ${service.name}`
     );
 
     res.json({

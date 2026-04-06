@@ -39,6 +39,7 @@ import adminOrderRoutes from "./routes/adminOrderRoutes.js";
 import adminUserOrdersRoutes from "./routes/adminUserOrdersRoutes.js";
 import providerRoutes from "./routes/providerRoutes.js";
 import adminLogRoutes from "./routes/adminLogRoutes.js";
+import providerProfileRoutes from "./routes/providerProfileRoutes.js";
 
 // ✅ Last Seen Middleware (SAFE VERSION)
 import { protect as authMiddleware } from "./middlewares/authMiddleware.js";
@@ -137,5 +138,6 @@ app.use("/api/provider", providerRoutes);
 app.use("/api/admin/orders", adminOrderRoutes);
 app.use("/api/admin/user-orders", adminUserOrdersRoutes);
 app.use("/api/admin-logs", adminLogRoutes);
+app.use("/provider", providerProfileRoutes);
 
 export default app;

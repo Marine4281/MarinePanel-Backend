@@ -1,6 +1,9 @@
+//controllers/providerController.js
+
 import axios from "axios";
 import ProviderService from "../models/ProviderService.js";
 import Service from "../models/Service.js";
+import ProviderProfile from "../models/ProviderProfile.js"; // ✅ NEW
 
 /*
 
@@ -8,47 +11,76 @@ Fetch services from provider API
 
 */
 export const fetchProviderServices = async (req, res) => {
-try {
-const { apiUrl, apiKey, provider } = req.body;
+  try {
+    let { apiUrl, apiKey, provider } = req.body;
 
-if (!apiUrl || !apiKey) {
-  return res.status(400).json({
-    message: "apiUrl and apiKey are required",
-  });
-}
+    if (!provider) {
+      return res.status(400).json({
+        message: "provider is required",
+      });
+    }
 
-const params = new URLSearchParams();
-params.append("key", apiKey);
-params.append("action", "services");
+    // ✅ AUTO LOAD PROVIDER PROFILE
+    const profile = await ProviderProfile.findOne({ name: provider });
 
-const response = await axios.post(apiUrl, params, {
-  headers: {
-    "Content-Type": "application/x-www-form-urlencoded",
-  },
-});
+    if (profile) {
+      apiUrl = profile.apiUrl;
+      apiKey = profile.apiKey;
+    }
 
-const providerServices = response.data;
+    if (!apiUrl || !apiKey) {
+      return res.status(400).json({
+        message: "apiUrl and apiKey are required",
+      });
+    }
 
-/* find already imported services */
-const imported = await ProviderService.find({ provider }).select("providerServiceId");
+    const params = new URLSearchParams();
+    params.append("key", apiKey);
+    params.append("action", "services");
 
-const importedIds = imported.map((s) => Number(s.providerServiceId));
+    const response = await axios.post(apiUrl, params, {
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+    });
 
-const services = providerServices.map((service) => ({
-  ...service,
-  imported: importedIds.includes(Number(service.service)),
-}));
+    const providerServices = response.data;
 
-res.json(services);
+    /* get existing services */
+    const existingServices = await ProviderService.find({ provider });
 
-} catch (error) {
-console.error("Provider API Error:", error.response?.data || error.message);
+    const existingMap = {};
+    existingServices.forEach((s) => {
+      existingMap[s.providerServiceId] = s;
+    });
 
-res.status(500).json({
-  message: "Failed to fetch provider services",
-});
+    const services = providerServices.map((service) => {
+      const id = Number(service.service);
+      const existing = existingMap[id];
 
-}
+      let rateDiff = 0;
+
+      if (existing) {
+        rateDiff = Number(service.rate) - existing.rate;
+      }
+
+      return {
+        ...service,
+        imported: !!existing,
+        existingRate: existing?.rate || null,
+        rateDiff,
+      };
+    });
+
+    res.json(services);
+
+  } catch (error) {
+    console.error("Provider API Error:", error.response?.data || error.message);
+
+    res.status(500).json({
+      message: "Failed to fetch provider services",
+    });
+  }
 };
 
 /*
@@ -57,55 +89,54 @@ Save provider services to DB
 
 */
 export const saveProviderServices = async (req, res) => {
-try {
-const { services, provider } = req.body;
+  try {
+    const { services, provider } = req.body;
 
-if (!provider) {
-  return res.status(400).json({
-    message: "provider is required",
-  });
-}
+    if (!provider) {
+      return res.status(400).json({
+        message: "provider is required",
+      });
+    }
 
-if (!services || services.length === 0) {
-  return res.status(400).json({
-    message: "No services provided",
-  });
-}
+    if (!services || services.length === 0) {
+      return res.status(400).json({
+        message: "No services provided",
+      });
+    }
 
-const operations = services.map((service) => ({
-  updateOne: {
-    filter: {
-      provider,
-      providerServiceId: Number(service.service),
-    },
-    update: {
-      provider,
-      providerServiceId: Number(service.service),
-      name: service.name,
-      category: service.category,
-      rate: Number(service.rate),
-      min: Number(service.min),
-      max: Number(service.max),
-    },
-    upsert: true,
-  },
-}));
+    const operations = services.map((service) => ({
+      updateOne: {
+        filter: {
+          provider,
+          providerServiceId: Number(service.service),
+        },
+        update: {
+          provider,
+          providerServiceId: Number(service.service),
+          name: service.name,
+          category: service.category,
+          rate: Number(service.rate),
+          min: Number(service.min),
+          max: Number(service.max),
+        },
+        upsert: true,
+      },
+    }));
 
-await ProviderService.bulkWrite(operations);
+    await ProviderService.bulkWrite(operations);
 
-res.json({
-  message: "Services saved successfully",
-  count: services.length,
-});
+    res.json({
+      message: "Services saved successfully",
+      count: services.length,
+    });
 
-} catch (error) {
-console.error("Save Provider Services Error:", error);
+  } catch (error) {
+    console.error("Save Provider Services Error:", error);
 
-res.status(500).json({
-  message: "Failed to save services",
-});
-
-}
+    res.status(500).json({
+      message: "Failed to save services",
+    });
+  }
 };
 
 /*
@@ -114,22 +145,21 @@ Get all saved services
 
 */
 export const getSavedProviderServices = async (req, res) => {
-try {
-const services = await ProviderService.find().sort({
-category: 1,
-name: 1,
-});
+  try {
+    const services = await ProviderService.find().sort({
+      category: 1,
+      name: 1,
+    });
 
-res.json(services);
+    res.json(services);
 
-} catch (error) {
-console.error("Get Provider Services Error:", error);
+  } catch (error) {
+    console.error("Get Provider Services Error:", error);
 
-res.status(500).json({
-  message: "Failed to fetch services",
-});
-
-}
+    res.status(500).json({
+      message: "Failed to fetch services",
+    });
+  }
 };
 
 /*
@@ -138,35 +168,34 @@ Toggle service status
 
 */
 export const toggleProviderServiceStatus = async (req, res) => {
-try {
-const service = await ProviderService.findById(req.params.id);
+  try {
+    const service = await ProviderService.findById(req.params.id);
 
-if (!service) {
-  return res.status(404).json({
-    message: "Service not found",
-  });
-}
+    if (!service) {
+      return res.status(404).json({
+        message: "Service not found",
+      });
+    }
 
-service.status = !service.status;
+    service.status = !service.status;
 
-await service.save();
+    await service.save();
 
-/* sync with panel services */
-await Service.updateMany(
-  { providerServiceId: String(service.providerServiceId) },
-  { status: service.status }
-);
+    /* sync with panel services */
+    await Service.updateMany(
+      { providerServiceId: String(service.providerServiceId) },
+      { status: service.status }
+    );
 
-res.json(service);
+    res.json(service);
 
-} catch (error) {
-console.error("Toggle Service Error:", error);
+  } catch (error) {
+    console.error("Toggle Service Error:", error);
 
-res.status(500).json({
-  message: "Failed to toggle service status",
-});
-
-}
+    res.status(500).json({
+      message: "Failed to toggle service status",
+    });
+  }
 };
 
 /*
@@ -175,94 +204,81 @@ Delete provider service
 
 */
 export const deleteProviderService = async (req, res) => {
-try {
-const service = await ProviderService.findByIdAndDelete(req.params.id);
+  try {
+    const service = await ProviderService.findByIdAndDelete(req.params.id);
 
-if (!service) {
-  return res.status(404).json({
-    message: "Service not found",
-  });
-}
+    if (!service) {
+      return res.status(404).json({
+        message: "Service not found",
+      });
+    }
 
-await Service.deleteMany({
-  providerServiceId: String(service.providerServiceId),
-});
+    await Service.deleteMany({
+      providerServiceId: String(service.providerServiceId),
+    });
 
-res.json({
-  message: "Service deleted successfully",
-});
+    res.json({
+      message: "Service deleted successfully",
+    });
 
-} catch (error) {
-console.error("Delete Provider Service Error:", error);
+  } catch (error) {
+    console.error("Delete Provider Service Error:", error);
 
-res.status(500).json({
-  message: "Failed to delete service",
-});
-
-}
+    res.status(500).json({
+      message: "Failed to delete service",
+    });
+  }
 };
 
 /*
 
-Save provider profile
+Save provider profile (UPDATED)
 
 */
 export const saveProviderProfile = async (req, res) => {
-try {
-const { name } = req.body;
+  try {
+    const { name, apiUrl, apiKey } = req.body;
 
-if (!name) {
-  return res.status(400).json({
-    message: "Provider name is required",
-  });
-}
+    if (!name || !apiUrl || !apiKey) {
+      return res.status(400).json({
+        message: "All fields required",
+      });
+    }
 
-res.json({
-  message: "Provider profile saved",
-  name,
-});
+    const profile = await ProviderProfile.findOneAndUpdate(
+      { name },
+      { name, apiUrl, apiKey },
+      { upsert: true, new: true }
+    );
 
-} catch (error) {
-console.error("Save Provider Profile Error:", error);
+    res.json(profile);
 
-res.status(500).json({
-  message: "Failed to save provider profile",
-});
+  } catch (error) {
+    console.error("Save Provider Profile Error:", error);
 
-}
+    res.status(500).json({
+      message: "Failed to save provider profile",
+    });
+  }
 };
 
 /*
 
-Get provider profiles
+Get provider profiles (UPDATED)
 
 */
 export const getProviderProfiles = async (req, res) => {
-try {
-const providers = await ProviderService.aggregate([
-{
-$group: {
-_id: "$provider",
-},
-},
-{
-$project: {
-name: "$_id",
-_id: 0,
-},
-},
-]);
+  try {
+    const providers = await ProviderProfile.find().sort({ name: 1 });
+    res.json(providers);
 
-res.json(providers);
+  } catch (error) {
+    console.error("Get Provider Profiles Error:", error);
 
-} catch (error) {
-console.error("Get Provider Profiles Error:", error);
-
-res.status(500).json({
-  message: "Failed to fetch providers",
-});
-
-}
+    res.status(500).json({
+      message: "Failed to fetch providers",
+    });
+  }
 };
 
 /*
@@ -271,11 +287,11 @@ Generate next serviceId
 
 */
 const generateServiceId = async () => {
-const last = await Service.findOne().sort({ serviceId: -1 });
+  const last = await Service.findOne().sort({ serviceId: -1 });
 
-if (!last) return 1000;
+  if (!last) return 1000;
 
-return last.serviceId + 1;
+  return last.serviceId + 1;
 };
 
 /*
@@ -284,112 +300,121 @@ Extract platform from category
 
 */
 const extractPlatform = (category) => {
-if (!category) return "Other";
-
-return category.split("-")[0].trim();
+  if (!category) return "Other";
+  return category.split("-")[0].trim();
 };
 
 /*
 
-Import selected services
+Import selected services (UPDATED to use provider profile)
 
 */
 export const importSelectedServices = async (req, res) => {
-try {
-const { services, provider, apiUrl, apiKey } = req.body;
+  try {
+    const { services, provider } = req.body;
 
-if (!provider) {
-  return res.status(400).json({
-    message: "provider required",
-  });
-}
+    if (!provider) {
+      return res.status(400).json({
+        message: "provider required",
+      });
+    }
 
-if (!services || services.length === 0) {
-  return res.status(400).json({
-    message: "No services selected",
-  });
-}
+    if (!services || services.length === 0) {
+      return res.status(400).json({
+        message: "No services selected",
+      });
+    }
 
-let count = 0;
+    // ✅ LOAD PROVIDER PROFILE
+    const profile = await ProviderProfile.findOne({ name: provider });
 
-for (const service of services) {
-  const providerServiceId = Number(service.service);
+    if (!profile) {
+      return res.status(400).json({
+        message: "Provider profile not found",
+      });
+    }
 
-  /* save provider service */
-  await ProviderService.updateOne(
-    {
-      provider,
-      providerServiceId,
-    },
-    {
-      provider,
-      providerServiceId,
-      name: service.name,
-      category: service.category,
-      rate: Number(service.rate),
-      min: Number(service.min),
-      max: Number(service.max),
-      status: true,
-    },
-    { upsert: true }
-  );
+    const { apiUrl, apiKey } = profile;
 
-  /* check if already exists in panel */
-  const exists = await Service.findOne({
-    providerServiceId: String(providerServiceId),
-  });
+    let count = 0;
 
-  if (!exists) {
-    const newServiceId = await generateServiceId();
+    for (const service of services) {
+      const providerServiceId = Number(service.service);
 
-    const platform = extractPlatform(service.category);
+      /* save provider service */
+      await ProviderService.updateOne(
+        {
+          provider,
+          providerServiceId,
+        },
+        {
+          provider,
+          providerServiceId,
+          name: service.name,
+          category: service.category,
+          rate: Number(service.rate),
+          min: Number(service.min),
+          max: Number(service.max),
+          status: true,
+        },
+        { upsert: true }
+      );
 
-    await Service.create({
-      serviceId: newServiceId,
-      platform,
-      category: service.category,
-      name: service.name,
-      provider,
-      providerServiceId: String(providerServiceId),
+      /* check if already exists in panel */
+      const exists = await Service.findOne({
+        providerServiceId: String(providerServiceId),
+      });
 
-      providerApiUrl: apiUrl || "",
-      providerApiKey: apiKey || "",
+      if (!exists) {
+        const newServiceId = await generateServiceId();
 
-      rate: Number(service.rate),
-      min: Number(service.min),
-      max: Number(service.max),
+        const platform = extractPlatform(service.category);
 
-      isFree: false,
-      freeQuantity: 0,
-      cooldownHours: 0,
-      description: "",
+        await Service.create({
+          serviceId: newServiceId,
+          platform,
+          category: service.category,
+          name: service.name,
+          provider,
+          providerServiceId: String(providerServiceId),
 
-      status: true,
-      refillAllowed: false,
-      cancelAllowed: false,
+          providerApiUrl: apiUrl,
+          providerApiKey: apiKey,
 
-      isDefault: false,
-      isDefaultCategoryGlobal: false,
-      isDefaultCategoryPlatform: false,
+          rate: Number(service.rate),
+          min: Number(service.min),
+          max: Number(service.max),
+
+          isFree: false,
+          freeQuantity: 0,
+          cooldownHours: 0,
+          description: "",
+
+          status: true,
+          refillAllowed: false,
+          cancelAllowed: false,
+
+          isDefault: false,
+          isDefaultCategoryGlobal: false,
+          isDefaultCategoryPlatform: false,
+        });
+      }
+
+      count++;
+    }
+
+    res.json({
+      message: "Selected services imported",
+      count,
+    });
+
+  } catch (error) {
+    console.error("Import Selected Services Error:", error);
+
+    res.status(500).json({
+      message: "Failed to import services",
     });
   }
-
-  count++;
-}
-
-res.json({
-  message: "Selected services imported",
-  count,
-});
-
-} catch (error) {
-console.error("Import Selected Services Error:", error);
-
-res.status(500).json({
-  message: "Failed to import services",
-});
-
-}
 };
 
 /*
@@ -398,34 +423,33 @@ Import services by category
 
 */
 export const importCategoryServices = async (req, res) => {
-try {
-const { category, services, provider } = req.body;
+  try {
+    const { category, services, provider } = req.body;
 
-if (!provider) {
-  return res.status(400).json({
-    message: "provider required",
-  });
-}
+    if (!provider) {
+      return res.status(400).json({
+        message: "provider required",
+      });
+    }
 
-const filtered = services.filter((s) => s.category === category);
+    const filtered = services.filter((s) => s.category === category);
 
-if (filtered.length === 0) {
-  return res.json({
-    message: "No services found in this category",
-    count: 0,
-  });
-}
+    if (filtered.length === 0) {
+      return res.json({
+        message: "No services found in this category",
+        count: 0,
+      });
+    }
 
-req.body.services = filtered;
+    req.body.services = filtered;
 
-return importSelectedServices(req, res);
+    return importSelectedServices(req, res);
 
-} catch (error) {
-console.error("Import Category Error:", error);
+  } catch (error) {
+    console.error("Import Category Error:", error);
 
-res.status(500).json({
-  message: "Failed to import category services",
-});
-
-}
+    res.status(500).json({
+      message: "Failed to import category services",
+    });
+  }
 };

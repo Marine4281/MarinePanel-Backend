@@ -131,7 +131,7 @@ app.use("/api/wallet", withLastSeen, walletRoutes);
 
 /* Admin routes */
 app.use("/api/admin", adminRoutes);
-app.use("/api/admin/users", adminUserRoutes);
+app.use("/api/admin/users",adminStack, adminUserRoutes);
 app.use("/api/admin/services", adminServiceRoutes); // ✅ admin-only service routes
 app.use("/api/admin/settings", adminSettingsRoutes);
 app.use("/api/admin/payment-methods", adminPaymentMethodRoutes);

@@ -109,9 +109,9 @@ app.use(detectResellerDomain);
 /* Public routes */
 app.use("/api/auth", authRoutes);
 app.use("/api/services", serviceRoutes); // ✅ public service routes
-app.use("/api/orders", orderRoutes);
-app.use("/api/wallet", walletRoutes);
-app.use("/api/users", userRoutes);
+app.use("/api/orders", withLastSeen,orderRoutes);
+app.use("/api/wallet", withLastSeen,walletRoutes);
+app.use("/api/users",withLastSeen, userRoutes);
 app.use("/api/payment-methods", paymentMethodRoutes);
 app.use("/api/smm", smmWebhookRoutes);
 app.use("/api/payment", paymentRoutes);
@@ -124,12 +124,6 @@ app.use("/api/branding", brandingRoutes);
 app.use("/api/reseller-guides", resellerGuideRoutes);
 app.use("/api/reseller/services", resellerServiceRoutes);
 app.use("/api/end-users", endUserRoutes);
-
-/* Protected routes */
-app.use("/api/users", withLastSeen, userRoutes);
-app.use("/api/orders", withLastSeen, orderRoutes);
-app.use("/api/wallet", withLastSeen, walletRoutes);
-
 
 /* Admin routes */
 app.use("/api/admin", adminRoutes);

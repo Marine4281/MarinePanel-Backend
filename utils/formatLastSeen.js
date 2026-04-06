@@ -57,3 +57,4 @@ export const formatLastSeen = (lastSeen) => {
     year: "numeric",
   })}`;
 };
+export default formatLastSeen;

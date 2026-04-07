@@ -430,6 +430,8 @@ export const importSelectedServices = async (req, res) => {
           isDefault: false,
           isDefaultCategoryGlobal: false,
           isDefaultCategoryPlatform: false,
+
+          providerProfileId: profile._id,
         });
       }
 

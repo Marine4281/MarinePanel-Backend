@@ -465,6 +465,18 @@ export const importCategoryServices = async (req, res) => {
       });
     }
 
+    if (!category) {
+      return res.status(400).json({
+        message: "category required",
+      });
+    }
+
+    if (!services || !Array.isArray(services)) {
+      return res.status(400).json({
+        message: "services must be an array",
+      });
+    }
+
     const filtered = services.filter((s) => s.category === category);
 
     if (filtered.length === 0) {
@@ -483,6 +495,7 @@ export const importCategoryServices = async (req, res) => {
 
     res.status(500).json({
       message: "Failed to import category services",
+      error: error.message, // 👈 ADD THIS (VERY IMPORTANT)
     });
   }
 };

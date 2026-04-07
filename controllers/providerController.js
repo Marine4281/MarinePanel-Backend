@@ -19,6 +19,23 @@ export const fetchProviderServices = async (req, res) => {
         message: "provider is required",
       });
     }
+    const grouped = {};
+
+allServices.forEach((service) => {
+  if (!grouped[service.category]) {
+    grouped[service.category] = [];
+  }
+
+  grouped[service.category].push(service);
+});
+
+// convert to array format your frontend expects
+const categories = Object.keys(grouped).map((category) => ({
+  category,
+  services: grouped[category],
+}));
+
+res.json(categories);
 
     // ✅ AUTO LOAD PROVIDER PROFILE
     const profile = await ProviderProfile.findOne({ name: provider });

@@ -19,7 +19,7 @@ export const fetchProviderServices = async (req, res) => {
         message: "provider is required",
       });
     }
-    
+
     // ✅ AUTO LOAD PROVIDER PROFILE
     const profile = await ProviderProfile.findOne({ name: provider });
 
@@ -103,7 +103,7 @@ export const fetchProviderServices = async (req, res) => {
         description: "",
       }));
 
-   // ✅ MERGE ALL
+    // ✅ MERGE ALL
 const allServices = [...services, ...deletedServices];
 
 // 🔥 GROUP BY CATEGORY (for frontend)

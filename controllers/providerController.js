@@ -1,26 +1,20 @@
-//controllers/providerController.js
-
 import axios from "axios";
 import ProviderService from "../models/ProviderService.js";
 import Service from "../models/Service.js";
-import ProviderProfile from "../models/ProviderProfile.js"; // ✅ NEW
+import ProviderProfile from "../models/ProviderProfile.js";
 
-/*
-
-Fetch services from provider API
-
-*/
+/* =======================================================
+   FETCH SERVICES → NOW GROUPED BY CATEGORY
+======================================================= */
 export const fetchProviderServices = async (req, res) => {
   try {
     let { apiUrl, apiKey, provider } = req.body;
 
     if (!provider) {
-      return res.status(400).json({
-        message: "provider is required",
-      });
+      return res.status(400).json({ message: "provider is required" });
     }
 
-    // ✅ AUTO LOAD PROVIDER PROFILE
+    // ✅ Load provider profile
     const profile = await ProviderProfile.findOne({ name: provider });
 
     if (profile) {
@@ -46,7 +40,7 @@ export const fetchProviderServices = async (req, res) => {
 
     const providerServices = response.data;
 
-    /* get existing services */
+    /* existing services */
     const existingServices = await ProviderService.find({ provider });
 
     const existingMap = {};
@@ -54,25 +48,45 @@ export const fetchProviderServices = async (req, res) => {
       existingMap[s.providerServiceId] = s;
     });
 
-    const services = providerServices.map((service) => {
+    /* 🔥 FORMAT + ENRICH */
+    const formatted = providerServices.map((service) => {
       const id = Number(service.service);
       const existing = existingMap[id];
 
-      let rateDiff = 0;
-
-      if (existing) {
-        rateDiff = Number(service.rate) - existing.rate;
-      }
+      const newRate = Number(service.rate);
+      const oldRate = existing?.rate || 0;
 
       return {
-        ...service,
+        service: id,
+        name: service.name,
+        category: service.category || "Other",
+        rate: newRate,
+        min: Number(service.min),
+        max: Number(service.max),
+        description: service.description || "",
+
         imported: !!existing,
         existingRate: existing?.rate || null,
-        rateDiff,
+        rateDiff: existing ? newRate - oldRate : 0,
       };
     });
 
-    res.json(services);
+    /* 🔥 GROUP BY CATEGORY */
+    const grouped = Object.values(
+      formatted.reduce((acc, s) => {
+        if (!acc[s.category]) {
+          acc[s.category] = {
+            category: s.category,
+            services: [],
+          };
+        }
+
+        acc[s.category].services.push(s);
+        return acc;
+      }, {})
+    );
+
+    res.json(grouped);
 
   } catch (error) {
     console.error("Provider API Error:", error.response?.data || error.message);
@@ -83,239 +97,33 @@ export const fetchProviderServices = async (req, res) => {
   }
 };
 
-/*
-
-Save provider services to DB
-
-*/
-export const saveProviderServices = async (req, res) => {
-  try {
-    const { services, provider } = req.body;
-
-    if (!provider) {
-      return res.status(400).json({
-        message: "provider is required",
-      });
-    }
-
-    if (!services || services.length === 0) {
-      return res.status(400).json({
-        message: "No services provided",
-      });
-    }
-
-    const operations = services.map((service) => ({
-      updateOne: {
-        filter: {
-          provider,
-          providerServiceId: Number(service.service),
-        },
-        update: {
-          provider,
-          providerServiceId: Number(service.service),
-          name: service.name,
-          category: service.category,
-          rate: Number(service.rate),
-          min: Number(service.min),
-          max: Number(service.max),
-        },
-        upsert: true,
-      },
-    }));
-
-    await ProviderService.bulkWrite(operations);
-
-    res.json({
-      message: "Services saved successfully",
-      count: services.length,
-    });
-
-  } catch (error) {
-    console.error("Save Provider Services Error:", error);
-
-    res.status(500).json({
-      message: "Failed to save services",
-    });
-  }
-};
-
-/*
-
-Get all saved services
-
-*/
-export const getSavedProviderServices = async (req, res) => {
-  try {
-    const services = await ProviderService.find().sort({
-      category: 1,
-      name: 1,
-    });
-
-    res.json(services);
-
-  } catch (error) {
-    console.error("Get Provider Services Error:", error);
-
-    res.status(500).json({
-      message: "Failed to fetch services",
-    });
-  }
-};
-
-/*
-
-Toggle service status
-
-*/
-export const toggleProviderServiceStatus = async (req, res) => {
-  try {
-    const service = await ProviderService.findById(req.params.id);
-
-    if (!service) {
-      return res.status(404).json({
-        message: "Service not found",
-      });
-    }
-
-    service.status = !service.status;
-
-    await service.save();
-
-    /* sync with panel services */
-    await Service.updateMany(
-      { providerServiceId: String(service.providerServiceId) },
-      { status: service.status }
-    );
-
-    res.json(service);
-
-  } catch (error) {
-    console.error("Toggle Service Error:", error);
-
-    res.status(500).json({
-      message: "Failed to toggle service status",
-    });
-  }
-};
-
-/*
-
-Delete provider service
-
-*/
-export const deleteProviderService = async (req, res) => {
-  try {
-    const service = await ProviderService.findByIdAndDelete(req.params.id);
-
-    if (!service) {
-      return res.status(404).json({
-        message: "Service not found",
-      });
-    }
-
-    await Service.deleteMany({
-      providerServiceId: String(service.providerServiceId),
-    });
-
-    res.json({
-      message: "Service deleted successfully",
-    });
-
-  } catch (error) {
-    console.error("Delete Provider Service Error:", error);
-
-    res.status(500).json({
-      message: "Failed to delete service",
-    });
-  }
-};
-
-/*
-
-Save provider profile (UPDATED)
-
-*/
-export const saveProviderProfile = async (req, res) => {
-  try {
-    const { name, apiUrl, apiKey } = req.body;
-
-    if (!name || !apiUrl || !apiKey) {
-      return res.status(400).json({
-        message: "All fields required",
-      });
-    }
-
-    const profile = await ProviderProfile.findOneAndUpdate(
-      { name },
-      { name, apiUrl, apiKey },
-      { upsert: true, new: true }
-    );
-
-    res.json(profile);
-
-  } catch (error) {
-    console.error("Save Provider Profile Error:", error);
-
-    res.status(500).json({
-      message: "Failed to save provider profile",
-    });
-  }
-};
-
-/*
-
-Get provider profiles (UPDATED)
-
-*/
-export const getProviderProfiles = async (req, res) => {
-  try {
-    const providers = await ProviderProfile.find().sort({ name: 1 });
-    res.json(providers);
-
-  } catch (error) {
-    console.error("Get Provider Profiles Error:", error);
-
-    res.status(500).json({
-      message: "Failed to fetch providers",
-    });
-  }
-};
-
-/*
-
-Generate next serviceId
-
-*/
+/* =======================================================
+   GENERATE SERVICE ID
+======================================================= */
 const generateServiceId = async () => {
   const last = await Service.findOne().sort({ serviceId: -1 });
-
-  if (!last) return 1000;
-
-  return last.serviceId + 1;
+  return last ? last.serviceId + 1 : 1000;
 };
 
-/*
-
-Extract platform from category
-
-*/
+/* =======================================================
+   EXTRACT PLATFORM
+======================================================= */
 const extractPlatform = (category) => {
   if (!category) return "Other";
   return category.split("-")[0].trim();
 };
 
-/*
-
-Import selected services (UPDATED to use provider profile)
-
-*/
+/* =======================================================
+   IMPORT SELECTED SERVICES (UPDATED 🔥)
+   Now accepts: service IDs only
+======================================================= */
 export const importSelectedServices = async (req, res) => {
   try {
-    const { services, provider } = req.body;
+    const { services, providerProfileId } = req.body;
 
-    if (!provider) {
+    if (!providerProfileId) {
       return res.status(400).json({
-        message: "provider required",
+        message: "providerProfileId required",
       });
     }
 
@@ -325,8 +133,7 @@ export const importSelectedServices = async (req, res) => {
       });
     }
 
-    // ✅ LOAD PROVIDER PROFILE
-    const profile = await ProviderProfile.findOne({ name: provider });
+    const profile = await ProviderProfile.findById(providerProfileId);
 
     if (!profile) {
       return res.status(400).json({
@@ -334,69 +141,75 @@ export const importSelectedServices = async (req, res) => {
       });
     }
 
-    const { apiUrl, apiKey } = profile;
+    const { apiUrl, apiKey, name: provider } = profile;
+
+    // 🔥 Get latest provider services again
+    const params = new URLSearchParams();
+    params.append("key", apiKey);
+    params.append("action", "services");
+
+    const response = await axios.post(apiUrl, params, {
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+    });
+
+    const providerServices = response.data;
 
     let count = 0;
 
-    for (const service of services) {
-      const providerServiceId = Number(service.service);
+    for (const s of providerServices) {
+      const id = Number(s.service);
+
+      if (!services.includes(id)) continue;
+
+      const platform = extractPlatform(s.category);
 
       /* save provider service */
       await ProviderService.updateOne(
         {
           provider,
-          providerServiceId,
+          providerServiceId: id,
         },
         {
           provider,
-          providerServiceId,
-          name: service.name,
-          category: service.category,
-          rate: Number(service.rate),
-          min: Number(service.min),
-          max: Number(service.max),
+          providerServiceId: id,
+          name: s.name,
+          category: s.category,
+          rate: Number(s.rate),
+          min: Number(s.min),
+          max: Number(s.max),
           status: true,
         },
         { upsert: true }
       );
 
-      /* check if already exists in panel */
+      /* create panel service if not exists */
       const exists = await Service.findOne({
-        providerServiceId: String(providerServiceId),
+        providerServiceId: String(id),
       });
 
       if (!exists) {
         const newServiceId = await generateServiceId();
 
-        const platform = extractPlatform(service.category);
-
         await Service.create({
           serviceId: newServiceId,
           platform,
-          category: service.category,
-          name: service.name,
+          category: s.category,
+          name: s.name,
           provider,
-          providerServiceId: String(providerServiceId),
+          providerServiceId: String(id),
 
           providerApiUrl: apiUrl,
           providerApiKey: apiKey,
 
-          rate: Number(service.rate),
-          min: Number(service.min),
-          max: Number(service.max),
+          rate: Number(s.rate),
+          min: Number(s.min),
+          max: Number(s.max),
 
-          isFree: false,
-          freeQuantity: 0,
-          cooldownHours: 0,
-          description: "",
+          description: s.description || "",
 
           status: true,
-          refillAllowed: false,
-          cancelAllowed: false,
-
-          isDefault: false,
-          isDefaultCategoryGlobal: false,
-          isDefaultCategoryPlatform: false,
         });
       }
 
@@ -417,31 +230,46 @@ export const importSelectedServices = async (req, res) => {
   }
 };
 
-/*
-
-Import services by category
-
-*/
+/* =======================================================
+   IMPORT CATEGORY (UPDATED 🔥)
+======================================================= */
 export const importCategoryServices = async (req, res) => {
   try {
-    const { category, services, provider } = req.body;
+    const { category, providerProfileId } = req.body;
 
-    if (!provider) {
+    if (!providerProfileId) {
       return res.status(400).json({
-        message: "provider required",
+        message: "providerProfileId required",
       });
     }
 
-    const filtered = services.filter((s) => s.category === category);
+    const profile = await ProviderProfile.findById(providerProfileId);
 
-    if (filtered.length === 0) {
-      return res.json({
-        message: "No services found in this category",
-        count: 0,
+    if (!profile) {
+      return res.status(400).json({
+        message: "Provider not found",
       });
     }
 
-    req.body.services = filtered;
+    const { apiUrl, apiKey } = profile;
+
+    const params = new URLSearchParams();
+    params.append("key", apiKey);
+    params.append("action", "services");
+
+    const response = await axios.post(apiUrl, params, {
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+    });
+
+    const providerServices = response.data;
+
+    const filteredIds = providerServices
+      .filter((s) => s.category === category)
+      .map((s) => Number(s.service));
+
+    req.body.services = filteredIds;
 
     return importSelectedServices(req, res);
 
@@ -449,7 +277,7 @@ export const importCategoryServices = async (req, res) => {
     console.error("Import Category Error:", error);
 
     res.status(500).json({
-      message: "Failed to import category services",
+      message: "Failed to import category",
     });
   }
 };

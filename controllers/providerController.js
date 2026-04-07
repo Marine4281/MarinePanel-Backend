@@ -106,24 +106,24 @@ export const fetchProviderServices = async (req, res) => {
     // ✅ MERGE ALL
 const allServices = [...services, ...deletedServices];
 
-// 🔥 GROUP BY CATEGORY (for frontend)
-const grouped = {};
+    const grouped = {};
+    allServices.forEach((service) => {
+      if (!grouped[service.category]) grouped[service.category] = [];
+      grouped[service.category].push(service);
+    });
 
-allServices.forEach((service) => {
-  if (!grouped[service.category]) {
-    grouped[service.category] = [];
+    const categories = Object.keys(grouped).map((category) => ({
+      category,
+      services: grouped[category],
+    }));
+
+    res.json(categories);
+
+  } catch (error) {
+    console.error("Provider API Error:", error.response?.data || error.message);
+    res.status(500).json({ message: "Failed to fetch provider services" });
   }
-
-  grouped[service.category].push(service);
-});
-
-// convert to array
-const categories = Object.keys(grouped).map((category) => ({
-  category,
-  services: grouped[category],
-}));
-
-res.json(categories);
+};
 
 /*
 

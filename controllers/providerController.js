@@ -19,24 +19,7 @@ export const fetchProviderServices = async (req, res) => {
         message: "provider is required",
       });
     }
-    const grouped = {};
-
-allServices.forEach((service) => {
-  if (!grouped[service.category]) {
-    grouped[service.category] = [];
-  }
-
-  grouped[service.category].push(service);
-});
-
-// convert to array format your frontend expects
-const categories = Object.keys(grouped).map((category) => ({
-  category,
-  services: grouped[category],
-}));
-
-res.json(categories);
-
+    
     // ✅ AUTO LOAD PROVIDER PROFILE
     const profile = await ProviderProfile.findOne({ name: provider });
 
@@ -120,19 +103,27 @@ res.json(categories);
         description: "",
       }));
 
-    // ✅ MERGE ALL
-    const allServices = [...services, ...deletedServices];
+   // ✅ MERGE ALL
+const allServices = [...services, ...deletedServices];
 
-    res.json(allServices);
+// 🔥 GROUP BY CATEGORY (for frontend)
+const grouped = {};
 
-  } catch (error) {
-    console.error("Provider API Error:", error.response?.data || error.message);
-
-    res.status(500).json({
-      message: "Failed to fetch provider services",
-    });
+allServices.forEach((service) => {
+  if (!grouped[service.category]) {
+    grouped[service.category] = [];
   }
-};
+
+  grouped[service.category].push(service);
+});
+
+// convert to array
+const categories = Object.keys(grouped).map((category) => ({
+  category,
+  services: grouped[category],
+}));
+
+res.json(categories);
 
 /*
 

@@ -274,12 +274,38 @@ export const updateService = async (req, res) => {
       return res.status(404).json({ message: "Service not found" });
     }
 
-    // 🔥 Track previous rate
+    /* =========================================================
+    🛠 FIX 1: Ensure providerProfileId exists (prevents crash)
+    ========================================================= */
+    if (!service.providerProfileId) {
+      const provider = await ProviderProfile.findOne({
+        name: service.provider,
+      });
+
+      if (provider) {
+        service.providerProfileId = provider._id;
+      } else {
+        return res.status(400).json({
+          message:
+            "Service is missing providerProfileId and cannot be auto-fixed",
+        });
+      }
+    }
+
+    /* =========================================================
+    💰 RATE TRACKING
+    ========================================================= */
     if (rate !== undefined && Number(rate) !== service.rate) {
       service.previousRate = service.rate;
       service.rate = Number(rate);
+
+      // 🔥 keep sync clean
+      service.lastSyncedRate = Number(rate);
     }
 
+    /* =========================================================
+    ⭐ DEFAULT FLAGS
+    ========================================================= */
     if (isDefault) {
       await Service.updateMany(
         { category, _id: { $ne: req.params.id } },
@@ -301,17 +327,23 @@ export const updateService = async (req, res) => {
       );
     }
 
+    /* =========================================================
+    🎁 FREE SERVICE LOGIC
+    ========================================================= */
     if (typeof isFree === "boolean") {
       service.isFree = isFree;
 
       if (isFree) {
         if (freeQuantity === undefined || cooldownHours === undefined) {
           return res.status(400).json({
-            message: "Free service requires max quantity and cooldown hours",
+            message:
+              "Free service requires max quantity and cooldown hours",
           });
         }
 
+        service.previousRate = service.rate;
         service.rate = 0;
+
         service.min = 1;
         service.max = Number(freeQuantity);
         service.freeQuantity = Number(freeQuantity);
@@ -322,12 +354,18 @@ export const updateService = async (req, res) => {
       }
     }
 
+    /* =========================================================
+    🧠 APPLY OTHER FIELDS SAFELY
+    ========================================================= */
     Object.keys(req.body).forEach((key) => {
       if (!["isFree", "freeQuantity", "cooldownHours"].includes(key)) {
         service[key] = req.body[key];
       }
     });
 
+    /* =========================================================
+    💾 SAVE (NOW SAFE)
+    ========================================================= */
     await service.save();
 
     clearCache("public_services");

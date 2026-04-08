@@ -357,11 +357,14 @@ export const updateService = async (req, res) => {
     /* =========================================================
     🧠 APPLY OTHER FIELDS SAFELY
     ========================================================= */
-    Object.keys(req.body).forEach((key) => {
-      if (!["isFree", "freeQuantity", "cooldownHours"].includes(key)) {
-        service[key] = req.body[key];
-      }
-    });
+    for (const key of Object.keys(req.body)) {
+  if (
+    req.body[key] !== undefined &&
+    !["isFree", "freeQuantity", "cooldownHours"].includes(key)
+  ) {
+    service[key] = req.body[key];
+  }
+    }
 
     /* =========================================================
     💾 SAVE (NOW SAFE)

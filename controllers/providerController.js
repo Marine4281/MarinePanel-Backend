@@ -415,6 +415,9 @@ export const importSelectedServices = async (req, res) => {
           providerApiKey: apiKey,
 
           rate: Number(service.rate),
+          lastSyncedRate: numericRate,
+          previousRate: numericRate,
+          
           min: Number(service.min),
           max: Number(service.max),
 

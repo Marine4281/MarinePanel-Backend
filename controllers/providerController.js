@@ -403,6 +403,8 @@ export const importSelectedServices = async (req, res) => {
         const newServiceId = await generateServiceId();
         const platform = extractPlatform(service.category);
 
+        const numericRate = Number(service.rate);
+
         await Service.create({
           serviceId: newServiceId,
           platform,

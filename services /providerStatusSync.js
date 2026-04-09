@@ -4,7 +4,7 @@ import Service from "../models/Service.js";
 import Wallet from "../models/Wallet.js";
 import axios from "axios";
 import { mapProviderStatus, calculateDelivered } from "../utils/providerStatusMapper.js";
-import { creditResellerCommission,reverseResellerCommission } from "../controllers/orderController.js"; // ✅ ADDED
+import { creditResellerCommission, reverseResellerCommission } from "../controllers/orderController.js";
 
 // ===============================================
 // 🔄 SYNC PROVIDER ORDER STATUSES
@@ -27,9 +27,7 @@ export const syncProviderOrders = async (io) => {
 
     for (const order of activeOrders) {
       const key = `${order.providerApiUrl}|${order.provider}`;
-
       if (!grouped[key]) grouped[key] = [];
-
       grouped[key].push(order);
     }
 
@@ -37,42 +35,64 @@ export const syncProviderOrders = async (io) => {
       const orders = grouped[groupKey];
 
       const [providerApiUrl] = groupKey.split("|");
-
       if (!providerApiUrl) continue;
 
+      // ✅ KEEPING YOUR ORIGINAL LOGIC (non-breaking)
       const service = await Service.findOne({ providerApiUrl });
 
-      if (!service?.providerApiKey) continue;
+      const apiKey = service?.providerApiKey;
+      if (!apiKey) {
+        console.log("⚠️ Missing API key for:", providerApiUrl);
+        continue;
+      }
 
       const orderIds = orders.map((o) => o.providerOrderId).join(",");
 
       try {
-        const response = await axios.post(
-          providerApiUrl,
-          {
-            key: service.providerApiKey,
-            action: "status",
-            orders: orderIds,
+        // ✅ FIXED REQUEST FORMAT (IMPORTANT)
+        const params = new URLSearchParams();
+        params.append("key", apiKey);
+        params.append("action", "status");
+        params.append("orders", orderIds);
+
+        const response = await axios.post(providerApiUrl, params, {
+          headers: {
+            "Content-Type": "application/x-www-form-urlencoded",
           },
-          { timeout: 15000 }
-        );
+          timeout: 15000,
+        });
 
         const providerData = response.data;
 
         for (const order of orders) {
-          const providerOrder = providerData[order.providerOrderId];
+          // ✅ HANDLE BOTH RESPONSE TYPES
+          let providerOrder;
 
-          if (!providerOrder || providerOrder.error) continue;
+          if (Array.isArray(providerData)) {
+            providerOrder = providerData.find(
+              (p) => String(p.order) === String(order.providerOrderId)
+            );
+          } else {
+            providerOrder = providerData?.[order.providerOrderId];
+          }
+
+          if (!providerOrder) {
+            console.log("⚠️ Missing provider order:", order.providerOrderId);
+            continue;
+          }
+
+          if (providerOrder.error) {
+            console.log("❌ Provider error:", providerOrder.error);
+            continue;
+          }
 
           // ===============================================
           // NORMALIZE PROVIDER STATUS
           // ===============================================
           const rawStatus = providerOrder.status || "";
 
-          const normalizedStatus = rawStatus
-            .toLowerCase()
-            .replace(/\s+/g, "")
-            .trim();
+          // ✅ SAFER NORMALIZATION (non-breaking)
+          const normalizedStatus = rawStatus.toLowerCase().trim();
 
           let mappedStatus = mapProviderStatus(normalizedStatus);
 
@@ -101,8 +121,7 @@ export const syncProviderOrders = async (io) => {
           }
 
           if (updated) {
-            order.providerStatus = providerOrder.status;
-            String(providerOrder.status).toLowerCase();
+            order.providerStatus = rawStatus;
 
             // ===============================================
             // 💰 REFUND LOGIC (SAFE VERSION)
@@ -136,7 +155,6 @@ export const syncProviderOrders = async (io) => {
                 order.refundProcessed = true;
 
                 await wallet.save();
-                // 💸 REVERSE RESELLER COMMISSION
                 await reverseResellerCommission(order);
               }
 
@@ -148,7 +166,6 @@ export const syncProviderOrders = async (io) => {
                 const remaining = Number(providerOrder.remains) || 0;
 
                 if (remaining > 0) {
-
                   let refundAmount =
                     (remaining / order.quantity) * order.charge;
 
@@ -173,7 +190,7 @@ export const syncProviderOrders = async (io) => {
             await order.save();
 
             // ===============================================
-            // 💰 CREDIT RESELLER (🔥 FIXED HERE)
+            // 💰 CREDIT RESELLER
             // ===============================================
             if (order.status === "completed") {
               await creditResellerCommission(order);
@@ -210,9 +227,7 @@ export const startProviderStatusSync = (io) => {
     await syncProviderOrders(io);
   };
 
-  // run immediately
   runSync();
 
-  // run every 45 seconds
   setInterval(runSync, 45000);
 };

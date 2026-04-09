@@ -1,10 +1,11 @@
-//services/providerStatusSync.js
+// services/providerStatusSync.js
 import Order from "../models/Order.js";
 import Service from "../models/Service.js";
 import Wallet from "../models/Wallet.js";
+import ProviderProfile from "../models/ProviderProfile.js"; // ✅ ADDED
 import axios from "axios";
 import { mapProviderStatus, calculateDelivered } from "../utils/providerStatusMapper.js";
-import { creditResellerCommission,reverseResellerCommission } from "../controllers/orderController.js"; // ✅ ADDED
+import { creditResellerCommission, reverseResellerCommission } from "../controllers/orderController.js";
 
 // ===============================================
 // 🔄 SYNC PROVIDER ORDER STATUSES
@@ -25,32 +26,33 @@ export const syncProviderOrders = async (io) => {
 
     const grouped = {};
 
+    // ✅ GROUP BY PROVIDER ONLY (FIXED)
     for (const order of activeOrders) {
-      const key = `${order.providerApiUrl}|${order.provider}`;
+      const key = order.provider;
 
       if (!grouped[key]) grouped[key] = [];
-
       grouped[key].push(order);
     }
 
-    for (const groupKey of Object.keys(grouped)) {
-      const orders = grouped[groupKey];
+    for (const providerName of Object.keys(grouped)) {
+      const orders = grouped[providerName];
 
-      const [providerApiUrl] = groupKey.split("|");
+      // ✅ GET PROVIDER PROFILE (SINGLE SOURCE OF TRUTH)
+      const profile = await ProviderProfile.findOne({ name: providerName });
 
-      if (!providerApiUrl) continue;
-
-      const service = await Service.findOne({ providerApiUrl });
-
-      if (!service?.providerApiKey) continue;
+      if (!profile?.apiUrl || !profile?.apiKey) {
+        console.warn("⚠ Missing provider profile:", providerName);
+        continue;
+      }
 
       const orderIds = orders.map((o) => o.providerOrderId).join(",");
 
       try {
+        // ✅ USE PROFILE INSTEAD OF SERVICE
         const response = await axios.post(
-          providerApiUrl,
+          profile.apiUrl,
           {
-            key: service.providerApiKey,
+            key: profile.apiKey,
             action: "status",
             orders: orderIds,
           },
@@ -136,7 +138,6 @@ export const syncProviderOrders = async (io) => {
                 order.refundProcessed = true;
 
                 await wallet.save();
-                // 💸 REVERSE RESELLER COMMISSION
                 await reverseResellerCommission(order);
               }
 
@@ -173,7 +174,7 @@ export const syncProviderOrders = async (io) => {
             await order.save();
 
             // ===============================================
-            // 💰 CREDIT RESELLER (🔥 FIXED HERE)
+            // 💰 CREDIT RESELLER
             // ===============================================
             if (order.status === "completed") {
               await creditResellerCommission(order);
@@ -191,7 +192,10 @@ export const syncProviderOrders = async (io) => {
           }
         }
       } catch (err) {
-        console.error("❌ Provider status fetch error:", err.message);
+        console.error(
+          "❌ Provider status fetch error:",
+          err.response?.data || err.message // ✅ BETTER DEBUG
+        );
       }
     }
   } catch (error) {
@@ -210,9 +214,6 @@ export const startProviderStatusSync = (io) => {
     await syncProviderOrders(io);
   };
 
-  // run immediately
   runSync();
-
-  // run every 45 seconds
   setInterval(runSync, 45000);
 };

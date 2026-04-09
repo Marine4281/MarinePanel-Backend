@@ -7,6 +7,7 @@ import Settings from "../models/Settings.js";
 import Service from "../models/Service.js";
 import axios from "axios";
 import { v4 as uuidv4 } from "uuid";
+import ProviderProfile from "../models/ProviderProfile.js";
 
 // ================= HELPER =================
 const calculateBalance = (transactions = []) =>
@@ -253,38 +254,49 @@ export const createOrder = async (req, res) => {
     /* ================= PROVIDER ================= */
 
     try {
-      const response = await axios.post(
-        serviceData.providerApiUrl,
-        {
-          key: serviceData.providerApiKey,
-          action: "add",
-          service: serviceData.providerServiceId,
-          link,
-          quantity: qty,
-        },
-        { timeout: 15000 }
-      );
+  // 🔥 GET FRESH PROVIDER DETAILS
+  const providerProfile = await ProviderProfile.findById(
+    serviceData.providerProfileId
+  );
 
-      if (response?.data?.order) {
-        order.providerOrderId = response.data.order;
-        order.providerStatus = "processing";
-      }
+  if (!providerProfile) {
+    return res.status(400).json({
+      message: "Provider profile not found",
+    });
+  }
 
-      order.providerResponse = response.data;
-      await order.save();
+  const response = await axios.post(
+    providerProfile.apiUrl, // ✅ ALWAYS CURRENT
+    {
+      key: providerProfile.apiKey, // ✅ ALWAYS CURRENT
+      action: "add",
+      service: serviceData.providerServiceId,
+      link,
+      quantity: qty,
+    },
+    { timeout: 15000 }
+  );
 
-    } catch (err) {
-      order.status = "failed";
-      order.providerStatus = "failed";
-      order.errorMessage = err.response?.data || err.message;
+  if (response?.data?.order) {
+    order.providerOrderId = response.data.order;
+    order.providerStatus = "processing";
+  }
 
-      await order.save();
+  order.providerResponse = response.data;
+  await order.save();
 
-      return res.status(500).json({
-        message: "Provider failed",
-      });
-    }
+} catch (err) {
+  order.status = "failed";
+  order.providerStatus = "failed";
+  order.errorMessage = err.response?.data || err.message;
 
+  await order.save();
+
+  return res.status(500).json({
+    message: "Provider failed",
+    error: err.response?.data || err.message, // 🔥 ADD THIS FOR DEBUG
+  });
+}
     /* ================= WALLET DEDUCTION ================= */
 
     if (!isFreeOrder) {

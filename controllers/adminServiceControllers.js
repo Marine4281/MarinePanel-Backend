@@ -46,21 +46,22 @@ export const getAllServices = async (req, res) => {
   }
 };
 
-/* =========================================================
-IMPORT SERVICE FROM PROVIDER (UPDATED 🔥)
-========================================================= */
+// =========================================================
+// IMPORT SERVICE FROM PROVIDER (FIXED 🔥)
+// =========================================================
 export const importService = async (req, res) => {
   try {
     const {
       name,
       category,
       description,
-      rate,
+      rate, // provider rate coming from frontend
       min,
       max,
       providerServiceId,
       providerProfileId,
       platform,
+      markupPercentage, // optional: if you want to auto-increase your price
     } = req.body;
 
     if (!name || !category || !providerServiceId || !providerProfileId) {
@@ -69,16 +70,13 @@ export const importService = async (req, res) => {
       });
     }
 
-    // Get provider info
+    // Fetch provider info
     const providerProfile = await ProviderProfile.findById(providerProfileId);
-
     if (!providerProfile) {
-      return res.status(404).json({
-        message: "Provider not found",
-      });
+      return res.status(404).json({ message: "Provider not found" });
     }
 
-    // 🔥 Check duplicate (NEW LOGIC)
+    // Check for duplicate
     const existing = await Service.findOne({
       providerServiceId,
       providerProfileId,
@@ -92,7 +90,16 @@ export const importService = async (req, res) => {
 
     const serviceId = await getNextServiceId();
 
-    const numericRate = Number(rate) || 0;
+    // -------------------------------
+    // 🔹 Separate provider vs your rate
+    // -------------------------------
+    const providerRate = Number(rate) || 0; 
+
+    // Optionally apply markup for your selling price
+    let yourRate = providerRate;
+    if (markupPercentage) {
+      yourRate = providerRate * (1 + Number(markupPercentage) / 100);
+    }
 
     const service = await Service.create({
       serviceId,
@@ -100,11 +107,15 @@ export const importService = async (req, res) => {
       category,
       platform: platform || "General",
       description: description || "",
-      rate: numericRate,
 
-      // 🔥 sync tracking
-      lastSyncedRate: numericRate,
-      previousRate: numericRate,
+      // 💰 Your selling price
+      rate: yourRate,
+
+      // 🔹 Track provider rate separately
+      lastSyncedRate: providerRate,
+
+      // 🔹 Previous rate (your last rate before changes)
+      previousRate: yourRate,
 
       min: Number(min) || 1,
       max: Number(max) || 100000,
@@ -131,7 +142,6 @@ export const importService = async (req, res) => {
       message: "Service imported successfully",
       service,
     });
-
   } catch (err) {
     console.error("IMPORT SERVICE ERROR:", err);
     res.status(500).json({

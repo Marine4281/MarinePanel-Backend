@@ -16,8 +16,9 @@ const orderSchema = new mongoose.Schema(
     //Custom OrderId
     customOrderId: {
        type: Number,
-       unique: true
-    }
+       unique: true,
+       index: true,
+},
 
     /* ===============================
        👤 USER

@@ -3,18 +3,17 @@
 import Counter from "../models/Counter.js";
 
 /**
- * Generate next custom Order ID (1001, 1002, 1003...)
+ * Generate next Order ID (1001, 1002, 1003...)
  */
 export const getNextOrderId = async () => {
   try {
     const counter = await Counter.findOneAndUpdate(
-      { name: "orderId" },           // unique counter name
-      { $inc: { value: 1 } },       // increment by 1
-      { new: true, upsert: true }   // create if not exists
+      { id: "orderId" },          // 🔑 match your field name
+      { $inc: { seq: 1 } },       // 🔑 increment seq
+      { new: true, upsert: true } // create if not exists
     );
 
-    // Start from 1001
-    return 1000 + counter.value;
+    return counter.seq; // already starts from 1001
 
   } catch (error) {
     console.error("Error generating Order ID:", error);

@@ -8,12 +8,13 @@ import Counter from "../models/Counter.js";
 export const getNextOrderId = async () => {
   try {
     const counter = await Counter.findOneAndUpdate(
-      { id: "orderId" },          // 🔑 match your field name
-      { $inc: { seq: 1 } },       // 🔑 increment seq
-      { new: true, upsert: true } // create if not exists
+      { id: "orderId" },
+      { $inc: { seq: 1 } },
+      { new: true, upsert: true }
     );
 
-    return counter.seq; // already starts from 1001
+    // 🔥 FIX: start from 1001
+    return 1000 + counter.seq;
 
   } catch (error) {
     console.error("Error generating Order ID:", error);

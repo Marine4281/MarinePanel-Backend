@@ -10,6 +10,9 @@ importSelectedServices,
 importCategoryServices,
 } from "../controllers/providerController.js";
 
+import { updateProviderProfile } from "../controllers/ProviderProfileController.js";
+
+
 const router = express.Router();
 
 /*
@@ -53,5 +56,9 @@ router.post("/import-selected", importSelectedServices);
 
 /* Import services by category */
 router.post("/import-category", importCategoryServices);
+
+//Update provider
+router.put("/profiles/:id", updateProviderProfile);
+
 
 export default router;

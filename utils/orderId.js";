@@ -1,0 +1,9 @@
+export const getNextOrderId = async () => {
+  const counter = await Counter.findOneAndUpdate(
+    { name: "orderId" },
+    { $inc: { value: 1 } },
+    { new: true, upsert: true }
+  );
+
+  return 1000 + counter.value; // starts from 1001
+};

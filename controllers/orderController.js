@@ -8,6 +8,7 @@ import Service from "../models/Service.js";
 import axios from "axios";
 import { v4 as uuidv4 } from "uuid";
 import ProviderProfile from "../models/ProviderProfile.js";
+import { getNextOrderId } from "../utils/orderId.js";
 
 // ================= HELPER =================
 const calculateBalance = (transactions = []) =>
@@ -34,8 +35,8 @@ export const creditResellerCommission = async (order) => {
       type: "Commission",
       amount: Number(order.resellerCommission),
       status: "Completed",
-      note: `Commission - ${order._id}`,
-      reference: order._id,
+      note: `Commission - ${order.customOrderId}`,
+      reference: order.customOrderId,
       createdAt: new Date(),
     });
 
@@ -70,8 +71,8 @@ export const reverseResellerCommission = async (order) => {
       type: "Commission Reversal",
       amount: -Number(order.resellerCommission),
       status: "Completed",
-      note: `Reversal - ${order._id}`,
-      reference: order._id,
+      note: `Reversal - ${order.customOrderId}`,
+      reference: order.customOrderId,
       createdAt: new Date(),
     });
 
@@ -232,8 +233,11 @@ export const createOrder = async (req, res) => {
 
     /* ================= CREATE ORDER ================= */
 
+    const customOrderId = await getNextOrderId();
+
     const order = await Order.create({
-      orderId: "ORD-" + uuidv4().slice(0, 8),
+      orderId: "ORD-" + uuidv4().slice(0, 8), // keep internal
+      customOrderId, // ✅ ADD THIS
       userId: user._id,
       resellerOwner: user.resellerOwner || null,
       resellerCommission,
@@ -304,8 +308,8 @@ export const createOrder = async (req, res) => {
     type: "Order",
     amount: -Number(finalCharge),
     status: "Completed",
-    note: `Order ${order._id}`, // ✅ better than _id
-    reference: order._id,
+    note: `Order ${order.customOrderId}`, // ✅ better than _id
+    reference: order.customOrderId,
     createdAt: new Date(),
   });
 

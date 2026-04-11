@@ -12,28 +12,66 @@ import {
 ====================================================== */
 export const getUserOrders = async (req, res) => {
   try {
-    const { search = "", page = 1, limit = 10 } = req.query;
+    const {
+      search = "",
+      status,
+      fromDate,
+      toDate,
+      page = 1,
+      limit = 10,
+    } = req.query;
 
     const pageNum = Number(page);
     const limitNum = Number(limit);
 
     let query = {};
 
+    /* ===============================
+       STATUS FILTER
+    =============================== */
+    if (status) {
+      query.status = status;
+    }
+
+    /* ===============================
+       DATE FILTER
+    =============================== */
+    if (fromDate || toDate) {
+      query.createdAt = {};
+      if (fromDate) query.createdAt.$gte = new Date(fromDate);
+      if (toDate) query.createdAt.$lte = new Date(toDate);
+    }
+
+    /* ===============================
+       SEARCH
+    =============================== */
+    let userIds = [];
+
     if (search) {
       const users = await User.find({
         email: { $regex: search, $options: "i" },
       }).select("_id");
 
-      const userIds = users.map((u) => u._id);
+      userIds = users.map((u) => u._id);
 
-      query = {
-        $or: [
-          { orderId: { $regex: search, $options: "i" } },
-          { userId: { $in: userIds } },
-        ],
-      };
+      const regex = new RegExp(search, "i");
+
+      query.$or = [
+        { orderId: regex },
+        { customOrderId: regex }, // ✅ FIXED
+        { service: regex },       // ✅ ADDED
+        { provider: regex },      // ✅ ADDED
+        { link: regex },          // ✅ ADDED
+        { userId: { $in: userIds } },
+
+        // ✅ RATE SEARCH (only if numeric)
+        ...(!isNaN(search) ? [{ rate: Number(search) }] : []),
+      ];
     }
 
+    /* ===============================
+       FETCH
+    =============================== */
     const total = await Order.countDocuments(query);
 
     const orders = await Order.find(query)
@@ -323,30 +361,51 @@ export const refundOrder = async (req, res) => {
 ===================================================== */
 export const getOrderStats = async (req, res) => {
   try {
+    const { search, status, fromDate, toDate } = req.query;
+
+    const match = {};
+
+    /* STATUS */
+    if (status) match.status = status;
+
+    /* DATE */
+    if (fromDate || toDate) {
+      match.createdAt = {};
+      if (fromDate) match.createdAt.$gte = new Date(fromDate);
+      if (toDate) match.createdAt.$lte = new Date(toDate);
+    }
+
+    /* SEARCH */
+    if (search) {
+      const regex = new RegExp(search, "i");
+
+      const users = await User.find({
+        email: regex,
+      }).select("_id");
+
+      const userIds = users.map((u) => u._id);
+
+      match.$or = [
+        { orderId: regex },
+        { customOrderId: regex },
+        { service: regex },
+        { provider: regex },
+        { link: regex },
+        { userId: { $in: userIds } },
+        ...(!isNaN(search) ? [{ rate: Number(search) }] : []),
+      ];
+    }
+
     const stats = await Order.aggregate([
+      { $match: match },
+
       {
         $facet: {
           total: [{ $count: "count" }],
-
-          pending: [
-            { $match: { status: "pending" } },
-            { $count: "count" },
-          ],
-
-          processing: [
-            { $match: { status: "processing" } },
-            { $count: "count" },
-          ],
-
-          completed: [
-            { $match: { status: "completed" } },
-            { $count: "count" },
-          ],
-
-          failed: [
-            { $match: { status: "failed" } },
-            { $count: "count" },
-          ],
+          pending: [{ $match: { status: "pending" } }, { $count: "count" }],
+          processing: [{ $match: { status: "processing" } }, { $count: "count" }],
+          completed: [{ $match: { status: "completed" } }, { $count: "count" }],
+          failed: [{ $match: { status: "failed" } }, { $count: "count" }],
         },
       },
     ]);

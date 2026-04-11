@@ -317,3 +317,51 @@ export const refundOrder = async (req, res) => {
     res.status(500).json({ message: "Refund failed" });
   }
 };
+
+/* =====================================================
+   GET GLOBAL ORDER STATS
+===================================================== */
+export const getOrderStats = async (req, res) => {
+  try {
+    const stats = await Order.aggregate([
+      {
+        $facet: {
+          total: [{ $count: "count" }],
+
+          pending: [
+            { $match: { status: "pending" } },
+            { $count: "count" },
+          ],
+
+          processing: [
+            { $match: { status: "processing" } },
+            { $count: "count" },
+          ],
+
+          completed: [
+            { $match: { status: "completed" } },
+            { $count: "count" },
+          ],
+
+          failed: [
+            { $match: { status: "failed" } },
+            { $count: "count" },
+          ],
+        },
+      },
+    ]);
+
+    const result = stats[0];
+
+    res.json({
+      total: result.total[0]?.count || 0,
+      pending: result.pending[0]?.count || 0,
+      processing: result.processing[0]?.count || 0,
+      completed: result.completed[0]?.count || 0,
+      failed: result.failed[0]?.count || 0,
+    });
+  } catch (err) {
+    console.error("Stats error:", err);
+    res.status(500).json({ message: "Failed to fetch stats" });
+  }
+};

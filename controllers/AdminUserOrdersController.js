@@ -21,8 +21,8 @@ export const getUserOrders = async (req, res) => {
       limit = 10,
     } = req.query;
 
-    const pageNum = Number(page);
-    const limitNum = Number(limit);
+    const pageNum = Math.max(1, Number(page));
+    const limitNum = Math.max(1, Number(limit));
 
     let query = {};
 
@@ -38,52 +38,71 @@ export const getUserOrders = async (req, res) => {
     =============================== */
     if (fromDate || toDate) {
       query.createdAt = {};
-      if (fromDate) query.createdAt.$gte = new Date(fromDate);
-      if (toDate) query.createdAt.$lte = new Date(toDate);
+
+      if (fromDate) {
+        query.createdAt.$gte = new Date(fromDate);
+      }
+
+      if (toDate) {
+        const end = new Date(toDate);
+        end.setHours(23, 59, 59, 999); // ✅ full day
+        query.createdAt.$lte = end;
+      }
     }
 
     /* ===============================
-       SEARCH
+       SEARCH (SAFE)
     =============================== */
-    let userIds = [];
+    if (search && search.trim() !== "") {
+      const cleanSearch = search.replace("#", "").trim();
 
-    if (search) {
+      // 🔍 Find users by email
       const users = await User.find({
-        email: { $regex: search, $options: "i" },
+        email: { $regex: cleanSearch, $options: "i" },
       }).select("_id");
 
-      userIds = users.map((u) => u._id);
+      const userIds = users.map((u) => u._id);
 
-      const regex = new RegExp(search, "i");
-
-      query.$or = [
-        { orderId: regex },
-        { customOrderId: regex }, // ✅ FIXED
-        { service: regex },       // ✅ ADDED
-        { provider: regex },      // ✅ ADDED
-        { link: regex },          // ✅ ADDED
-        { userId: { $in: userIds } },
-
-        // ✅ RATE SEARCH (only if numeric)
-        ...(!isNaN(search) ? [{ rate: Number(search) }] : []),
+      const orConditions = [
+        { orderId: { $regex: cleanSearch, $options: "i" } }, // string
+        { service: { $regex: cleanSearch, $options: "i" } },
+        { provider: { $regex: cleanSearch, $options: "i" } },
+        { link: { $regex: cleanSearch, $options: "i" } },
       ];
+
+      // ✅ numeric-safe search
+      if (!isNaN(cleanSearch)) {
+        orConditions.push({ customOrderId: Number(cleanSearch) }); // FIXED
+        orConditions.push({ rate: Number(cleanSearch) });
+      }
+
+      // ✅ user email match
+      if (userIds.length > 0) {
+        orConditions.push({ userId: { $in: userIds } });
+      }
+
+      query.$or = orConditions;
     }
 
     /* ===============================
        FETCH
     =============================== */
-    const total = await Order.countDocuments(query);
+    const [orders, total] = await Promise.all([
+      Order.find(query)
+        .populate("userId", "email balance")
+        .sort({ createdAt: -1 })
+        .skip((pageNum - 1) * limitNum)
+        .limit(limitNum)
+        .lean(),
 
-    const orders = await Order.find(query)
-      .populate("userId", "email balance")
-      .sort({ createdAt: -1 })
-      .skip((pageNum - 1) * limitNum)
-      .limit(limitNum);
+      Order.countDocuments(query),
+    ]);
 
     res.json({
       orders,
       totalPages: Math.ceil(total / limitNum),
     });
+
   } catch (error) {
     console.error("Get Orders Error:", error);
     res.status(500).json({ message: "Failed to fetch orders" });

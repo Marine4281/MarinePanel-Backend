@@ -361,16 +361,21 @@ export const getMyOrders = async (req, res) => {
       userId: req.user._id, // 🔒 ONLY USER'S ORDERS
     };
 
-    /* 🔍 SEARCH */
-    if (search) {
-  const cleanSearch = search.replace("#", "").trim(); // ✅ FIX
-  const regex = new RegExp(cleanSearch, "i");
+    /* 🔍 SEARCH (SAFE) */
+    if (search && search.trim() !== "") {
+      const cleanSearch = search.replace("#", "").trim();
 
-  query.$or = [
-    { customOrderId: regex },
-    { service: regex },
-    { link: regex },
-  ];
+      const orConditions = [
+        { service: { $regex: cleanSearch, $options: "i" } },
+        { link: { $regex: cleanSearch, $options: "i" } },
+      ];
+
+      // 👉 ONLY match ID as number (no regex!)
+      if (!isNaN(cleanSearch)) {
+        orConditions.push({ customOrderId: Number(cleanSearch) });
+      }
+
+      query.$or = orConditions;
     }
 
     /* 📌 STATUS */
@@ -393,9 +398,9 @@ export const getMyOrders = async (req, res) => {
       }
     }
 
-    const pageNum = Number(page);
-    const limitNum = Number(limit);
-
+    /* 📄 PAGINATION */
+    const pageNum = Math.max(1, Number(page));
+    const limitNum = Math.max(1, Number(limit));
     const skip = (pageNum - 1) * limitNum;
 
     const [orders, total] = await Promise.all([

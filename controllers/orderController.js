@@ -350,7 +350,7 @@ export const getMyOrders = async (req, res) => {
   try {
     const {
       search = "",
-      status = "",
+      status,
       fromDate,
       toDate,
       page = 1,
@@ -358,15 +358,17 @@ export const getMyOrders = async (req, res) => {
     } = req.query;
 
     const query = {
-      userId: req.user._id,
+      userId: req.user._id, // 🔒 ONLY USER'S ORDERS
     };
 
     /* 🔍 SEARCH */
     if (search) {
+      const regex = new RegExp(search, "i");
+
       query.$or = [
-        { service: { $regex: search, $options: "i" } },
-        { customOrderId: { $regex: search, $options: "i" } },
-        { link: { $regex: search, $options: "i" } },
+        { customOrderId: regex },
+        { service: regex },
+        { link: regex },
       ];
     }
 
@@ -375,7 +377,7 @@ export const getMyOrders = async (req, res) => {
       query.status = status;
     }
 
-    /* 📅 DATE FILTER */
+    /* 📅 DATE */
     if (fromDate || toDate) {
       query.createdAt = {};
 
@@ -390,13 +392,16 @@ export const getMyOrders = async (req, res) => {
       }
     }
 
-    const skip = (Number(page) - 1) * Number(limit);
+    const pageNum = Number(page);
+    const limitNum = Number(limit);
+
+    const skip = (pageNum - 1) * limitNum;
 
     const [orders, total] = await Promise.all([
       Order.find(query)
         .sort({ createdAt: -1 })
         .skip(skip)
-        .limit(Number(limit))
+        .limit(limitNum)
         .lean(),
 
       Order.countDocuments(query),
@@ -404,7 +409,7 @@ export const getMyOrders = async (req, res) => {
 
     res.json({
       orders,
-      totalPages: Math.ceil(total / limit),
+      totalPages: Math.ceil(total / limitNum),
     });
 
   } catch (error) {
@@ -474,5 +479,67 @@ export const previewOrder = async (req, res) => {
 
   } catch (error) {
     res.status(500).json({ message: "Preview failed" });
+  }
+};
+
+//Stats
+export const getMyOrdersStats = async (req, res) => {
+  try {
+    const { search, status, fromDate, toDate } = req.query;
+
+    const match = {
+      userId: req.user._id, // 🔒 ONLY USER DATA
+    };
+
+    /* STATUS */
+    if (status) match.status = status;
+
+    /* DATE */
+    if (fromDate || toDate) {
+      match.createdAt = {};
+      if (fromDate) match.createdAt.$gte = new Date(fromDate);
+      if (toDate) match.createdAt.$lte = new Date(toDate);
+    }
+
+    /* SEARCH */
+    if (search) {
+      const regex = new RegExp(search, "i");
+
+      match.$or = [
+        { customOrderId: regex },
+        { service: regex },
+        { link: regex },
+      ];
+    }
+
+    const stats = await Order.aggregate([
+      { $match: match },
+
+      {
+        $facet: {
+          total: [{ $count: "count" }],
+          pending: [{ $match: { status: "pending" } }, { $count: "count" }],
+          processing: [{ $match: { status: "processing" } }, { $count: "count" }],
+          completed: [{ $match: { status: "completed" } }, { $count: "count" }],
+          partial: [{ $match: { status: "partial" } }, { $count: "count" }],
+          failed: [{ $match: { status: "failed" } }, { $count: "count" }],
+        },
+      },
+    ]);
+
+    const result = stats[0];
+
+    res.json({
+      total: result.total[0]?.count || 0,
+      pending: result.pending[0]?.count || 0,
+      processing: result.processing[0]?.count || 0,
+      completed: result.completed[0]?.count || 0,
+      partial: result.partial[0]?.count || 0,
+      failed: result.failed[0]?.count || 0,
+    });
+
+  } catch (err) {
+    console.error("USER STATS ERROR:", err);
+    res.status(500).json({ message: "Failed to fetch stats" });
   }
 };

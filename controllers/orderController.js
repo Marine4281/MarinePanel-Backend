@@ -363,13 +363,14 @@ export const getMyOrders = async (req, res) => {
 
     /* 🔍 SEARCH */
     if (search) {
-      const regex = new RegExp(search, "i");
+  const cleanSearch = search.replace("#", "").trim(); // ✅ FIX
+  const regex = new RegExp(cleanSearch, "i");
 
-      query.$or = [
-        { customOrderId: regex },
-        { service: regex },
-        { link: regex },
-      ];
+  query.$or = [
+    { customOrderId: regex },
+    { service: regex },
+    { link: regex },
+  ];
     }
 
     /* 📌 STATUS */

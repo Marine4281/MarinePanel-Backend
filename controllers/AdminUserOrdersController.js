@@ -268,6 +268,7 @@ export const updateOrderProgress = async (req, res) => {
    REFUND ORDER (FULL / PARTIAL / CUSTOM)
 ====================================================== */
 export const refundOrder = async (req, res) => {
+export const refundOrder = async (req, res) => {
   try {
     const { type, customAmount } = req.body;
 
@@ -289,13 +290,44 @@ export const refundOrder = async (req, res) => {
       });
     }
 
+    // 🔒 NEW: ensure order was actually charged
+    if (!order.isCharged) {
+      return res.status(400).json({
+        message: "This order was never charged",
+      });
+    }
+
     let wallet = await Wallet.findOne({ user: order.userId._id });
 
     if (!wallet) {
-      wallet = await Wallet.create({
-        user: order.userId._id,
-        balance: 0,
-        transactions: [],
+      return res.status(400).json({
+        message: "Wallet not found for user",
+      });
+    }
+
+    // 🔒 NEW: check deduction exists
+    const deductionExists = wallet.transactions.find(
+      (t) =>
+        t.reference?.toString() === order._id.toString() &&
+        t.type === "Order"
+    );
+
+    if (!deductionExists) {
+      return res.status(400).json({
+        message: "No payment found for this order",
+      });
+    }
+
+    // 🔒 NEW: prevent duplicate refund
+    const alreadyRefunded = wallet.transactions.find(
+      (t) =>
+        t.reference?.toString() === order._id.toString() &&
+        t.type === "Refund"
+    );
+
+    if (alreadyRefunded) {
+      return res.status(400).json({
+        message: "Refund already exists",
       });
     }
 
@@ -330,14 +362,21 @@ export const refundOrder = async (req, res) => {
 
     refundAmount = Number(refundAmount.toFixed(4));
 
+    // ✅ FIXED: add reference + safe balance calc
     wallet.transactions.push({
       type: "Refund",
       amount: refundAmount,
       status: "Completed",
       note: `Refund for Order ${order.orderId}`,
+      reference: order._id, // 🔥 important
+      createdAt: new Date(),
     });
 
-    wallet.balance += refundAmount;
+    // ✅ FIXED: always recalc balance (no += bugs)
+    wallet.balance = wallet.transactions.reduce(
+      (acc, t) => acc + (t.amount || 0),
+      0
+    );
 
     await wallet.save();
 
@@ -346,6 +385,7 @@ export const refundOrder = async (req, res) => {
 
     await order.save();
 
+    
     // 💸 REVERSE RESELLER COMMISSION (CRITICAL FIX)
     await reverseResellerCommission(order);
 

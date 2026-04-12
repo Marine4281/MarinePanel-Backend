@@ -348,12 +348,67 @@ GET MY ORDERS
 ========================================================= */
 export const getMyOrders = async (req, res) => {
   try {
-    const orders = await Order.find({ userId: req.user._id })
-      .sort({ createdAt: -1 })
-      .lean();
+    const {
+      search = "",
+      status = "",
+      fromDate,
+      toDate,
+      page = 1,
+      limit = 10,
+    } = req.query;
 
-    res.json(orders);
+    const query = {
+      userId: req.user._id,
+    };
+
+    /* 🔍 SEARCH */
+    if (search) {
+      query.$or = [
+        { service: { $regex: search, $options: "i" } },
+        { customOrderId: { $regex: search, $options: "i" } },
+        { link: { $regex: search, $options: "i" } },
+      ];
+    }
+
+    /* 📌 STATUS */
+    if (status) {
+      query.status = status;
+    }
+
+    /* 📅 DATE FILTER */
+    if (fromDate || toDate) {
+      query.createdAt = {};
+
+      if (fromDate) {
+        query.createdAt.$gte = new Date(fromDate);
+      }
+
+      if (toDate) {
+        const end = new Date(toDate);
+        end.setHours(23, 59, 59, 999);
+        query.createdAt.$lte = end;
+      }
+    }
+
+    const skip = (Number(page) - 1) * Number(limit);
+
+    const [orders, total] = await Promise.all([
+      Order.find(query)
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(Number(limit))
+        .lean(),
+
+      Order.countDocuments(query),
+    ]);
+
+    res.json({
+      orders,
+      totalPages: Math.ceil(total / limit),
+    });
+
   } catch (error) {
+    console.error("GET MY ORDERS ERROR:", error);
     res.status(500).json({ message: "Failed to fetch orders" });
   }
 };

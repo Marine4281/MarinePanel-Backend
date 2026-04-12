@@ -405,6 +405,7 @@ export const getOrderStats = async (req, res) => {
           pending: [{ $match: { status: "pending" } }, { $count: "count" }],
           processing: [{ $match: { status: "processing" } }, { $count: "count" }],
           completed: [{ $match: { status: "completed" } }, { $count: "count" }],
+          partial: [{ $match: { status: "partial" } }, { $count: "count" }
           failed: [{ $match: { status: "failed" } }, { $count: "count" }],
         },
       },
@@ -417,6 +418,7 @@ export const getOrderStats = async (req, res) => {
       pending: result.pending[0]?.count || 0,
       processing: result.processing[0]?.count || 0,
       completed: result.completed[0]?.count || 0,
+      partial: result.partial[0]?.count || 0,
       failed: result.failed[0]?.count || 0,
     });
   } catch (err) {

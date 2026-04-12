@@ -14,7 +14,7 @@ export const getNextOrderId = async () => {
     );
 
     // 🔥 FIX: start from 1001
-    return 1000 + counter.seq;
+    return 1206 + counter.seq;
 
   } catch (error) {
     console.error("Error generating Order ID:", error);

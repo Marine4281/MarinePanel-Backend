@@ -405,7 +405,7 @@ export const getOrderStats = async (req, res) => {
           pending: [{ $match: { status: "pending" } }, { $count: "count" }],
           processing: [{ $match: { status: "processing" } }, { $count: "count" }],
           completed: [{ $match: { status: "completed" } }, { $count: "count" }],
-          partial: [{ $match: { status: "partial" } }, { $count: "count" },
+          partial: [{ $match: { status: "partial" } }, { $count: "count" }],
           failed: [{ $match: { status: "failed" } }, { $count: "count" }],
         },
       },

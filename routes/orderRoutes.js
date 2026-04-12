@@ -6,7 +6,7 @@ const router = express.Router();
 
 router.post("/", protect, createOrder);
 router.get("/my-orders", protect, getMyOrders);
-router.get("/orders/my-orders/stats", protect, getMyOrdersStats);
+router.get("/my-orders/stats", protect, getMyOrdersStats);
 router.post("/preview", protect, previewOrder); // <-- new endpoint
 
 export default router;

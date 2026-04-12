@@ -104,10 +104,15 @@ export const createOrder = async (req, res) => {
     const user = await User.findById(req.user._id);
     if (!user) return res.status(404).json({ message: "User not found" });
 
-    /* ================= WALLET ================= */
+    if (user.isBlocked) {
+      return res.status(403).json({ message: "Account is blocked" });
+    }
+
+    if (user.isFrozen) {
+      return res.status(403).json({ message: "Account is frozen" });
+    }
 
     let wallet = await Wallet.findOne({ user: user._id });
-
     if (!wallet) {
       wallet = await Wallet.create({
         user: user._id,
@@ -115,22 +120,6 @@ export const createOrder = async (req, res) => {
         transactions: [],
       });
     }
-
-    /* ================= 🔒 BLOCK / FREEZE CHECK ================= */
-
-    if (user.isBlocked) {
-      return res.status(403).json({
-        message: "Account is blocked. Contact support.",
-      });
-    }
-
-    if (user.isFrozen) {
-      return res.status(403).json({
-        message: "Account is frozen. You cannot place orders.",
-      });
-      }
-
-    /* ================= SERVICE ================= */
 
     const serviceData = await Service.findOne({
       name: service,
@@ -143,6 +132,18 @@ export const createOrder = async (req, res) => {
 
     if (serviceData.visible === false) {
       return res.status(403).json({ message: "Service not available" });
+    }
+
+    /* ================= 🔥 VALIDATE PROVIDER FIRST ================= */
+
+    const providerProfile = await ProviderProfile.findById(
+      serviceData.providerProfileId
+    );
+
+    if (!providerProfile) {
+      return res.status(400).json({
+        message: "Provider profile not found",
+      });
     }
 
     /* ================= INIT ================= */
@@ -159,10 +160,6 @@ export const createOrder = async (req, res) => {
 
       const maxPerClaim = Number(serviceData.freeQuantity || 0);
       const cooldown = Number(serviceData.cooldownHours || 0);
-
-      if (!maxPerClaim) {
-        return res.status(400).json({ message: "Free service not configured" });
-      }
 
       if (qty > maxPerClaim) {
         return res.status(400).json({
@@ -188,8 +185,6 @@ export const createOrder = async (req, res) => {
           }
         }
       }
-
-      finalCharge = 0;
     }
 
     /* ================= PAID ================= */
@@ -202,7 +197,6 @@ export const createOrder = async (req, res) => {
       }
 
       const providerRate = Number(serviceData.rate || 0);
-
       const settings = await Settings.findOne().lean();
       const adminRate = Number(settings?.commission || 0);
 
@@ -212,7 +206,6 @@ export const createOrder = async (req, res) => {
 
       if (user.resellerOwner) {
         const reseller = await User.findById(user.resellerOwner);
-
         const resellerRate = Number(reseller?.resellerCommissionRate || 0);
 
         finalRate = systemRate + (systemRate * resellerRate) / 100;
@@ -231,13 +224,34 @@ export const createOrder = async (req, res) => {
       }
     }
 
-    /* ================= CREATE ORDER ================= */
+    /* ================= ORDER ID ================= */
 
     const customOrderId = await getNextOrderId();
 
+    /* ================= 🔥 WALLET DEDUCT FIRST ================= */
+
+    if (!isFreeOrder) {
+      wallet.transactions.push({
+        type: "Order",
+        amount: -Number(finalCharge),
+        status: "Completed",
+        note: `Order #${customOrderId}`,
+        createdAt: new Date(),
+      });
+
+      wallet.balance = calculateBalance(wallet.transactions);
+      await wallet.save();
+
+      await User.findByIdAndUpdate(user._id, {
+        balance: wallet.balance,
+      });
+    }
+
+    /* ================= CREATE ORDER ================= */
+
     const order = await Order.create({
-      orderId: "ORD-" + uuidv4().slice(0, 8), // keep internal
-      customOrderId, // ✅ ADD THIS
+      orderId: "ORD-" + uuidv4().slice(0, 8),
+      customOrderId,
       userId: user._id,
       resellerOwner: user.resellerOwner || null,
       resellerCommission,
@@ -249,77 +263,64 @@ export const createOrder = async (req, res) => {
       status: "pending",
       isFreeOrder,
       earningsCredited: false,
+      isCharged: !isFreeOrder, // 🔥 KEY FIX
 
       provider: serviceData.provider,
       providerApiUrl: serviceData.providerApiUrl,
       providerServiceId: serviceData.providerServiceId,
     });
 
-    /* ================= PROVIDER ================= */
+    /* ================= PROVIDER CALL ================= */
 
     try {
-  // 🔥 GET FRESH PROVIDER DETAILS
-  const providerProfile = await ProviderProfile.findById(
-    serviceData.providerProfileId
-  );
+      const response = await axios.post(
+        providerProfile.apiUrl,
+        {
+          key: providerProfile.apiKey,
+          action: "add",
+          service: serviceData.providerServiceId,
+          link,
+          quantity: qty,
+        },
+        { timeout: 15000 }
+      );
 
-  if (!providerProfile) {
-    return res.status(400).json({
-      message: "Provider profile not found",
-    });
-  }
+      if (response?.data?.order) {
+        order.providerOrderId = response.data.order;
+        order.providerStatus = "processing";
+        order.status = "processing";
+      }
 
-  const response = await axios.post(
-    providerProfile.apiUrl, // ✅ ALWAYS CURRENT
-    {
-      key: providerProfile.apiKey, // ✅ ALWAYS CURRENT
-      action: "add",
-      service: serviceData.providerServiceId,
-      link,
-      quantity: qty,
-    },
-    { timeout: 15000 }
-  );
+      order.providerResponse = response.data;
+      await order.save();
 
-  if (response?.data?.order) {
-    order.providerOrderId = response.data.order;
-    order.providerStatus = "processing";
-  }
+    } catch (err) {
+      /* ================= 🔥 SAFE REFUND ================= */
 
-  order.providerResponse = response.data;
-  await order.save();
+      if (!isFreeOrder) {
+        wallet.transactions.push({
+          type: "Refund",
+          amount: Number(finalCharge),
+          status: "Completed",
+          note: `Refund - Provider failed #${customOrderId}`,
+          reference: order._id,
+          createdAt: new Date(),
+        });
 
-} catch (err) {
-  order.status = "failed";
-  order.providerStatus = "failed";
-  order.errorMessage = err.response?.data || err.message;
+        wallet.balance = calculateBalance(wallet.transactions);
+        await wallet.save();
+      }
 
-  await order.save();
+      order.status = "failed";
+      order.providerStatus = "failed";
+      order.errorMessage = err.response?.data || err.message;
 
-  return res.status(500).json({
-    message: "Provider failed",
-    error: err.response?.data || err.message, // 🔥 ADD THIS FOR DEBUG
-  });
-}
-    /* ================= WALLET DEDUCTION ================= */
+      await order.save();
 
-    if (!isFreeOrder) {
-  wallet.transactions.push({
-    type: "Order",
-    amount: -Number(finalCharge),
-    status: "Completed",
-    note: `Order #${order.customOrderId}`, // ✅ better than _id
-    reference: order._id,
-    createdAt: new Date(),
-  });
-
-  // ✅ ALWAYS derive balance from transactions
-  wallet.balance = calculateBalance(wallet.transactions);
-
-  await wallet.save();
-      await User.findByIdAndUpdate(user._id, {
-    balance: wallet.balance,
-  });
+      return res.status(500).json({
+        message: "Provider failed",
+        error: err.response?.data || err.message,
+      });
     }
 
     /* ================= ADMIN REVENUE ================= */
@@ -343,6 +344,7 @@ export const createOrder = async (req, res) => {
   }
 };
 
+    
 /* =========================================================
 GET MY ORDERS
 ========================================================= */

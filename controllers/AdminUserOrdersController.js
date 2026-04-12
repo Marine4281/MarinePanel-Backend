@@ -268,7 +268,6 @@ export const updateOrderProgress = async (req, res) => {
    REFUND ORDER (FULL / PARTIAL / CUSTOM)
 ====================================================== */
 export const refundOrder = async (req, res) => {
-export const refundOrder = async (req, res) => {
   try {
     const { type, customAmount } = req.body;
 

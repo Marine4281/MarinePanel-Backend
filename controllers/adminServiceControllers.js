@@ -117,6 +117,10 @@ export const importService = async (req, res) => {
       isFree: false,
       freeQuantity: 0,
       cooldownHours: 0,
+
+      //Refill and Cancel
+      refillAllowed: Boolean(req.body.refillAllowed ?? false),
+      cancelAllowed: Boolean(req.body.cancelAllowed ?? false),
     });
 
     clearCache("public_services");
@@ -161,6 +165,8 @@ export const addService = async (req, res) => {
       isFree,
       freeQuantity,
       cooldownHours,
+      refillAllowed,   // ✅ ADD
+      cancelAllowed,
     } = req.body;
 
     if (!category || !platform || !name || !providerProfileId) {
@@ -266,6 +272,8 @@ export const updateService = async (req, res) => {
       freeQuantity,
       cooldownHours,
       rate,
+      refillAllowed,   // ✅ ADD
+      cancelAllowed,
     } = req.body;
 
     const service = await Service.findById(req.params.id);
@@ -360,7 +368,7 @@ export const updateService = async (req, res) => {
     for (const key of Object.keys(req.body)) {
   if (
     req.body[key] !== undefined &&
-    !["isFree", "freeQuantity", "cooldownHours"].includes(key)
+    !["isFree", "freeQuantity", "refillAllowed", "cancelAllowed", "cooldownHours"].includes(key)
   ) {
     service[key] = req.body[key];
   }

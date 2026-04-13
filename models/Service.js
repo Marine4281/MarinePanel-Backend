@@ -137,6 +137,38 @@ const serviceSchema = new mongoose.Schema(
       default: true,
     },
 
+    /* ===============================
+   ❌ CANCEL SYSTEM
+=============================== */
+
+cancelRequested: {
+  type: Boolean,
+  default: false,
+  index: true,
+},
+
+cancelProcessed: {
+  type: Boolean,
+  default: false,
+  index: true,
+},
+
+cancelStatus: {
+  type: String,
+  enum: ["pending", "processing", "success", "failed"],
+  default: null,
+},
+
+cancelRequestedAt: {
+  type: Date,
+  default: null,
+},
+
+cancelResponse: {
+  type: Object,
+  default: null,
+},
+
     // =====================================================
     // ⭐ DEFAULT SETTINGS
     // =====================================================

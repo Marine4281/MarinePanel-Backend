@@ -197,7 +197,7 @@ cancelResponse: {
 // =====================================================
 // 🚀 INDEXES (IMPORTANT FOR SPEED)
 // =====================================================
-
+serviceSchema.index({ cancelRequested: 1, cancelProcessed: 1 });
 // Fast lookup for sync (VERY IMPORTANT 🔥)
 serviceSchema.index({
   providerProfileId: 1,

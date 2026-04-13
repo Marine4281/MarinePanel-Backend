@@ -61,6 +61,8 @@ export const importService = async (req, res) => {
       providerServiceId,
       providerProfileId,
       platform,
+      refillAllowed,
+      cancelAllowed,
     } = req.body;
 
     if (!name || !category || !providerServiceId || !providerProfileId) {
@@ -119,8 +121,10 @@ export const importService = async (req, res) => {
       cooldownHours: 0,
 
       //Refill and Cancel
-      refillAllowed: Boolean(req.body.refillAllowed ?? false),
-      cancelAllowed: Boolean(req.body.cancelAllowed ?? false),
+      refillAllowed: 
+Boolean(refillAllowed ?? false),
+      cancelAllowed: 
+Boolean(cancelAllowed ?? false),
     });
 
     clearCache("public_services");
@@ -236,6 +240,9 @@ export const addService = async (req, res) => {
       isFree: Boolean(isFree),
       freeQuantity: isFree ? freeQuantity : 0,
       cooldownHours: isFree ? cooldownHours : 0,
+
+      refillAllowed: Boolean(refillAllowed ?? false),
+      cancelAllowed: Boolean(cancelAllowed ?? false),
     });
 
     clearCache("public_services");
@@ -373,6 +380,10 @@ export const updateService = async (req, res) => {
     service[key] = req.body[key];
   }
     }
+
+    // override safety
+    if (refillAllowed !== undefined) service.refillAllowed = Boolean(refillAllowed);
+    if (cancelAllowed !== undefined) service.cancelAllowed = Boolean(cancelAllowed);
 
     /* =========================================================
     💾 SAVE (NOW SAFE)

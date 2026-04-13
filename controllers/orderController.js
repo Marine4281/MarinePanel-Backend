@@ -9,6 +9,7 @@ import axios from "axios";
 import { v4 as uuidv4 } from "uuid";
 import ProviderProfile from "../models/ProviderProfile.js";
 import { getNextOrderId } from "../utils/orderId.js";
+import { callProvider } from "../utils/providerApi.js";
 
 // ================= HELPER =================
 const calculateBalance = (transactions = []) =>
@@ -549,5 +550,83 @@ export const getMyOrdersStats = async (req, res) => {
   } catch (err) {
     console.error("USER STATS ERROR:", err);
     res.status(500).json({ message: "Failed to fetch stats" });
+  }
+};
+
+export const cancelOrder = async (req, res) => {
+  try {
+    const { orderId } = req.params;
+
+    const order = await Order.findById(orderId);
+
+    if (!order) {
+      return res.status(404).json({ message: "Order not found" });
+    }
+
+    // 🔒 Only owner can cancel
+    if (order.userId.toString() !== req.user._id.toString()) {
+      return res.status(403).json({ message: "Unauthorized" });
+    }
+
+    // 🚫 Prevent duplicate cancel
+    if (order.cancelRequested) {
+      return res.status(400).json({
+        message: "Cancel already requested",
+      });
+    }
+
+    // 🚫 Cannot cancel completed orders
+    if (order.status === "completed") {
+      return res.status(400).json({
+        message: "Cannot cancel completed order",
+      });
+    }
+
+    // 🔍 Check service allows cancel
+    const service = await Service.findOne({
+      providerServiceId: order.providerServiceId,
+    });
+
+    if (!service?.cancelAllowed) {
+      return res.status(400).json({
+        message: "Cancel not supported for this service",
+      });
+    }
+
+    // 🔍 Get provider
+    const provider = await ProviderProfile.findById(order.providerProfileId);
+
+    if (!provider) {
+      return res.status(400).json({
+        message: "Provider not found",
+      });
+    }
+
+    // 🚀 CALL PROVIDER CANCEL API
+    const response = await callProvider(provider, {
+      action: "cancel",
+      orders: order.providerOrderId.toString(),
+    });
+
+    // 💾 STORE REQUEST ONLY (NO MONEY LOGIC)
+    order.cancelRequested = true;
+    order.cancelRequestedAt = new Date();
+    order.cancelStatus = "pending";
+    order.cancelResponse = response;
+
+    await order.save();
+
+    res.json({
+      message: "Cancel request sent",
+      response,
+    });
+
+  } catch (error) {
+    console.error("❌ Cancel Order Error:", error);
+
+    res.status(500).json({
+      message: "Cancel request failed",
+      error: error.message,
+    });
   }
 };

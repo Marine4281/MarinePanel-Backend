@@ -133,11 +133,7 @@ export const syncProviderOrders = async (io) => {
               order.cancelStatus = "success";
               order.cancelProcessed = true;
 
-              // 💰 REFUND ONLY ON CONFIRMED CANCEL
-              if (
-                !order.isFreeOrder &&
-                !order.refundProcessed
-              ) {
+              if (!order.isFreeOrder && !order.refundProcessed) {
                 let wallet = await Wallet.findOne({
                   user: order.userId,
                 });
@@ -166,6 +162,32 @@ export const syncProviderOrders = async (io) => {
               }
             } else {
               order.cancelStatus = "processing";
+            }
+          }
+
+          // =====================================================
+          // 🔁 REFILL HANDLING (NEW SAFE LOGIC)
+          // =====================================================
+          if (order.refillRequested && !order.refillProcessed) {
+            const refillStatus =
+              String(providerOrder.refill || "").toLowerCase();
+
+            order.refillStatus = refillStatus || "pending";
+
+            if (
+              refillStatus.includes("completed") ||
+              refillStatus.includes("success")
+            ) {
+              order.refillProcessed = true;
+              order.refillStatus = "completed";
+            }
+
+            if (
+              refillStatus.includes("rejected") ||
+              refillStatus.includes("failed")
+            ) {
+              order.refillProcessed = true;
+              order.refillStatus = "failed";
             }
           }
 
@@ -256,6 +278,8 @@ export const syncProviderOrders = async (io) => {
                 status: order.status,
                 delivered: order.quantityDelivered,
                 total: order.quantity,
+                refillStatus: order.refillStatus || null,
+                cancelStatus: order.cancelStatus || null,
               }
             );
           }

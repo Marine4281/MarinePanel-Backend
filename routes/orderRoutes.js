@@ -4,12 +4,11 @@ import {
   getMyOrders,
   getMyOrdersStats,
   previewOrder,
-  cancelOrder,          // ✅ ADD
 } from "../controllers/orderController.js";
 
 import {
-  requestRefill,        // ✅ ADD (from new refill controller)
-} from "../controllers/refillOrder.js";
+  requestRefill, cancelOrder      // ✅ ADD (from new refill controller)
+} from "../controllers/orderActionController.js";
 
 import { protect } from "../middlewares/authMiddleware.js";
 

@@ -119,6 +119,64 @@ const orderSchema = new mongoose.Schema(
       index: true,
     },
 
+    
+    /* =====================================================
+       ❌ CANCEL SYSTEM (NEW - CRITICAL)
+    ===================================================== */
+    cancelRequested: {
+      type: Boolean,
+      default: false,
+      index: true,
+    },
+
+    cancelRequestedAt: {
+      type: Date,
+      default: null,
+    },
+
+    cancelProcessed: {
+      type: Boolean,
+      default: false,
+      index: true,
+    },
+
+    cancelStatus: {
+      type: String,
+      enum: ["none", "pending", "processing", "success", "failed"],
+      default: "none",
+    },
+
+    /* =====================================================
+       🔁 REFILL SYSTEM (NEW - CRITICAL)
+    ===================================================== */
+    refillRequested: {
+      type: Boolean,
+      default: false,
+      index: true,
+    },
+
+    refillRequestedAt: {
+      type: Date,
+      default: null,
+    },
+
+    refillProcessed: {
+      type: Boolean,
+      default: false,
+      index: true,
+    },
+
+    refillStatus: {
+      type: String,
+      enum: ["none", "pending", "processing", "success", "failed"],
+      default: "none",
+    },
+
+    refillId: {
+      type: String,
+      default: "",
+    },
+
     /* ===============================
        🔌 PROVIDER
     =============================== */
@@ -173,6 +231,11 @@ orderSchema.index({ createdAt: -1 });
 
 // Refund safety
 orderSchema.index({ refundProcessed: 1 });
+
+//Cancel and REFILL 
+orderSchema.index({ cancelRequested: 1, cancelProcessed: 1 });
+orderSchema.index({ refillRequested: 1, refillProcessed: 1 });
+
 
 export default mongoose.models.Order ||
   mongoose.model("Order", orderSchema);

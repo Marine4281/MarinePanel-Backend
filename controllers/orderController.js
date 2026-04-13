@@ -639,7 +639,7 @@ export const cancelOrder = async (req, res) => {
 };
 
 //Refill
-res) => {
+export const refillOrder = async (req,res) => {
   try {
     const { orderId } = req.params;
 

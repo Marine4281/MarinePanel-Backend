@@ -553,6 +553,7 @@ export const getMyOrdersStats = async (req, res) => {
   }
 };
 
+//Cancell
 export const cancelOrder = async (req, res) => {
   try {
     const { orderId } = req.params;
@@ -594,7 +595,9 @@ export const cancelOrder = async (req, res) => {
     }
 
     // 🔍 Get provider
-    const provider = await ProviderProfile.findById(order.providerProfileId);
+    const provider = await ProviderProfile.findById(
+      order.providerProfileId
+    );
 
     if (!provider) {
       return res.status(400).json({
@@ -612,6 +615,10 @@ export const cancelOrder = async (req, res) => {
     order.cancelRequested = true;
     order.cancelRequestedAt = new Date();
     order.cancelStatus = "pending";
+
+    // 🔥 IMPORTANT FIX (SYNC ENGINE COMPATIBILITY)
+    order.cancelProcessed = false;
+
     order.cancelResponse = response;
 
     await order.save();
@@ -626,6 +633,98 @@ export const cancelOrder = async (req, res) => {
 
     res.status(500).json({
       message: "Cancel request failed",
+      error: error.message,
+    });
+  }
+};
+
+//Refill
+res) => {
+  try {
+    const { orderId } = req.params;
+
+    const order = await Order.findById(orderId);
+
+    if (!order) {
+      return res.status(404).json({ message: "Order not found" });
+    }
+
+    // 🔒 Only owner
+    if (order.userId.toString() !== req.user._id.toString()) {
+      return res.status(403).json({ message: "Unauthorized" });
+    }
+
+    // 🚫 Prevent duplicate refill
+    if (order.refillRequested) {
+      return res.status(400).json({
+        message: "Refill already requested",
+      });
+    }
+
+    // 🚫 Cannot refill cancelled orders
+    if (order.status === "cancelled") {
+      return res.status(400).json({
+        message: "Cannot refill cancelled order",
+      });
+    }
+
+    // 🚫 Must be completed or partial only
+    if (!["completed", "partial"].includes(order.status)) {
+      return res.status(400).json({
+        message: "Order not eligible for refill",
+      });
+    }
+
+    // 🔍 Check service support
+    const service = await Service.findOne({
+      providerServiceId: order.providerServiceId,
+    });
+
+    if (!service?.refillAllowed) {
+      return res.status(400).json({
+        message: "Refill not supported for this service",
+      });
+    }
+
+    // 🔍 Get provider
+    const provider = await ProviderProfile.findById(
+      order.providerProfileId
+    );
+
+    if (!provider) {
+      return res.status(400).json({
+        message: "Provider not found",
+      });
+    }
+
+    // 🚀 CALL PROVIDER REFILL API
+    const response = await callProvider(provider, {
+      action: "refill",
+      order: order.providerOrderId.toString(),
+    });
+
+    // 💾 STORE STATE (NO MONEY LOGIC)
+    order.refillRequested = true;
+    order.refillRequestedAt = new Date();
+    order.refillStatus = "pending";
+    order.refillResponse = response;
+
+    // provider usually returns refill ID
+    order.providerRefillId =
+      response?.refill || response?.data?.refill || null;
+
+    await order.save();
+
+    res.json({
+      message: "Refill request sent",
+      response,
+    });
+
+  } catch (error) {
+    console.error("❌ Refill Order Error:", error);
+
+    res.status(500).json({
+      message: "Refill request failed",
       error: error.message,
     });
   }

@@ -30,6 +30,6 @@ router.post("/:orderId/cancel", protect, cancelOrder);
 // ===============================================
 // 🔁 REFILL ORDER
 // ===============================================
-router.post("/:orderId/refill", protect, requestRefill);
+router.post("/:orderId/refill", protect, refillOrder);
 
 export default router;

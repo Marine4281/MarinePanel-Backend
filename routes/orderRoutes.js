@@ -7,7 +7,7 @@ import {
 } from "../controllers/orderController.js";
 
 import {
-  requestRefill, cancelOrder      // ✅ ADD (from new refill controller)
+  refillOrder, cancelOrder      // ✅ ADD (from new refill controller)
 } from "../controllers/orderActionController.js";
 
 import { protect } from "../middlewares/authMiddleware.js";

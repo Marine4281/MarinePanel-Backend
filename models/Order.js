@@ -119,6 +119,20 @@ const orderSchema = new mongoose.Schema(
       index: true,
     },
 
+  /* =====================================================
+        ALLOWED FLAGS FROM SERVICE
+   ===================================================== */
+    
+    cancelAllowed: {
+      type: Boolean,
+      default: false,
+     },
+    refillAllowed: {
+      type: Boolean,
+      default: false,
+     },
+
+
     
     /* =====================================================
        ❌ CANCEL SYSTEM (NEW - CRITICAL)
@@ -145,6 +159,7 @@ const orderSchema = new mongoose.Schema(
       enum: ["none", "pending", "processing", "success", "failed"],
       default: "none",
     },
+
 
     /* =====================================================
        🔁 REFILL SYSTEM (NEW - CRITICAL)

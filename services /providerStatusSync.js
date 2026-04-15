@@ -1,8 +1,7 @@
 // services/providerStatusSync.js
 import Order from "../models/Order.js";
-import Service from "../models/Service.js";
-import Wallet from "../models/Wallet.js";
 import ProviderProfile from "../models/ProviderProfile.js";
+import Wallet from "../models/Wallet.js";
 import axios from "axios";
 import {
   mapProviderStatus,
@@ -14,7 +13,7 @@ import {
 } from "../controllers/orderController.js";
 
 // ===============================================
-// 🔄 SYNC PROVIDER ORDER STATUSES
+// 🔄 SYNC PROVIDER ORDER STATUSES (PRODUCTION SAFE)
 // ===============================================
 export const syncProviderOrders = async (io) => {
   try {
@@ -30,16 +29,21 @@ export const syncProviderOrders = async (io) => {
 
     console.log(`🔄 Checking ${activeOrders.length} active orders...`);
 
+    // ===============================================
+    // GROUP BY PROVIDER
+    // ===============================================
     const grouped = {};
 
-    // GROUP BY PROVIDER
     for (const order of activeOrders) {
-      const key = order.provider?.toString();
+      const key = order.provider;
 
       if (!grouped[key]) grouped[key] = [];
       grouped[key].push(order);
     }
 
+    // ===============================================
+    // PROCESS EACH PROVIDER
+    // ===============================================
     for (const providerName of Object.keys(grouped)) {
       const orders = grouped[providerName];
 
@@ -65,6 +69,9 @@ export const syncProviderOrders = async (io) => {
 
         const providerData = response.data;
 
+        // ===============================================
+        // PROCESS ORDERS
+        // ===============================================
         for (const order of orders) {
           const providerOrder = providerData[order.providerOrderId];
 
@@ -75,12 +82,9 @@ export const syncProviderOrders = async (io) => {
           // ===============================================
           const rawStatus = providerOrder.status || "";
 
-          const normalizedStatus = rawStatus
-            .toLowerCase()
-            .replace(/\s+/g, "")
-            .trim();
-
-          let mappedStatus = mapProviderStatus(normalizedStatus);
+          let mappedStatus = mapProviderStatus(
+            rawStatus.toLowerCase().replace(/\s+/g, "").trim()
+          );
 
           // AUTO COMPLETE FIX
           if (
@@ -95,113 +99,39 @@ export const syncProviderOrders = async (io) => {
             providerOrder.remains
           );
 
-          let updated = false;
+          let statusChanged = false;
 
+          // ===============================================
+          // UPDATE ORDER STATE
+          // ===============================================
           if (order.status !== mappedStatus) {
             order.status = mappedStatus;
-            updated = true;
+            statusChanged = true;
           }
 
           if (order.quantityDelivered !== delivered) {
             order.quantityDelivered = delivered;
-            updated = true;
+            statusChanged = true;
           }
 
-          if (!updated) continue;
+          order.providerStatus = String(providerOrder.status || "").toLowerCase();
 
-          // =====================================================
-          // PROVIDER STATUS SAVE
-          // =====================================================
-          order.providerStatus = String(
-            providerOrder.status || ""
-          ).toLowerCase();
-
-          // =====================================================
-          // 🧠 CANCEL HANDLING (STRICT & SAFE)
-          // =====================================================
-          if (order.cancelRequested && !order.cancelProcessed) {
-            const providerStatus = String(
-              providerOrder.status || ""
-            ).toLowerCase();
-
-            const isCancelled =
-              providerStatus.includes("cancel") ||
-              mappedStatus === "cancelled";
-
-            if (isCancelled) {
-              order.status = "cancelled";
-              order.cancelStatus = "success";
-              order.cancelProcessed = true;
-
-              if (!order.isFreeOrder && !order.refundProcessed) {
-                let wallet = await Wallet.findOne({
-                  user: order.userId,
-                });
-
-                if (!wallet) {
-                  wallet = await Wallet.create({
-                    user: order.userId,
-                    balance: 0,
-                    transactions: [],
-                  });
-                }
-
-                wallet.balance += order.charge;
-
-                wallet.transactions.push({
-                  type: "Refund",
-                  amount: order.charge,
-                  status: "Completed",
-                  note: `Refund for cancelled order ${order.orderId}`,
-                });
-
-                order.refundProcessed = true;
-
-                await wallet.save();
-                await reverseResellerCommission(order);
-              }
-            } else {
-              order.cancelStatus = "processing";
-            }
+          // ===============================================
+          // SAVE FIRST (IMPORTANT FOR SAFETY)
+          // ===============================================
+          if (statusChanged) {
+            await order.save();
           }
 
-          // =====================================================
-          // 🔁 REFILL HANDLING (NEW SAFE LOGIC)
-          // =====================================================
-          if (order.refillRequested && !order.refillProcessed) {
-            const refillStatus =
-              String(providerOrder.refill || "").toLowerCase();
-
-            order.refillStatus = refillStatus || "pending";
-
-            if (
-              refillStatus.includes("completed") ||
-              refillStatus.includes("success")
-            ) {
-              order.refillProcessed = true;
-              order.refillStatus = "completed";
-            }
-
-            if (
-              refillStatus.includes("rejected") ||
-              refillStatus.includes("failed")
-            ) {
-              order.refillProcessed = true;
-              order.refillStatus = "failed";
-            }
-          }
-
-          // =====================================================
-          // 💰 REFUND LOGIC (FAILED / PARTIAL ONLY)
-          // =====================================================
+          // ===============================================
+          // 💰 REFUND LOGIC (SAFE + CONSISTENT)
+          // ===============================================
           if (
             !order.isFreeOrder &&
             !order.refundProcessed &&
             !order.cancelProcessed
           ) {
-            let wallet = await Wallet.findOne({
-              user: order.userId,
-            });
+            let wallet = await Wallet.findOne({ user: order.userId });
 
             if (!wallet) {
               wallet = await Wallet.create({
@@ -226,21 +156,18 @@ export const syncProviderOrders = async (io) => {
 
               await wallet.save();
               await reverseResellerCommission(order);
+              await order.save();
             }
 
             // ================= PARTIAL =================
             if (mappedStatus === "partial") {
-              const remaining =
-                Number(providerOrder.remains) || 0;
+              const remaining = Number(providerOrder.remains) || 0;
 
               if (remaining > 0) {
                 let refundAmount =
-                  (remaining / order.quantity) *
-                  order.charge;
+                  (remaining / order.quantity) * order.charge;
 
-                refundAmount = Number(
-                  refundAmount.toFixed(4)
-                );
+                refundAmount = Number(refundAmount.toFixed(4));
 
                 wallet.balance += refundAmount;
 
@@ -254,34 +181,28 @@ export const syncProviderOrders = async (io) => {
                 order.refundProcessed = true;
 
                 await wallet.save();
+                await order.save();
               }
             }
           }
 
-          await order.save();
-
-          // =====================================================
-          // 💰 CREDIT RESELLER
-          // =====================================================
+          // ===============================================
+          // 💰 RESELLER COMMISSION
+          // ===============================================
           if (order.status === "completed") {
             await creditResellerCommission(order);
           }
 
-          // =====================================================
+          // ===============================================
           // 🔥 REAL-TIME UPDATE
-          // =====================================================
+          // ===============================================
           if (io) {
-            io.to(order.userId.toString()).emit(
-              "orderUpdated",
-              {
-                orderId: order._id,
-                status: order.status,
-                delivered: order.quantityDelivered,
-                total: order.quantity,
-                refillStatus: order.refillStatus || null,
-                cancelStatus: order.cancelStatus || null,
-              }
-            );
+            io.to(order.userId.toString()).emit("orderUpdated", {
+              orderId: order._id,
+              status: order.status,
+              delivered: order.quantityDelivered,
+              total: order.quantity,
+            });
           }
         }
       } catch (err) {

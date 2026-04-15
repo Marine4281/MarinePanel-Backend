@@ -72,7 +72,7 @@ export const reverseResellerCommission = async (order) => {
       amount: -Number(order.resellerCommission),
       status: "Completed",
       note: `Reversal - #${order.customOrderId}`,
-      reference: order._id,
+      reference: customOrderId,
       createdAt: new Date(),
     });
 
@@ -316,6 +316,7 @@ export const createOrder = async (req, res) => {
 
         wallet.balance = calculateBalance(wallet.transactions);
 
+        order.refundProcessed = true;
         order.isCharged = true;
         await wallet.save();
       }

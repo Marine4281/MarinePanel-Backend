@@ -192,6 +192,13 @@ const orderSchema = new mongoose.Schema(
       default: "",
     },
 
+    //Provider
+    providerProfileId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "ProviderProfile",
+      index: true,
+    },
+
     /* ===============================
        🔌 PROVIDER
     =============================== */

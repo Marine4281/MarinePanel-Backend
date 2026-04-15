@@ -1,155 +1,160 @@
-// controllers/orderActionController.js
-
-import Order from "../models/Order.js";
+//controllers/ProviderProfileController.js
 import ProviderProfile from "../models/ProviderProfile.js";
-import { callProvider } from "../utils/providerApi.js";
 
 /* =========================================================
-   🔧 HELPER: GET PROVIDER (CLEAN & SAFE)
+CREATE PROVIDER PROFILE
 ========================================================= */
-const getProvider = async (order) => {
-  if (!order.providerProfileId) return null;
-
-  return await ProviderProfile.findById(order.providerProfileId);
-};
-
-/* =========================================================
-   CANCEL ORDER
-========================================================= */
-export const cancelOrder = async (req, res) => {
+export const createProviderProfile = async (req, res) => {
   try {
-    const { orderId } = req.params;
+    const { name, apiUrl, apiKey } = req.body;
 
-    const order = await Order.findById(orderId);
-
-    if (!order) {
-      return res.status(404).json({ message: "Order not found" });
-    }
-
-    if (order.userId.toString() !== req.user._id.toString()) {
-      return res.status(403).json({ message: "Unauthorized" });
-    }
-
-    if (order.cancelRequested) {
-      return res.status(400).json({ message: "Cancel already requested" });
-    }
-
-    if (order.status === "completed") {
-      return res.status(400).json({ message: "Cannot cancel completed order" });
-    }
-
-    if (!order.cancelAllowed) {
+    if (!name || !apiUrl || !apiKey) {
       return res.status(400).json({
-        message: "Cancel not supported for this service",
+        message: "Name, API URL and API Key are required",
       });
     }
 
-    const provider = await getProvider(order);
+    // Prevent duplicate provider names
+    const existing = await ProviderProfile.findOne({ name });
 
-    if (!provider) {
+    if (existing) {
       return res.status(400).json({
-        message: "Provider not found (invalid providerProfileId on order)",
+        message: "Provider already exists",
       });
     }
 
-    const response = await callProvider(provider, {
-      action: "cancel",
-      orders: order.providerOrderId?.toString(),
+    const provider = await ProviderProfile.create({
+      name,
+      apiUrl,
+      apiKey,
     });
 
-    order.cancelRequested = true;
-    order.cancelRequestedAt = new Date();
-    order.cancelStatus = "pending";
-    order.cancelProcessed = false;
-    order.cancelResponse = response;
-
-    await order.save();
-
-    res.json({
-      message: "Cancel request sent",
-      response,
+    res.status(201).json({
+      message: "Provider created successfully",
+      provider,
     });
 
   } catch (error) {
-    console.error("Cancel Order Error:", error);
+    console.error("CREATE PROVIDER ERROR:", error);
     res.status(500).json({
-      message: "Cancel request failed",
+      message: "Failed to create provider",
       error: error.message,
     });
   }
 };
 
 /* =========================================================
-   REFILL ORDER
+GET ALL PROVIDERS
 ========================================================= */
-export const refillOrder = async (req, res) => {
+export const getProviderProfiles = async (req, res) => {
   try {
-    const { orderId } = req.params;
+    const providers = await ProviderProfile.find()
+      .sort({ createdAt: -1 })
+      .lean();
 
-    const order = await Order.findById(orderId);
+    res.json(providers);
 
-    if (!order) {
-      return res.status(404).json({ message: "Order not found" });
-    }
+  } catch (error) {
+    console.error("GET PROVIDERS ERROR:", error);
+    res.status(500).json({
+      message: "Failed to fetch providers",
+      error: error.message,
+    });
+  }
+};
 
-    if (order.userId.toString() !== req.user._id.toString()) {
-      return res.status(403).json({ message: "Unauthorized" });
-    }
-
-    if (order.refillRequested) {
-      return res.status(400).json({ message: "Refill already requested" });
-    }
-
-    if (order.status === "cancelled") {
-      return res.status(400).json({
-        message: "Cannot refill cancelled order",
-      });
-    }
-
-    if (!["completed", "partial"].includes(order.status)) {
-      return res.status(400).json({
-        message: "Order not eligible for refill",
-      });
-    }
-
-    if (!order.refillAllowed) {
-      return res.status(400).json({
-        message: "Refill not supported for this service",
-      });
-    }
-
-    const provider = await getProvider(order);
+/* =========================================================
+GET SINGLE PROVIDER
+========================================================= */
+export const getProviderProfileById = async (req, res) => {
+  try {
+    const provider = await ProviderProfile.findById(req.params.id);
 
     if (!provider) {
-      return res.status(400).json({
-        message: "Provider not found (invalid providerProfileId on order)",
+      return res.status(404).json({
+        message: "Provider not found",
       });
     }
 
-    const response = await callProvider(provider, {
-      action: "refill",
-      order: order.providerOrderId?.toString(),
+    res.json(provider);
+
+  } catch (error) {
+    console.error("GET PROVIDER ERROR:", error);
+    res.status(500).json({
+      message: "Failed to fetch provider",
+      error: error.message,
     });
+  }
+};
 
-    order.refillRequested = true;
-    order.refillRequestedAt = new Date();
-    order.refillStatus = "pending";
-    order.refillResponse = response;
+/* =========================================================
+UPDATE PROVIDER
+========================================================= */
+export const updateProviderProfile = async (req, res) => {
+  try {
+    const { name, apiUrl, apiKey } = req.body;
 
-    order.providerRefillId =
-      response?.refill || response?.data?.refill || null;
+    const provider = await ProviderProfile.findById(req.params.id);
 
-    await order.save();
+    if (!provider) {
+      return res.status(404).json({
+        message: "Provider not found",
+      });
+    }
+
+    // Prevent duplicate name (if changed)
+    if (name && name !== provider.name) {
+      const existing = await ProviderProfile.findOne({ name });
+      if (existing) {
+        return res.status(400).json({
+          message: "Provider name already exists",
+        });
+      }
+    }
+
+    provider.name = name || provider.name;
+    provider.apiUrl = apiUrl || provider.apiUrl;
+    provider.apiKey = apiKey || provider.apiKey;
+
+    await provider.save();
 
     res.json({
-      message: "Refill request sent",
-      response,
+      message: "Provider updated successfully",
+      provider,
     });
 
   } catch (error) {
-    console.error("Refill Order Error:", error);
+    console.error("UPDATE PROVIDER ERROR:", error);
     res.status(500).json({
-      message: "Refill request failed",
+      message: "Failed to update provider",
+      error: error.message,
+    });
+  }
+};
+
+/* =========================================================
+DELETE PROVIDER
+========================================================= */
+export const deleteProviderProfile = async (req, res) => {
+  try {
+    const provider = await ProviderProfile.findById(req.params.id);
+
+    if (!provider) {
+      return res.status(404).json({
+        message: "Provider not found",
+      });
+    }
+
+    await provider.deleteOne();
+
+    res.json({
+      message: "Provider deleted successfully",
+    });
+
+  } catch (error) {
+    console.error("DELETE PROVIDER ERROR:", error);
+    res.status(500).json({
+      message: "Failed to delete provider",
       error: error.message,
     });
   }

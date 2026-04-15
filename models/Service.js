@@ -137,37 +137,8 @@ const serviceSchema = new mongoose.Schema(
       default: true,
     },
 
-    /* ===============================
-   ❌ CANCEL SYSTEM
-=============================== */
 
-cancelRequested: {
-  type: Boolean,
-  default: false,
-  index: true,
-},
-
-cancelProcessed: {
-  type: Boolean,
-  default: false,
-  index: true,
-},
-
-cancelStatus: {
-  type: String,
-  enum: ["pending", "processing", "success", "failed"],
-  default: null,
-},
-
-cancelRequestedAt: {
-  type: Date,
-  default: null,
-},
-
-cancelResponse: {
-  type: Object,
-  default: null,
-},
+    
 
     // =====================================================
     // ⭐ DEFAULT SETTINGS
@@ -197,7 +168,6 @@ cancelResponse: {
 // =====================================================
 // 🚀 INDEXES (IMPORTANT FOR SPEED)
 // =====================================================
-serviceSchema.index({ cancelRequested: 1, cancelProcessed: 1 });
 // Fast lookup for sync (VERY IMPORTANT 🔥)
 serviceSchema.index({
   providerProfileId: 1,

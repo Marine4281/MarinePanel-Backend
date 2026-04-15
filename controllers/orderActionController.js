@@ -5,24 +5,12 @@ import ProviderProfile from "../models/ProviderProfile.js";
 import { callProvider } from "../utils/providerApi.js";
 
 /* =========================================================
-   🔧 HELPER: GET PROVIDER (WITH FALLBACK)
+   🔧 HELPER: GET PROVIDER (CLEAN & SAFE)
 ========================================================= */
 const getProvider = async (order) => {
-  let provider;
+  if (!order.providerProfileId) return null;
 
-  // ✅ New orders (correct way)
-  if (order.providerProfileId) {
-    provider = await ProviderProfile.findById(order.providerProfileId);
-  }
-
-  // ✅ Fallback for old orders
-  if (!provider && order.provider) {
-    provider = await ProviderProfile.findOne({
-      provider: order.provider,
-    });
-  }
-
-  return provider;
+  return await ProviderProfile.findById(order.providerProfileId);
 };
 
 /* =========================================================
@@ -50,23 +38,23 @@ export const cancelOrder = async (req, res) => {
       return res.status(400).json({ message: "Cannot cancel completed order" });
     }
 
-    // ✅ USE ORDER FLAG (NO SERVICE QUERY)
     if (!order.cancelAllowed) {
       return res.status(400).json({
         message: "Cancel not supported for this service",
       });
     }
 
-    // ✅ GET PROVIDER (WITH FALLBACK)
     const provider = await getProvider(order);
 
     if (!provider) {
-      return res.status(400).json({ message: "Provider not found" });
+      return res.status(400).json({
+        message: "Provider not found (invalid providerProfileId on order)",
+      });
     }
 
     const response = await callProvider(provider, {
       action: "cancel",
-      orders: order.providerOrderId.toString(),
+      orders: order.providerOrderId?.toString(),
     });
 
     order.cancelRequested = true;
@@ -124,23 +112,23 @@ export const refillOrder = async (req, res) => {
       });
     }
 
-    // ✅ USE ORDER FLAG (NO SERVICE QUERY)
     if (!order.refillAllowed) {
       return res.status(400).json({
         message: "Refill not supported for this service",
       });
     }
 
-    // ✅ GET PROVIDER (WITH FALLBACK)
     const provider = await getProvider(order);
 
     if (!provider) {
-      return res.status(400).json({ message: "Provider not found" });
+      return res.status(400).json({
+        message: "Provider not found (invalid providerProfileId on order)",
+      });
     }
 
     const response = await callProvider(provider, {
       action: "refill",
-      order: order.providerOrderId.toString(),
+      order: order.providerOrderId?.toString(),
     });
 
     order.refillRequested = true;

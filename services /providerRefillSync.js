@@ -1,15 +1,17 @@
+// services/providerRefillSync.js
+
 import Order from "../models/Order.js";
 import ProviderProfile from "../models/ProviderProfile.js";
 import { callProvider } from "../utils/providerApi.js";
 
 /**
- * 🔄 Sync refill statuses from provider
+ * 🔄 Sync refill statuses from provider (PRODUCTION SAFE)
  */
 export const syncProviderRefills = async () => {
   try {
-    // 🔍 Get orders with active refill requests
+    // 🔍 Get active refill orders
     const orders = await Order.find({
-      refillId: { $ne: null },
+      refillId: { $exists: true, $ne: null },
       refillStatus: { $in: ["pending", "processing"] },
     });
 
@@ -20,24 +22,26 @@ export const syncProviderRefills = async () => {
 
     console.log(`🔄 Syncing ${orders.length} refill requests...`);
 
-    // 🧠 Group by provider
+    // 🧠 Group by providerProfileId (FIXED)
     const grouped = {};
 
     for (const order of orders) {
-      const key = order.provider?.toString();
+      if (!order.providerProfileId) continue;
+
+      const key = order.providerProfileId.toString();
 
       if (!grouped[key]) grouped[key] = [];
       grouped[key].push(order);
     }
 
-    // 🔁 Process each provider
-    for (const providerName of Object.keys(grouped)) {
-      const providerOrders = grouped[providerName];
+    // 🔁 Process each provider profile
+    for (const providerProfileId of Object.keys(grouped)) {
+      const providerOrders = grouped[providerProfileId];
 
-      const profile = await ProviderProfile.findOne({ name: providerName });
+      const profile = await ProviderProfile.findById(providerProfileId);
 
       if (!profile) {
-        console.warn(`⚠️ Provider not found: ${providerName}`);
+        console.warn(`⚠️ ProviderProfile not found: ${providerProfileId}`);
         continue;
       }
 
@@ -54,7 +58,7 @@ export const syncProviderRefills = async () => {
           refills: refillIds,
         });
 
-        // 🔁 Normalize response (array or object)
+        // 🔁 Normalize response (array OR object)
         const dataArray = Array.isArray(response)
           ? response
           : Object.values(response);
@@ -70,18 +74,19 @@ export const syncProviderRefills = async () => {
 
           let updated = false;
 
+          // 🔄 status update
           if (order.refillStatus !== status) {
             order.refillStatus = status;
             updated = true;
           }
 
-          // 🧠 Mark completion states
-          if (status === "completed") {
+          // 🧠 lifecycle timestamps
+          if (status === "completed" && !order.refillCompletedAt) {
             order.refillCompletedAt = new Date();
             updated = true;
           }
 
-          if (status === "rejected") {
+          if (status === "rejected" && !order.refillRejectedAt) {
             order.refillRejectedAt = new Date();
             updated = true;
           }

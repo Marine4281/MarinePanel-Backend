@@ -9,7 +9,6 @@ import axios from "axios";
 import { v4 as uuidv4 } from "uuid";
 import ProviderProfile from "../models/ProviderProfile.js";
 import { getNextOrderId } from "../utils/orderId.js";
-import { callProvider } from "../utils/providerApi.js";
 
 // ================= HELPER =================
 const calculateBalance = (transactions = []) =>

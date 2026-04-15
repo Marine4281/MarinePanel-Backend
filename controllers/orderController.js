@@ -312,6 +312,7 @@ export const createOrder = async (req, res) => {
         });
 
         wallet.balance = calculateBalance(wallet.transactions);
+        order.isCharged = true;
         await wallet.save();
       }
 

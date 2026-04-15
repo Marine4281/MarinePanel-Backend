@@ -1,12 +1,32 @@
 // controllers/orderActionController.js
 
 import Order from "../models/Order.js";
-import Service from "../models/Service.js";
 import ProviderProfile from "../models/ProviderProfile.js";
 import { callProvider } from "../utils/providerApi.js";
 
 /* =========================================================
-CANCEL ORDER
+   🔧 HELPER: GET PROVIDER (WITH FALLBACK)
+========================================================= */
+const getProvider = async (order) => {
+  let provider;
+
+  // ✅ New orders (correct way)
+  if (order.providerProfileId) {
+    provider = await ProviderProfile.findById(order.providerProfileId);
+  }
+
+  // ✅ Fallback for old orders
+  if (!provider && order.provider) {
+    provider = await ProviderProfile.findOne({
+      provider: order.provider,
+    });
+  }
+
+  return provider;
+};
+
+/* =========================================================
+   CANCEL ORDER
 ========================================================= */
 export const cancelOrder = async (req, res) => {
   try {
@@ -30,15 +50,15 @@ export const cancelOrder = async (req, res) => {
       return res.status(400).json({ message: "Cannot cancel completed order" });
     }
 
-    const service = await Service.findOne({
-      providerServiceId: order.providerServiceId,
-    });
-
-    if (!service?.cancelAllowed) {
-      return res.status(400).json({ message: "Cancel not supported for this service" });
+    // ✅ USE ORDER FLAG (NO SERVICE QUERY)
+    if (!order.cancelAllowed) {
+      return res.status(400).json({
+        message: "Cancel not supported for this service",
+      });
     }
 
-    const provider = await ProviderProfile.findById(order.providerProfileId);
+    // ✅ GET PROVIDER (WITH FALLBACK)
+    const provider = await getProvider(order);
 
     if (!provider) {
       return res.status(400).json({ message: "Provider not found" });
@@ -72,7 +92,7 @@ export const cancelOrder = async (req, res) => {
 };
 
 /* =========================================================
-REFILL ORDER
+   REFILL ORDER
 ========================================================= */
 export const refillOrder = async (req, res) => {
   try {
@@ -93,22 +113,26 @@ export const refillOrder = async (req, res) => {
     }
 
     if (order.status === "cancelled") {
-      return res.status(400).json({ message: "Cannot refill cancelled order" });
+      return res.status(400).json({
+        message: "Cannot refill cancelled order",
+      });
     }
 
     if (!["completed", "partial"].includes(order.status)) {
-      return res.status(400).json({ message: "Order not eligible for refill" });
+      return res.status(400).json({
+        message: "Order not eligible for refill",
+      });
     }
 
-    const service = await Service.findOne({
-      providerServiceId: order.providerServiceId,
-    });
-
-    if (!service?.refillAllowed) {
-      return res.status(400).json({ message: "Refill not supported for this service" });
+    // ✅ USE ORDER FLAG (NO SERVICE QUERY)
+    if (!order.refillAllowed) {
+      return res.status(400).json({
+        message: "Refill not supported for this service",
+      });
     }
 
-    const provider = await ProviderProfile.findById(order.providerProfileId);
+    // ✅ GET PROVIDER (WITH FALLBACK)
+    const provider = await getProvider(order);
 
     if (!provider) {
       return res.status(400).json({ message: "Provider not found" });

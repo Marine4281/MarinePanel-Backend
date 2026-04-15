@@ -263,7 +263,7 @@ export const createOrder = async (req, res) => {
       status: "pending",
       isFreeOrder,
       earningsCredited: false,
-      isCharged: !isFreeOrder, // 🔥 KEY FIX
+      isCharged: !isFreeOrder && finalCharge > 0, // 🔥 KEY FIX
 
       provider: serviceData.provider,
       providerApiUrl: serviceData.providerApiUrl,
@@ -312,7 +312,7 @@ export const createOrder = async (req, res) => {
         });
 
         wallet.balance = calculateBalance(wallet.transactions);
-        order.isCharged = true;
+  
         await wallet.save();
       }
 

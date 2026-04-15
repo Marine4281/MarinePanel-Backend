@@ -236,6 +236,7 @@ export const createOrder = async (req, res) => {
         amount: -Number(finalCharge),
         status: "Completed",
         note: `Order #${customOrderId}`,
+        reference: order._id, 
         createdAt: new Date(),
       });
 
@@ -312,7 +313,8 @@ export const createOrder = async (req, res) => {
         });
 
         wallet.balance = calculateBalance(wallet.transactions);
-  
+
+        order.isCharged = true;
         await wallet.save();
       }
 

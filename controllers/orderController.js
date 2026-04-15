@@ -266,6 +266,7 @@ export const createOrder = async (req, res) => {
       earningsCredited: false,
       isCharged: !isFreeOrder, // 🔥 KEY FIX
 
+      providerProfileId: serviceData.providerProfileId,
       provider: serviceData.provider,
       providerApiUrl: serviceData.providerApiUrl,
       providerServiceId: serviceData.providerServiceId,

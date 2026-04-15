@@ -5,12 +5,13 @@ import ProviderProfile from "../models/ProviderProfile.js";
 import { callProvider } from "../utils/providerApi.js";
 
 /* =========================================================
-   🔧 HELPER: GET PROVIDER (CLEAN & SAFE)
+   🔧 HELPER: GET PROVIDER (SAFE + FUTURE PROOF)
 ========================================================= */
 const getProvider = async (order) => {
   if (!order.providerProfileId) return null;
 
-  return await ProviderProfile.findById(order.providerProfileId);
+  const provider = await ProviderProfile.findById(order.providerProfileId);
+  return provider || null;
 };
 
 /* =========================================================
@@ -52,21 +53,34 @@ export const cancelOrder = async (req, res) => {
       });
     }
 
+    // 🔥 SAFE provider order formatting (supports future batch cancel)
+    const providerOrderId = String(order.providerOrderId || "");
+
     const response = await callProvider(provider, {
       action: "cancel",
-      orders: order.providerOrderId?.toString(),
+      orders: providerOrderId,
     });
+
+    // 🔥 Normalize response safely
+    const cancelResult =
+      response?.[0]?.cancel ||
+      response?.cancel ||
+      response;
+
+    const isSuccess = cancelResult === 1 || cancelResult === true;
 
     order.cancelRequested = true;
     order.cancelRequestedAt = new Date();
-    order.cancelStatus = "pending";
+    order.cancelStatus = isSuccess ? "success" : "pending";
     order.cancelProcessed = false;
+
     order.cancelResponse = response;
 
     await order.save();
 
     res.json({
       message: "Cancel request sent",
+      success: isSuccess,
       response,
     });
 
@@ -126,23 +140,35 @@ export const refillOrder = async (req, res) => {
       });
     }
 
+    const providerOrderId = String(order.providerOrderId || "");
+
     const response = await callProvider(provider, {
       action: "refill",
-      order: order.providerOrderId?.toString(),
+      order: providerOrderId,
     });
+
+    // 🔥 Correct refill ID handling (aligned with provider docs)
+    const refillId =
+      response?.refill ||
+      response?.data?.refill ||
+      (Array.isArray(response)
+        ? response?.[0]?.refill
+        : null);
 
     order.refillRequested = true;
     order.refillRequestedAt = new Date();
     order.refillStatus = "pending";
-    order.refillResponse = response;
+    order.refillProcessed = false;
 
-    order.providerRefillId =
-      response?.refill || response?.data?.refill || null;
+    order.refillId = refillId; // ✅ FIXED (was providerRefillId mismatch)
+
+    order.refillResponse = response;
 
     await order.save();
 
     res.json({
       message: "Refill request sent",
+      refillId,
       response,
     });
 

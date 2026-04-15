@@ -241,6 +241,8 @@ export const createOrder = async (req, res) => {
       });
 
       wallet.balance = calculateBalance(wallet.transactions);
+
+      order.refundProcessed = true;
       await wallet.save();
 
       await User.findByIdAndUpdate(user._id, {

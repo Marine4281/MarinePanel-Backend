@@ -9,6 +9,7 @@ import axios from "axios";
 import { v4 as uuidv4 } from "uuid";
 import ProviderProfile from "../models/ProviderProfile.js";
 import { getNextOrderId } from "../utils/orderId.js";
+import { callProvider } from "../utils/providerApi.js";
 
 // ================= HELPER =================
 const calculateBalance = (transactions = []) =>
@@ -72,7 +73,7 @@ export const reverseResellerCommission = async (order) => {
       amount: -Number(order.resellerCommission),
       status: "Completed",
       note: `Reversal - #${order.customOrderId}`,
-      reference: customOrderId,
+      reference: order._id,
       createdAt: new Date(),
     });
 
@@ -236,13 +237,10 @@ export const createOrder = async (req, res) => {
         amount: -Number(finalCharge),
         status: "Completed",
         note: `Order #${customOrderId}`,
-        reference: order._id, 
         createdAt: new Date(),
       });
 
       wallet.balance = calculateBalance(wallet.transactions);
-
-      order.refundProcessed = true;
       await wallet.save();
 
       await User.findByIdAndUpdate(user._id, {
@@ -266,12 +264,11 @@ export const createOrder = async (req, res) => {
       status: "pending",
       isFreeOrder,
       earningsCredited: false,
-      isCharged: !isFreeOrder && finalCharge > 0, // 🔥 KEY FIX
+      isCharged: !isFreeOrder, // 🔥 KEY FIX
 
       provider: serviceData.provider,
       providerApiUrl: serviceData.providerApiUrl,
       providerServiceId: serviceData.providerServiceId,
-      providerProfileId: serviceData.providerProfileId,
 
       cancelAllowed: serviceData.cancelAllowed,
       refillAllowed: serviceData.refillAllowed,
@@ -315,9 +312,6 @@ export const createOrder = async (req, res) => {
         });
 
         wallet.balance = calculateBalance(wallet.transactions);
-
-        order.refundProcessed = true;
-        order.isCharged = true;
         await wallet.save();
       }
 

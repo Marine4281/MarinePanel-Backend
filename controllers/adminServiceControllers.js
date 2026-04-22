@@ -125,6 +125,9 @@ export const importService = async (req, res) => {
 Boolean(refillAllowed ?? false),
       cancelAllowed: 
 Boolean(cancelAllowed ?? false),
+
+      refillPolicy: "none",
+      customRefillDays: null,
     });
 
     clearCache("public_services");
@@ -243,6 +246,9 @@ export const addService = async (req, res) => {
 
       refillAllowed: Boolean(refillAllowed ?? false),
       cancelAllowed: Boolean(cancelAllowed ?? false),
+
+      refillPolicy: "none",
+      customRefillDays: null,
     });
 
     clearCache("public_services");

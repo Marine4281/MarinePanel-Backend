@@ -53,9 +53,16 @@ export const cancelOrder = async (req, res) => {
       });
     }
 
-    // 🔥 SAFE provider order formatting (supports future batch cancel)
-    const providerOrderId = String(order.providerOrderId || "");
+    // ✅ Ensure valid provider order ID
+    const providerOrderId = String(order.providerOrderId || "").trim();
 
+    if (!providerOrderId) {
+      return res.status(400).json({
+        message: "Invalid provider order ID",
+      });
+    }
+
+    // 🔥 Send cancel request (ONE-TIME action)
     const response = await callProvider(provider, {
       action: "cancel",
       orders: providerOrderId,
@@ -63,29 +70,39 @@ export const cancelOrder = async (req, res) => {
 
     // 🔥 Normalize response safely
     const cancelResult =
-      response?.[0]?.cancel ||
-      response?.cancel ||
-      response;
+      response?.[0]?.cancel ??
+      response?.cancel ??
+      null;
 
     const isSuccess = cancelResult === 1 || cancelResult === true;
 
+    // ✅ FINAL STATE (no fake pending/processing)
     order.cancelRequested = true;
     order.cancelRequestedAt = new Date();
-    order.cancelStatus = isSuccess ? "success" : "pending";
-    order.cancelProcessed = false;
+    order.cancelStatus = isSuccess ? "success" : "failed";
+    order.cancelProcessed = true;
 
+    // ✅ If success → reflect immediately in system
+    if (isSuccess) {
+      order.status = "cancelled";
+    }
+
+    // Store raw provider response for debugging/audit
     order.cancelResponse = response;
 
     await order.save();
 
     res.json({
-      message: "Cancel request sent",
+      message: isSuccess
+        ? "Order cancelled successfully"
+        : "Cancel request failed",
       success: isSuccess,
       response,
     });
 
   } catch (error) {
     console.error("Cancel Order Error:", error);
+
     res.status(500).json({
       message: "Cancel request failed",
       error: error.message,

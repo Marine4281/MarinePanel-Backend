@@ -273,9 +273,16 @@ export const createOrder = async (req, res) => {
       cancelAllowed: serviceData.cancelAllowed,
       refillAllowed: serviceData.refillAllowed,
 
-      refillPolicy: serviceData.refillPolicy || "none",
-      customRefillDays: serviceData.customRefillDays || null,
+      // ================= REFILL POLICY (SAFE SNAPSHOT) =================
+  refillPolicy: serviceData.refillAllowed
+    ? serviceData.refillPolicy || "none"
+    : "none",
 
+  customRefillDays: serviceData.refillAllowed
+    ? serviceData.refillPolicy === "custom"
+      ? serviceData.customRefillDays || null
+      : null
+    : null,
     });
 
     /* ================= PROVIDER CALL ================= */

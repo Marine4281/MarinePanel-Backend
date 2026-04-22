@@ -137,6 +137,17 @@ const serviceSchema = new mongoose.Schema(
       default: true,
     },
 
+    refillPolicy: {
+      type: String,
+      enum: ["none", "30d", "60d", "90d", "365d", "lifetime", "custom"],
+      default: "none",
+    },
+
+   customRefillDays: {
+      type: Number,
+      default: null,
+    },
+
 
     
 

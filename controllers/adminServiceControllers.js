@@ -247,7 +247,7 @@ export const addService = async (req, res) => {
       refillAllowed: Boolean(refillAllowed ?? false),
       cancelAllowed: Boolean(cancelAllowed ?? false),
 
-      refillPolicy: "none",
+      refillPolicy: refillAllowed ? "none" : "none",
       customRefillDays: null,
     });
 
@@ -381,7 +381,7 @@ export const updateService = async (req, res) => {
     for (const key of Object.keys(req.body)) {
   if (
     req.body[key] !== undefined &&
-    !["isFree", "freeQuantity", "refillAllowed", "cancelAllowed", "cooldownHours"].includes(key)
+    !["isFree", "freeQuantity", "refillAllowed", "cancelAllowed", "refillPolicy", "customRefillDays", "cooldownHours"].includes(key)
   ) {
     service[key] = req.body[key];
   }
@@ -390,6 +390,10 @@ export const updateService = async (req, res) => {
     // override safety
     if (refillAllowed !== undefined) service.refillAllowed = Boolean(refillAllowed);
     if (cancelAllowed !== undefined) service.cancelAllowed = Boolean(cancelAllowed);
+    if (!service.refillAllowed) {
+  service.refillPolicy = "none";
+  service.customRefillDays = null;
+    }
 
     /* =========================================================
     💾 SAVE (NOW SAFE)

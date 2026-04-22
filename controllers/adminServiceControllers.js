@@ -247,7 +247,7 @@ export const addService = async (req, res) => {
       refillAllowed: Boolean(refillAllowed ?? false),
       cancelAllowed: Boolean(cancelAllowed ?? false),
 
-      refillPolicy: refillAllowed ? "none" : "none",
+      refillPolicy: "none",
       customRefillDays: null,
     });
 

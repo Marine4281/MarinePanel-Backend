@@ -13,12 +13,12 @@ const orderSchema = new mongoose.Schema(
       unique: true,
       index: true,
     },
-    //Custom OrderId
+
     customOrderId: {
-       type: Number,
-       unique: true,
-       index: true,
-},
+      type: Number,
+      unique: true,
+      index: true,
+    },
 
     /* ===============================
        👤 USER
@@ -31,7 +31,7 @@ const orderSchema = new mongoose.Schema(
     },
 
     /* ===============================
-       👥 RESELLER (🔥 REQUIRED)
+       👥 RESELLER
     =============================== */
     resellerOwner: {
       type: mongoose.Schema.Types.ObjectId,
@@ -119,24 +119,41 @@ const orderSchema = new mongoose.Schema(
       index: true,
     },
 
-  /* =====================================================
-        ALLOWED FLAGS FROM SERVICE
-   ===================================================== */
-    
+    /* =====================================================
+       🧠 SNAPSHOT FROM SERVICE (CRITICAL)
+    ===================================================== */
+
     cancelAllowed: {
       type: Boolean,
       default: false,
-     },
+    },
+
     refillAllowed: {
       type: Boolean,
       default: false,
-     },
+    },
 
+    refillPolicy: {
+      type: String,
+      enum: ["none", "30d", "60d", "90d", "365d", "lifetime", "custom"],
+      default: "none",
+    },
 
-    
+    customRefillDays: {
+      type: Number,
+      default: null,
+    },
+
+    completedAt: {
+      type: Date,
+      default: null,
+      index: true,
+    },
+
     /* =====================================================
-       ❌ CANCEL SYSTEM (NEW - CRITICAL)
+       ❌ CANCEL SYSTEM
     ===================================================== */
+
     cancelRequested: {
       type: Boolean,
       default: false,
@@ -150,20 +167,20 @@ const orderSchema = new mongoose.Schema(
 
     cancelProcessed: {
       type: Boolean,
-      default: false,
+      default: true, // ✅ instant system (no async cancel)
       index: true,
     },
 
     cancelStatus: {
       type: String,
-      enum: ["none", "pending", "processing", "success", "failed"],
+      enum: ["none", "success", "failed"],
       default: "none",
     },
 
-
     /* =====================================================
-       🔁 REFILL SYSTEM (NEW - CRITICAL)
+       🔁 REFILL SYSTEM
     ===================================================== */
+
     refillRequested: {
       type: Boolean,
       default: false,
@@ -183,7 +200,7 @@ const orderSchema = new mongoose.Schema(
 
     refillStatus: {
       type: String,
-      enum: ["none", "pending", "processing", "success", "failed"],
+      enum: ["none", "pending", "processing", "completed", "rejected"],
       default: "none",
     },
 
@@ -192,16 +209,16 @@ const orderSchema = new mongoose.Schema(
       default: "",
     },
 
-    //Provider
+    /* ===============================
+       🔌 PROVIDER
+    =============================== */
+
     providerProfileId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "ProviderProfile",
       index: true,
     },
 
-    /* ===============================
-       🔌 PROVIDER
-    =============================== */
     provider: { type: String, default: "" },
     providerApiUrl: { type: String, default: "" },
     providerServiceId: { type: String, default: "" },
@@ -220,6 +237,7 @@ const orderSchema = new mongoose.Schema(
     /* ===============================
        ❌ ERROR
     =============================== */
+
     errorMessage: {
       type: String,
       default: "",
@@ -232,32 +250,33 @@ const orderSchema = new mongoose.Schema(
 );
 
 /* ===============================
-   🚀 INDEXES (OPTIMIZED)
+   🧠 AUTO TIMESTAMP COMPLETION
+=============================== */
+orderSchema.pre("save", function (next) {
+  if (
+    this.status === "completed" &&
+    !this.completedAt
+  ) {
+    this.completedAt = new Date();
+  }
+
+  next();
+});
+
+/* ===============================
+   🚀 INDEXES
 =============================== */
 
-// User orders
 orderSchema.index({ userId: 1, createdAt: -1 });
-
-// Reseller dashboard (🔥 IMPORTANT)
 orderSchema.index({ resellerOwner: 1, createdAt: -1 });
-
-// Earnings queries (🔥 IMPORTANT)
 orderSchema.index({ resellerOwner: 1, earningsCredited: 1 });
-
-// Free service checks
 orderSchema.index({ userId: 1, service: 1, isFreeOrder: 1 });
-
-// Admin filters
 orderSchema.index({ status: 1 });
 orderSchema.index({ createdAt: -1 });
-
-// Refund safety
 orderSchema.index({ refundProcessed: 1 });
 
-//Cancel and REFILL 
 orderSchema.index({ cancelRequested: 1, cancelProcessed: 1 });
 orderSchema.index({ refillRequested: 1, refillProcessed: 1 });
-
 
 export default mongoose.models.Order ||
   mongoose.model("Order", orderSchema);

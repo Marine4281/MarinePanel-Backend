@@ -201,8 +201,6 @@ serviceSchema.pre("save", function () {
   if (this.refillPolicy === "custom" && !this.customRefillDays) {
     this.refillPolicy = "none";
   }
-
-  next();
 });
 
 // =====================================================

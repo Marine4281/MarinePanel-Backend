@@ -34,10 +34,9 @@ const serviceSchema = new mongoose.Schema(
     },
 
     // =====================================================
-    // 🟣 PROVIDER RELATION (NEW SYSTEM)
+    // 🟣 PROVIDER RELATION
     // =====================================================
 
-    // Reference to ProviderProfile
     providerProfileId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "ProviderProfile",
@@ -45,14 +44,12 @@ const serviceSchema = new mongoose.Schema(
       index: true,
     },
 
-    // Provider name (cached for quick display)
     provider: {
       type: String,
       required: true,
       trim: true,
     },
 
-    // Provider's service ID
     providerServiceId: {
       type: String,
       required: true,
@@ -63,20 +60,17 @@ const serviceSchema = new mongoose.Schema(
     // 💰 PRICING
     // =====================================================
 
-    // Current selling rate (your system rate)
     rate: {
       type: Number,
       required: true,
       default: 0,
     },
 
-    // Last synced provider rate (VERY IMPORTANT 🔥)
     lastSyncedRate: {
       type: Number,
       default: 0,
     },
 
-    // Store previous rate for comparison
     previousRate: {
       type: Number,
       default: 0,
@@ -127,6 +121,10 @@ const serviceSchema = new mongoose.Schema(
       index: true,
     },
 
+    // =====================================================
+    // 🔁 ORDER CONTROLS
+    // =====================================================
+
     refillAllowed: {
       type: Boolean,
       default: true,
@@ -137,19 +135,25 @@ const serviceSchema = new mongoose.Schema(
       default: true,
     },
 
+    /**
+     * Refill policy is controlled by YOUR system (not provider)
+     * - "none" = no refill
+     * - "Xd" = number of days
+     * - "lifetime" = unlimited
+     * - "custom" = use customRefillDays
+     */
     refillPolicy: {
       type: String,
       enum: ["none", "30d", "60d", "90d", "365d", "lifetime", "custom"],
       default: "none",
+      index: true,
     },
 
-   customRefillDays: {
+    customRefillDays: {
       type: Number,
       default: null,
+      min: 1,
     },
-
-
-    
 
     // =====================================================
     // ⭐ DEFAULT SETTINGS
@@ -173,20 +177,51 @@ const serviceSchema = new mongoose.Schema(
       index: true,
     },
   },
-  { timestamps: true }
+  {
+    timestamps: true,
+  }
 );
 
 // =====================================================
-// 🚀 INDEXES (IMPORTANT FOR SPEED)
+// 🧠 DATA INTEGRITY MIDDLEWARE (CRITICAL)
 // =====================================================
-// Fast lookup for sync (VERY IMPORTANT 🔥)
+serviceSchema.pre("save", function (next) {
+  // 🚫 If refill is disabled → force clean state
+  if (!this.refillAllowed) {
+    this.refillPolicy = "none";
+    this.customRefillDays = null;
+  }
+
+  // 🧹 If not custom → remove custom days
+  if (this.refillPolicy !== "custom") {
+    this.customRefillDays = null;
+  }
+
+  // ⚠️ Safety: prevent invalid custom config
+  if (this.refillPolicy === "custom" && !this.customRefillDays) {
+    this.refillPolicy = "none";
+  }
+
+  next();
+});
+
+// =====================================================
+// 🚀 INDEXES (PERFORMANCE)
+// =====================================================
+
+// Fast provider sync lookup
 serviceSchema.index({
   providerProfileId: 1,
   providerServiceId: 1,
 });
 
-// Category queries
+// Fast category queries
 serviceSchema.index({ platform: 1, category: 1 });
+
+// Platform defaults
 serviceSchema.index({ platform: 1, isDefaultCategoryPlatform: 1 });
 
+// =====================================================
+// 📦 EXPORT
+// =====================================================
 export default mongoose.model("Service", serviceSchema);

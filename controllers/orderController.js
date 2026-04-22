@@ -272,6 +272,10 @@ export const createOrder = async (req, res) => {
 
       cancelAllowed: serviceData.cancelAllowed,
       refillAllowed: serviceData.refillAllowed,
+
+      refillPolicy: serviceData.refillPolicy || "none",
+      customRefillDays: serviceData.customRefillDays || null,
+
     });
 
     /* ================= PROVIDER CALL ================= */

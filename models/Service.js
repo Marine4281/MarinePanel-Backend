@@ -185,7 +185,7 @@ const serviceSchema = new mongoose.Schema(
 // =====================================================
 // 🧠 DATA INTEGRITY MIDDLEWARE (CRITICAL)
 // =====================================================
-serviceSchema.pre("save", function (next) {
+serviceSchema.pre("save", function () {
   // 🚫 If refill is disabled → force clean state
   if (!this.refillAllowed) {
     this.refillPolicy = "none";

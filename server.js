@@ -4,22 +4,30 @@ import app from "./app.js";
 import http from "http";
 import { Server } from "socket.io";
 
-/* NEW: Provider sync service */
-import { startProviderStatusSync } from "./services /providerStatusSync.js";
+/* ✅ NEW: CRON JOBS */
+import { startOrderSyncJob } from "./jobs/orderSyncJob.js";
+import { startRefillSyncJob } from "./jobs/refillSyncJob.js";
 
 dotenv.config();
 
-// Connect to MongoDB
-mongoose.connect(process.env.MONGO_URI)
-  .then(() => console.log("MongoDB connected"))
-  .catch(err => console.log(err));
+/* ========================================
+   🗄️ CONNECT TO MONGODB
+======================================== */
+mongoose
+  .connect(process.env.MONGO_URI)
+  .then(() => console.log("✅ MongoDB connected"))
+  .catch((err) => console.log("❌ MongoDB error:", err));
 
 const PORT = process.env.PORT || 10000;
 
-// Wrap Express app in HTTP server
+/* ========================================
+   🌐 CREATE HTTP SERVER
+======================================== */
 const server = http.createServer(app);
 
-// Initialize Socket.IO with proper CORS
+/* ========================================
+   🔌 SOCKET.IO SETUP
+======================================== */
 export const io = new Server(server, {
   cors: {
     origin: (origin, callback) => {
@@ -32,7 +40,7 @@ export const io = new Server(server, {
         return callback(null, true);
       }
 
-      console.log("Blocked by Socket.IO CORS:", origin);
+      console.log("🚫 Blocked by Socket.IO CORS:", origin);
       callback(new Error("Not allowed by CORS"));
     },
     methods: ["GET", "POST"],
@@ -40,27 +48,34 @@ export const io = new Server(server, {
   },
 });
 
-// Make io accessible in routes/controllers via app.set (optional)
+/* Make io accessible in routes/controllers */
 app.set("io", io);
 
-// Socket.IO connection
+/* ========================================
+   🔗 SOCKET CONNECTION
+======================================== */
 io.on("connection", (socket) => {
-  console.log("New client connected:", socket.id);
+  console.log("🔌 New client connected:", socket.id);
 
-  /* user joins their own room */
+  // user joins personal room
   socket.on("join_user_room", (userId) => {
     socket.join(userId);
   });
 
   socket.on("disconnect", () => {
-    console.log("Client disconnected:", socket.id);
+    console.log("❌ Client disconnected:", socket.id);
   });
 });
 
 /* ========================================
-   START PROVIDER ORDER STATUS SYNC
+   ⏱️ START CRON JOBS (PRODUCTION SAFE)
 ======================================== */
-startProviderStatusSync(io);
+startOrderSyncJob(io);     // 🔄 Order status sync (every 1 min)
+startRefillSyncJob();      // 🔄 Refill status sync (every 2 min)
 
-// Start server
-server.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+/* ========================================
+   🚀 START SERVER
+======================================== */
+server.listen(PORT, () =>
+  console.log(`🚀 Server running on port ${PORT}`)
+);

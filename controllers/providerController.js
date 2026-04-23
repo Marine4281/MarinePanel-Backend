@@ -429,8 +429,13 @@ export const importSelectedServices = async (req, res) => {
           description: service.description || "",
 
           status: true,
-          refillAllowed: false,
-          cancelAllowed: false,
+          refillAllowed: Boolean(service.refill),
+          cancelAllowed: Boolean(service.cancel),
+
+         // ✅ REQUIRED FOR YOUR SYSTEM
+         refillPolicy: service.refill ? "30d" : "none",
+         customRefillDays: null,
+
 
           isDefault: false,
           isDefaultCategoryGlobal: false,

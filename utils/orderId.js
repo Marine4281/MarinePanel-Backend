@@ -8,7 +8,7 @@ import Counter from "../models/Counter.js";
 export const getNextOrderId = async () => {
   try {
     const counter = await Counter.findOneAndUpdate(
-      { id: "orderId" },
+      { _id: "orderId" },
       { $inc: { seq: 1 } },
       { new: true, upsert: true }
     );

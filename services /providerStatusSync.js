@@ -226,5 +226,4 @@ export const startProviderStatusSync = (io) => {
   };
 
   runSync();
-  setInterval(runSync, 45000);
 };

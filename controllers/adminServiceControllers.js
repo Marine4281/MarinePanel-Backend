@@ -11,7 +11,7 @@ AUTO INCREMENT SERVICE ID
 ========================================================= */
 async function getNextServiceId() {
   const counter = await Counter.findOneAndUpdate(
-    { id: "serviceId" },
+    { _id: "serviceId" },
     { $inc: { seq: 1 } },
     { new: true, upsert: true }
   );

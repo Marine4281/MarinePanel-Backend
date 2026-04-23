@@ -252,15 +252,10 @@ const orderSchema = new mongoose.Schema(
 /* ===============================
    🧠 AUTO TIMESTAMP COMPLETION
 =============================== */
-orderSchema.pre("save", function (next) {
-  if (
-    this.status === "completed" &&
-    !this.completedAt
-  ) {
+orderSchema.pre("save", function () {
+  if (this.status === "completed" && !this.completedAt) {
     this.completedAt = new Date();
   }
-
-  next();
 });
 
 /* ===============================

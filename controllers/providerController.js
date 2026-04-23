@@ -509,3 +509,53 @@ export const importSelectedServices = async (req, res) => {
     });
   }
 };
+
+/*
+
+Import services by category
+
+*/
+export const importCategoryServices = async (req, res) => {
+  try {
+    const { category, services, provider } = req.body;
+
+    if (!provider) {
+      return res.status(400).json({
+        message: "provider required",
+      });
+    }
+
+    if (!category) {
+      return res.status(400).json({
+        message: "category required",
+      });
+    }
+
+    if (!services || !Array.isArray(services)) {
+      return res.status(400).json({
+        message: "services must be an array",
+      });
+    }
+
+    const filtered = services.filter((s) => s.category === category);
+
+    if (filtered.length === 0) {
+      return res.json({
+        message: "No services found in this category",
+        count: 0,
+      });
+    }
+
+    req.body.services = filtered;
+
+    return importSelectedServices(req, res);
+
+  } catch (error) {
+    console.error("Import Category Error:", error);
+
+    res.status(500).json({
+      message: "Failed to import category services",
+      error: error.message, // 👈 ADD THIS (VERY IMPORTANT)
+    });
+  }
+};

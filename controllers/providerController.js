@@ -373,13 +373,23 @@ export const importSelectedServices = async (req, res) => {
       });
     }
 
-    const { apiUrl, apiKey } = profile;
+    const { apiUrl, apiKey, _id: providerProfileId } = profile;
 
     let count = 0;
 
     for (const service of services) {
       const providerServiceId = Number(service.service);
 
+      // 🔥 Normalize provider booleans (VERY IMPORTANT)
+      const refillSupported =
+        service.refill === true || service.refill === "true";
+
+      const cancelSupported =
+        service.cancel === true || service.cancel === "true";
+
+      // ============================================
+      // ✅ UPDATE PROVIDER SERVICE (SOURCE OF TRUTH)
+      // ============================================
       await ProviderService.updateOne(
         { provider, providerServiceId },
         {
@@ -395,15 +405,21 @@ export const importSelectedServices = async (req, res) => {
         { upsert: true }
       );
 
-      const exists = await Service.findOne({
+      // ============================================
+      // ✅ CHECK IF PANEL SERVICE EXISTS
+      // ============================================
+      const existingService = await Service.findOne({
         providerServiceId: String(providerServiceId),
       });
 
-      if (!exists) {
-        const newServiceId = await generateServiceId();
-        const platform = extractPlatform(service.category);
+      const numericRate = Number(service.rate);
+      const platform = extractPlatform(service.category);
 
-        const numericRate = Number(service.rate);
+      // ============================================
+      // 🆕 CREATE NEW SERVICE
+      // ============================================
+      if (!existingService) {
+        const newServiceId = await generateServiceId();
 
         await Service.create({
           serviceId: newServiceId,
@@ -419,7 +435,7 @@ export const importSelectedServices = async (req, res) => {
           rate: numericRate,
           lastSyncedRate: numericRate,
           previousRate: numericRate,
-          
+
           min: Number(service.min),
           max: Number(service.max),
 
@@ -429,20 +445,53 @@ export const importSelectedServices = async (req, res) => {
           description: service.description || "",
 
           status: true,
-          refillAllowed: Boolean(service.refill),
-          cancelAllowed: Boolean(service.cancel),
 
-         // ✅ REQUIRED FOR YOUR SYSTEM
-         refillPolicy: service.refill ? "30d" : "none",
-         customRefillDays: null,
+          // 🔥 REFILL + CANCEL (PROVIDER BASED)
+          refillAllowed: refillSupported,
+          cancelAllowed: cancelSupported,
 
+          // 🧠 YOUR SYSTEM POLICY
+          refillPolicy: refillSupported ? "30d" : "none",
+          customRefillDays: null,
 
           isDefault: false,
           isDefaultCategoryGlobal: false,
           isDefaultCategoryPlatform: false,
 
-          providerProfileId: profile._id,
+          providerProfileId,
         });
+      }
+
+      // ============================================
+      // 🔄 UPDATE EXISTING SERVICE (CRITICAL FIX)
+      // ============================================
+      else {
+        existingService.name = service.name;
+        existingService.category = service.category;
+        existingService.rate = numericRate;
+        existingService.lastSyncedRate = numericRate;
+
+        existingService.min = Number(service.min);
+        existingService.max = Number(service.max);
+
+        existingService.providerApiUrl = apiUrl;
+        existingService.providerApiKey = apiKey;
+
+        // 🔥 KEEP PANEL IN SYNC WITH PROVIDER
+        existingService.refillAllowed = refillSupported;
+        existingService.cancelAllowed = cancelSupported;
+
+        // 🧠 Only auto-set policy if not manually customized
+        if (
+          existingService.refillPolicy === "none" ||
+          !existingService.refillPolicy
+        ) {
+          existingService.refillPolicy = refillSupported
+            ? "30d"
+            : "none";
+        }
+
+        await existingService.save();
       }
 
       count++;
@@ -452,62 +501,11 @@ export const importSelectedServices = async (req, res) => {
       message: "Selected services imported",
       count,
     });
-
   } catch (error) {
     console.error("Import Selected Services Error:", error);
 
     res.status(500).json({
       message: "Failed to import services",
-    });
-  }
-};
-
-/*
-
-Import services by category
-
-*/
-export const importCategoryServices = async (req, res) => {
-  try {
-    const { category, services, provider } = req.body;
-
-    if (!provider) {
-      return res.status(400).json({
-        message: "provider required",
-      });
-    }
-
-    if (!category) {
-      return res.status(400).json({
-        message: "category required",
-      });
-    }
-
-    if (!services || !Array.isArray(services)) {
-      return res.status(400).json({
-        message: "services must be an array",
-      });
-    }
-
-    const filtered = services.filter((s) => s.category === category);
-
-    if (filtered.length === 0) {
-      return res.json({
-        message: "No services found in this category",
-        count: 0,
-      });
-    }
-
-    req.body.services = filtered;
-
-    return importSelectedServices(req, res);
-
-  } catch (error) {
-    console.error("Import Category Error:", error);
-
-    res.status(500).json({
-      message: "Failed to import category services",
-      error: error.message, // 👈 ADD THIS (VERY IMPORTANT)
     });
   }
 };

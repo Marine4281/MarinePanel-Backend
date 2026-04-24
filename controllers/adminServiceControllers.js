@@ -10,19 +10,22 @@ import logAdminAction from "../utils/logAdminAction.js";
 AUTO INCREMENT SERVICE ID
 ========================================================= */
 async function getNextServiceId() {
-  // 🔥 Step 1: Get highest existing serviceId
+  // 1️⃣ Get highest serviceId in DB
   const lastService = await Service.findOne().sort({ serviceId: -1 });
-
   const maxId = lastService ? lastService.serviceId : 1000;
 
-  // 🔥 Step 2: Sync counter safely
+  // 2️⃣ Ensure counter is not behind
+  await Counter.findOneAndUpdate(
+    { _id: "serviceId" },
+    { $max: { seq: maxId } },
+    { upsert: true }
+  );
+
+  // 3️⃣ Now safely increment
   const counter = await Counter.findOneAndUpdate(
     { _id: "serviceId" },
-    {
-      $max: { seq: maxId }, // never go below DB max
-      $inc: { seq: 1 },     // then increment
-    },
-    { new: true, upsert: true }
+    { $inc: { seq: 1 } },
+    { new: true }
   );
 
   return counter.seq;

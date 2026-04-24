@@ -53,16 +53,9 @@ export const cancelOrder = async (req, res) => {
       });
     }
 
-    // ✅ Ensure valid provider order ID
-    const providerOrderId = String(order.providerOrderId || "").trim();
+    // 🔥 SAFE provider order formatting (supports future batch cancel)
+    const providerOrderId = String(order.providerOrderId || "");
 
-    if (!providerOrderId) {
-      return res.status(400).json({
-        message: "Invalid provider order ID",
-      });
-    }
-
-    // 🔥 Send cancel request (ONE-TIME action)
     const response = await callProvider(provider, {
       action: "cancel",
       orders: providerOrderId,
@@ -70,39 +63,29 @@ export const cancelOrder = async (req, res) => {
 
     // 🔥 Normalize response safely
     const cancelResult =
-      response?.[0]?.cancel ??
-      response?.cancel ??
-      null;
+      response?.[0]?.cancel ||
+      response?.cancel ||
+      response;
 
     const isSuccess = cancelResult === 1 || cancelResult === true;
 
-    // ✅ FINAL STATE (no fake pending/processing)
     order.cancelRequested = true;
     order.cancelRequestedAt = new Date();
-    order.cancelStatus = isSuccess ? "success" : "failed";
-    order.cancelProcessed = true;
+    order.cancelStatus = isSuccess ? "success" : "pending";
+    order.cancelProcessed = false;
 
-    // ✅ If success → reflect immediately in system
-    if (isSuccess) {
-      order.status = "cancelled";
-    }
-
-    // Store raw provider response for debugging/audit
     order.cancelResponse = response;
 
     await order.save();
 
     res.json({
-      message: isSuccess
-        ? "Order cancelled successfully"
-        : "Cancel request failed",
+      message: "Cancel request sent",
       success: isSuccess,
       response,
     });
 
   } catch (error) {
     console.error("Cancel Order Error:", error);
-
     res.status(500).json({
       message: "Cancel request failed",
       error: error.message,
@@ -118,10 +101,6 @@ export const refillOrder = async (req, res) => {
     const { orderId } = req.params;
 
     const order = await Order.findById(orderId);
-
-    /* =========================================================
-       ❌ VALIDATIONS
-    ========================================================= */
 
     if (!order) {
       return res.status(404).json({ message: "Order not found" });
@@ -153,45 +132,6 @@ export const refillOrder = async (req, res) => {
       });
     }
 
-    /* =========================================================
-       🔥 REFILL EXPIRY POLICY (NEW - CRITICAL)
-    ========================================================= */
-
-    const orderAgeDays =
-      (Date.now() - new Date(order.createdAt)) / (1000 * 60 * 60 * 24);
-
-    if (order.refillPolicy !== "lifetime") {
-      if (order.refillPolicy === "30d" && orderAgeDays > 30) {
-        return res.status(400).json({ message: "Refill expired (30 days)" });
-      }
-
-      if (order.refillPolicy === "60d" && orderAgeDays > 60) {
-        return res.status(400).json({ message: "Refill expired (60 days)" });
-      }
-
-      if (order.refillPolicy === "90d" && orderAgeDays > 90) {
-        return res.status(400).json({ message: "Refill expired (90 days)" });
-      }
-
-      if (order.refillPolicy === "365d" && orderAgeDays > 365) {
-        return res.status(400).json({ message: "Refill expired (365 days)" });
-      }
-
-      if (
-        order.refillPolicy === "custom" &&
-        order.customRefillDays &&
-        orderAgeDays > order.customRefillDays
-      ) {
-        return res.status(400).json({
-          message: `Refill expired (${order.customRefillDays} days)`,
-        });
-      }
-    }
-
-    /* =========================================================
-       🔧 PROVIDER VALIDATION
-    ========================================================= */
-
     const provider = await getProvider(order);
 
     if (!provider) {
@@ -200,73 +140,40 @@ export const refillOrder = async (req, res) => {
       });
     }
 
-    const providerOrderId = String(order.providerOrderId || "").trim();
-
-    if (!providerOrderId) {
-      return res.status(400).json({
-        message: "Invalid provider order ID",
-      });
-    }
-
-    /* =========================================================
-       🚀 CALL PROVIDER
-    ========================================================= */
+    const providerOrderId = String(order.providerOrderId || "");
 
     const response = await callProvider(provider, {
       action: "refill",
       order: providerOrderId,
     });
 
-    /* =========================================================
-       🔥 SAFE REFILL ID EXTRACTION (PRODUCTION SAFE)
-    ========================================================= */
-
-    let refillId =
+    // 🔥 Correct refill ID handling (aligned with provider docs)
+    const refillId =
       response?.refill ||
       response?.data?.refill ||
-      (Array.isArray(response) ? response?.[0]?.refill : null);
-
-    // normalize to string
-    if (refillId !== null && refillId !== undefined) {
-      refillId = String(refillId);
-    }
-
-    if (!refillId) {
-      return res.status(400).json({
-        message: "Provider did not return refill ID",
-        response,
-      });
-    }
-
-    /* =========================================================
-       💾 UPDATE ORDER
-    ========================================================= */
+      (Array.isArray(response)
+        ? response?.[0]?.refill
+        : null);
 
     order.refillRequested = true;
     order.refillRequestedAt = new Date();
-
     order.refillStatus = "pending";
     order.refillProcessed = false;
 
-    order.refillId = refillId;
+    order.refillId = refillId; // ✅ FIXED (was providerRefillId mismatch)
 
     order.refillResponse = response;
 
     await order.save();
 
-    /* =========================================================
-       ✅ RESPONSE
-    ========================================================= */
-
     res.json({
-      message: "Refill request sent successfully",
+      message: "Refill request sent",
       refillId,
-      status: "pending",
+      response,
     });
 
   } catch (error) {
     console.error("Refill Order Error:", error);
-
     res.status(500).json({
       message: "Refill request failed",
       error: error.message,

@@ -399,12 +399,28 @@ export const updateService = async (req, res) => {
     }
 
     // override safety
-    if (refillAllowed !== undefined) service.refillAllowed = Boolean(refillAllowed);
-    if (cancelAllowed !== undefined) service.cancelAllowed = Boolean(cancelAllowed);
-    if (!service.refillAllowed) {
+    if (refillAllowed !== undefined) {
+  service.refillAllowed = Boolean(refillAllowed);
+}
+
+if (cancelAllowed !== undefined) {
+  service.cancelAllowed = Boolean(cancelAllowed);
+}
+
+// ✅ APPLY REFILL POLICY (FIX)
+if (req.body.refillPolicy !== undefined) {
+  service.refillPolicy = req.body.refillPolicy;
+}
+
+if (req.body.customRefillDays !== undefined) {
+  service.customRefillDays = req.body.customRefillDays;
+}
+
+// ✅ safety cleanup
+if (!service.refillAllowed) {
   service.refillPolicy = "none";
   service.customRefillDays = null;
-    }
+}
 
     /* =========================================================
     💾 SAVE (NOW SAFE)

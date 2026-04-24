@@ -1,3 +1,4 @@
+//routes/adminServiceRoutes.js
 import express from "express";
 import {
   getAllServices,
@@ -10,6 +11,7 @@ import {
 import {
   toggleRefillGlobal,
   toggleCancelGlobal,
+  getServiceSettings,
 } from "../controllers/serviceTogglesController.js";
 
 import { protect } from "../middlewares/authMiddleware.js";
@@ -23,6 +25,7 @@ router.use(protect, adminOnly);
 // 🔥 GLOBAL TOGGLES FIRST (IMPORTANT)
 router.patch("/toggle-refill-global", toggleRefillGlobal);
 router.patch("/toggle-cancel-global", toggleCancelGlobal);
+router.get("/service-settings", getServiceSettings);
 
 // GET all services
 router.get("/", getAllServices);

@@ -1,79 +1,77 @@
-import ServiceSettings from "../models/ServiceSettings.js";
+// controllers/serviceTogglesController.js
+import Service from "../models/Service.js";
 
-/* =========================================================
-   🔥 GET GLOBAL SETTINGS
-========================================================= */
-export const getServiceSettings = async (req, res) => {
-  try {
-    let settings = await ServiceSettings.findOne();
-
-    if (!settings) {
-      settings = await ServiceSettings.create({});
-    }
-
-    res.json(settings);
-  } catch (err) {
-    console.error("GET SETTINGS ERROR:", err);
-    res.status(500).json({
-      message: "Failed to fetch service settings",
-    });
-  }
-};
-
-/* =========================================================
-   🔥 TOGGLE REFILL GLOBALLY
-========================================================= */
+/* =========================
+   🔥 GLOBAL TOGGLE REFILL
+========================= */
 export const toggleRefillGlobal = async (req, res) => {
   try {
-    let settings = await ServiceSettings.findOne();
+    // 1. Get current state (take any service)
+    const sample = await Service.findOne();
 
-    if (!settings) {
-      settings = await ServiceSettings.create({});
+    if (!sample) {
+      return res.status(404).json({ message: "No services found" });
     }
 
-    settings.globalRefillEnabled = !settings.globalRefillEnabled;
+    const newState = !sample.refillAllowed;
 
-    await settings.save();
+    // 2. Update ALL services
+    await Service.updateMany(
+      {},
+      {
+        $set: {
+          refillAllowed: newState,
+          ...(newState === false && {
+            refillPolicy: "none",
+            customRefillDays: null,
+          }),
+        },
+      }
+    );
 
     res.json({
-      message: `Refill globally ${
-        settings.globalRefillEnabled ? "enabled" : "disabled"
-      }`,
-      globalRefillEnabled: settings.globalRefillEnabled,
+      message: `Refill globally ${newState ? "enabled" : "disabled"}`,
+      refillAllowed: newState,
     });
+
   } catch (err) {
-    console.error("REFILL GLOBAL TOGGLE ERROR:", err);
-    res.status(500).json({
-      message: "Failed to toggle refill",
-    });
+    console.error("GLOBAL REFILL ERROR:", err);
+    res.status(500).json({ message: "Global toggle refill failed" });
   }
 };
 
-/* =========================================================
-   🔥 TOGGLE CANCEL GLOBALLY
-========================================================= */
+
+/* =========================
+   🔥 GLOBAL TOGGLE CANCEL
+========================= */
 export const toggleCancelGlobal = async (req, res) => {
   try {
-    let settings = await ServiceSettings.findOne();
+    // 1. Get current state
+    const sample = await Service.findOne();
 
-    if (!settings) {
-      settings = await ServiceSettings.create({});
+    if (!sample) {
+      return res.status(404).json({ message: "No services found" });
     }
 
-    settings.globalCancelEnabled = !settings.globalCancelEnabled;
+    const newState = !sample.cancelAllowed;
 
-    await settings.save();
+    // 2. Update ALL services
+    await Service.updateMany(
+      {},
+      {
+        $set: {
+          cancelAllowed: newState,
+        },
+      }
+    );
 
     res.json({
-      message: `Cancel globally ${
-        settings.globalCancelEnabled ? "enabled" : "disabled"
-      }`,
-      globalCancelEnabled: settings.globalCancelEnabled,
+      message: `Cancel globally ${newState ? "enabled" : "disabled"}`,
+      cancelAllowed: newState,
     });
+
   } catch (err) {
-    console.error("CANCEL GLOBAL TOGGLE ERROR:", err);
-    res.status(500).json({
-      message: "Failed to toggle cancel",
-    });
+    console.error("GLOBAL CANCEL ERROR:", err);
+    res.status(500).json({ message: "Global toggle cancel failed" });
   }
 };

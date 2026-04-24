@@ -34,7 +34,8 @@ router.put("/:id", updateService);
 // DELETE service by id
 router.delete("/:id", deleteService);
 
-router.patch("/services/toggle-refill-global", toggleRefillGlobal);
-router.patch("/services/toggle-cancel-global", toggleCancelGlobal);
+// 🔥 GLOBAL TOGGLES (FIXED)
+router.patch("/toggle-refill-global", toggleRefillGlobal);
+router.patch("/toggle-cancel-global", toggleCancelGlobal);
 
 export default router;

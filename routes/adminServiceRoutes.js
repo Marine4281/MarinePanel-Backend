@@ -7,9 +7,10 @@ import {
   toggleServiceStatus,
 } from "../controllers/adminServiceControllers.js";
 import {
-  toggleRefill,
-  toggleCancel
+  toggleRefillGlobal,
+  toggleCancelGlobal,
 } from "../controllers/serviceTogglesController.js";
+
 import { protect } from "../middlewares/authMiddleware.js";
 import { adminOnly } from "../middlewares/adminMiddleware.js";
 
@@ -33,7 +34,7 @@ router.put("/:id", updateService);
 // DELETE service by id
 router.delete("/:id", deleteService);
 
-router.patch("/services/:id/toggle-refill", toggleRefill);
-router.patch("/services/:id/toggle-cancel", toggleCancel);
+router.patch("/services/toggle-refill-global", toggleRefillGlobal);
+router.patch("/services/toggle-cancel-global", toggleCancelGlobal);
 
 export default router;

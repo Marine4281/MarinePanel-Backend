@@ -75,3 +75,28 @@ export const toggleCancelGlobal = async (req, res) => {
     res.status(500).json({ message: "Global toggle cancel failed" });
   }
 };
+
+/* =========================
+   🔥 GET GLOBAL SETTINGS
+========================= */
+export const getServiceSettings = async (req, res) => {
+  try {
+    const sample = await Service.findOne();
+
+    if (!sample) {
+      return res.json({
+        globalRefillEnabled: false,
+        globalCancelEnabled: false,
+      });
+    }
+
+    res.json({
+      globalRefillEnabled: sample.refillAllowed ?? false,
+      globalCancelEnabled: sample.cancelAllowed ?? false,
+    });
+
+  } catch (err) {
+    console.error("GET SETTINGS ERROR:", err);
+    res.status(500).json({ message: "Failed to fetch settings" });
+  }
+};

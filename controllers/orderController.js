@@ -269,6 +269,7 @@ export const createOrder = async (req, res) => {
       provider: serviceData.provider,
       providerApiUrl: serviceData.providerApiUrl,
       providerServiceId: serviceData.providerServiceId,
+      providerProfileId: serviceData.providerProfileId,
 
       cancelAllowed: serviceData.cancelAllowed,
       refillAllowed: serviceData.refillAllowed,

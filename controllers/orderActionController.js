@@ -3,6 +3,7 @@
 import Order from "../models/Order.js";
 import ProviderProfile from "../models/ProviderProfile.js";
 import { callProvider } from "../utils/providerApi.js";
+import ServiceSettings from "../models/ServiceSettings.js";
 
 /* =========================================================
    🔧 HELPER: GET PROVIDER (SAFE + FUTURE PROOF)
@@ -29,6 +30,13 @@ export const cancelOrder = async (req, res) => {
 
     if (order.userId.toString() !== req.user._id.toString()) {
       return res.status(403).json({ message: "Unauthorized" });
+    }
+     // 🔥 GLOBAL REFILL GUARD (NEW)
+    const settings = await ServiceSettings.findOne();
+    if (settings && settings.globalRefillEnabled === false) {
+      return res.status(403).json({
+        message: "Refill is currently disabled by admin",
+      });
     }
 
     if (order.cancelRequested) {
@@ -129,6 +137,14 @@ export const refillOrder = async (req, res) => {
 
     if (order.userId.toString() !== req.user._id.toString()) {
       return res.status(403).json({ message: "Unauthorized" });
+    }
+
+     // 🔥 GLOBAL REFILL GUARD (NEW)
+    const settings = await ServiceSettings.findOne();
+    if (settings && settings.globalRefillEnabled === false) {
+      return res.status(403).json({
+        message: "Refill is currently disabled by admin",
+      });
     }
 
     if (order.refillRequested) {

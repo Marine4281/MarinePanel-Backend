@@ -6,6 +6,7 @@ import {
   deleteService,
   toggleServiceStatus,
 } from "../controllers/adminServiceControllers.js";
+
 import {
   toggleRefillGlobal,
   toggleCancelGlobal,
@@ -19,10 +20,14 @@ const router = express.Router();
 // All routes protected and admin-only
 router.use(protect, adminOnly);
 
+// 🔥 GLOBAL TOGGLES FIRST (IMPORTANT)
+router.patch("/toggle-refill-global", toggleRefillGlobal);
+router.patch("/toggle-cancel-global", toggleCancelGlobal);
+
 // GET all services
 router.get("/", getAllServices);
 
-//Toggle visibility 
+// Toggle visibility 
 router.patch("/:id/toggle", toggleServiceStatus);
 
 // POST add new service
@@ -33,9 +38,5 @@ router.put("/:id", updateService);
 
 // DELETE service by id
 router.delete("/:id", deleteService);
-
-// 🔥 GLOBAL TOGGLES (FIXED)
-router.patch("/toggle-refill-global", toggleRefillGlobal);
-router.patch("/toggle-cancel-global", toggleCancelGlobal);
 
 export default router;

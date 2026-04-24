@@ -1,102 +1,83 @@
 // controllers/serviceTogglesController.js
 import Service from "../models/Service.js";
+import ServiceSettings from "../models/ServiceSettings.js";
 
 /* =========================
-   🔥 GLOBAL TOGGLE REFILL
-========================= */
-export const toggleRefillGlobal = async (req, res) => {
-  try {
-    // 1. Get current state (take any service)
-    const sample = await Service.findOne();
-
-    if (!sample) {
-      return res.status(404).json({ message: "No services found" });
-    }
-
-    const newState = !sample.refillAllowed;
-
-    // 2. Update ALL services
-    await Service.updateMany(
-      {},
-      {
-        $set: {
-          refillAllowed: newState,
-          ...(newState === false && {
-            refillPolicy: "none",
-            customRefillDays: null,
-          }),
-        },
-      }
-    );
-
-    res.json({
-      message: `Refill globally ${newState ? "enabled" : "disabled"}`,
-      refillAllowed: newState,
-    });
-
-  } catch (err) {
-    console.error("GLOBAL REFILL ERROR:", err);
-    res.status(500).json({ message: "Global toggle refill failed" });
-  }
-};
-
-
-/* =========================
-   🔥 GLOBAL TOGGLE CANCEL
-========================= */
-export const toggleCancelGlobal = async (req, res) => {
-  try {
-    // 1. Get current state
-    const sample = await Service.findOne();
-
-    if (!sample) {
-      return res.status(404).json({ message: "No services found" });
-    }
-
-    const newState = !sample.cancelAllowed;
-
-    // 2. Update ALL services
-    await Service.updateMany(
-      {},
-      {
-        $set: {
-          cancelAllowed: newState,
-        },
-      }
-    );
-
-    res.json({
-      message: `Cancel globally ${newState ? "enabled" : "disabled"}`,
-      cancelAllowed: newState,
-    });
-
-  } catch (err) {
-    console.error("GLOBAL CANCEL ERROR:", err);
-    res.status(500).json({ message: "Global toggle cancel failed" });
-  }
-};
-
-/* =========================
-   🔥 GET GLOBAL SETTINGS
+   GET GLOBAL SETTINGS
 ========================= */
 export const getServiceSettings = async (req, res) => {
   try {
-    const sample = await Service.findOne();
+    let settings = await ServiceSettings.findOne();
 
-    if (!sample) {
-      return res.json({
-        globalRefillEnabled: false,
-        globalCancelEnabled: false,
-      });
+    if (!settings) {
+      settings = await ServiceSettings.create({});
     }
 
-    res.json({
-      globalRefillEnabled: sample.refillAllowed ?? false,
-      globalCancelEnabled: sample.cancelAllowed ?? false,
-    });
-
+    res.json(settings);
   } catch (err) {
     console.error("GET SETTINGS ERROR:", err);
     res.status(500).json({ message: "Failed to fetch settings" });
+  }
+};
+
+
+/* =========================
+   TOGGLE REFILL GLOBAL
+========================= */
+export const toggleRefillGlobal = async (req, res) => {
+  try {
+    let settings = await ServiceSettings.findOne();
+
+    if (!settings) {
+      settings = await ServiceSettings.create({});
+    }
+
+    const newState = !settings.globalRefillEnabled;
+
+    // ✅ update global switch
+    settings.globalRefillEnabled = newState;
+    await settings.save();
+
+    // ✅ OPTIONAL: also sync services (good for consistency)
+    await Service.updateMany({}, { refillAllowed: newState });
+
+    res.json({
+      message: `Refill ${newState ? "enabled" : "disabled"}`,
+      globalRefillEnabled: newState,
+    });
+
+  } catch (err) {
+    console.error("REFILL TOGGLE ERROR:", err);
+    res.status(500).json({ message: "Toggle refill failed" });
+  }
+};
+
+
+/* =========================
+   TOGGLE CANCEL GLOBAL
+========================= */
+export const toggleCancelGlobal = async (req, res) => {
+  try {
+    let settings = await ServiceSettings.findOne();
+
+    if (!settings) {
+      settings = await ServiceSettings.create({});
+    }
+
+    const newState = !settings.globalCancelEnabled;
+
+    settings.globalCancelEnabled = newState;
+    await settings.save();
+
+    await Service.updateMany({}, { cancelAllowed: newState });
+
+    res.json({
+      message: `Cancel ${newState ? "enabled" : "disabled"}`,
+      globalCancelEnabled: newState,
+    });
+
+  } catch (err) {
+    console.error("CANCEL TOGGLE ERROR:", err);
+    res.status(500).json({ message: "Toggle cancel failed" });
   }
 };

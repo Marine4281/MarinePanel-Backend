@@ -6,6 +6,10 @@ import {
   deleteService,
   toggleServiceStatus,
 } from "../controllers/adminServiceControllers.js";
+import {
+  toggleRefill,
+  toggleCancel
+} from "../controllers/serviceTogglesController.js";
 import { protect } from "../middlewares/authMiddleware.js";
 import { adminOnly } from "../middlewares/adminMiddleware.js";
 
@@ -28,5 +32,8 @@ router.put("/:id", updateService);
 
 // DELETE service by id
 router.delete("/:id", deleteService);
+
+router.patch("/services/:id/toggle-refill", toggleRefill);
+router.patch("/services/:id/toggle-cancel", toggleCancel);
 
 export default router;

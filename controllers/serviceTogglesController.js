@@ -1,57 +1,77 @@
+// controllers/serviceTogglesController.js
 import Service from "../models/Service.js";
 
 /* =========================
-   TOGGLE REFILL
+   🔥 GLOBAL TOGGLE REFILL
 ========================= */
-export const toggleRefill = async (req, res) => {
+export const toggleRefillGlobal = async (req, res) => {
   try {
-    const service = await Service.findById(req.params.id);
+    // 1. Get current state (take any service)
+    const sample = await Service.findOne();
 
-    if (!service) {
-      return res.status(404).json({ message: "Service not found" });
+    if (!sample) {
+      return res.status(404).json({ message: "No services found" });
     }
 
-    service.refillAllowed = !service.refillAllowed;
+    const newState = !sample.refillAllowed;
 
-    // safety reset
-    if (!service.refillAllowed) {
-      service.refillPolicy = "none";
-      service.customRefillDays = null;
-    }
-
-    await service.save();
+    // 2. Update ALL services
+    await Service.updateMany(
+      {},
+      {
+        $set: {
+          refillAllowed: newState,
+          ...(newState === false && {
+            refillPolicy: "none",
+            customRefillDays: null,
+          }),
+        },
+      }
+    );
 
     res.json({
-      message: `Refill ${service.refillAllowed ? "enabled" : "disabled"}`,
-      refillAllowed: service.refillAllowed,
+      message: `Refill globally ${newState ? "enabled" : "disabled"}`,
+      refillAllowed: newState,
     });
 
   } catch (err) {
-    res.status(500).json({ message: "Toggle refill failed" });
+    console.error("GLOBAL REFILL ERROR:", err);
+    res.status(500).json({ message: "Global toggle refill failed" });
   }
 };
 
-/* =========================
-   TOGGLE CANCEL
-========================= */
-export const toggleCancel = async (req, res) => {
-  try {
-    const service = await Service.findById(req.params.id);
 
-    if (!service) {
-      return res.status(404).json({ message: "Service not found" });
+/* =========================
+   🔥 GLOBAL TOGGLE CANCEL
+========================= */
+export const toggleCancelGlobal = async (req, res) => {
+  try {
+    // 1. Get current state
+    const sample = await Service.findOne();
+
+    if (!sample) {
+      return res.status(404).json({ message: "No services found" });
     }
 
-    service.cancelAllowed = !service.cancelAllowed;
+    const newState = !sample.cancelAllowed;
 
-    await service.save();
+    // 2. Update ALL services
+    await Service.updateMany(
+      {},
+      {
+        $set: {
+          cancelAllowed: newState,
+        },
+      }
+    );
 
     res.json({
-      message: `Cancel ${service.cancelAllowed ? "enabled" : "disabled"}`,
-      cancelAllowed: service.cancelAllowed,
+      message: `Cancel globally ${newState ? "enabled" : "disabled"}`,
+      cancelAllowed: newState,
     });
 
   } catch (err) {
-    res.status(500).json({ message: "Toggle cancel failed" });
+    console.error("GLOBAL CANCEL ERROR:", err);
+    res.status(500).json({ message: "Global toggle cancel failed" });
   }
 };

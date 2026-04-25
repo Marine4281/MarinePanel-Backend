@@ -232,12 +232,14 @@ export const getResellerUsers = async (req, res) => {
 /* ================================================
    ORDERS (UNCHANGED)
 ================================================ */
-
 export const getResellerOrders = async (req, res) => {
   try {
     const orders = await Order.find({
       resellerOwner: req.user._id,
-    }).lean();
+    })
+      .populate("user", "email phone") // ✅ 🔥 THIS FIXES EVERYTHING
+      .sort({ createdAt: -1 })
+      .lean();
 
     const formatted = orders.map((o) => ({
       ...o,
@@ -248,10 +250,12 @@ export const getResellerOrders = async (req, res) => {
     }));
 
     res.json(formatted);
-  } catch {
+  } catch (err) {
+    console.error("RESELLER ORDERS ERROR:", err);
     res.status(500).json({ message: "Failed" });
   }
 };
+
 
 /* ================================================
    WITHDRAW (FIXED)

@@ -65,6 +65,17 @@ const orderSchema = new mongoose.Schema(
       default: 0,
     },
 
+    serviceId: {
+      type: String,
+      default: "",
+      index: true,
+    },
+
+   rate: {
+      type: Number,
+      default: 0,
+    },
+
     /* ===============================
        🎁 FREE ORDER SYSTEM
     =============================== */

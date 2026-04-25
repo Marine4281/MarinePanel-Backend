@@ -251,30 +251,46 @@ export const createOrder = async (req, res) => {
     /* ================= CREATE ORDER ================= */
 
     const order = await Order.create({
-      orderId: "ORD-" + uuidv4().slice(0, 8),
-      customOrderId,
-      userId: user._id,
-      resellerOwner: user.resellerOwner || null,
-      resellerCommission,
-      category,
-      service,
-      serviceId,
-      rate,
-      link,
-      quantity: qty,
-      charge: finalCharge,
-      status: "pending",
-      isFreeOrder,
-      earningsCredited: false,
-      isCharged: !isFreeOrder, // 🔥 KEY FIX
+  orderId: "ORD-" + uuidv4().slice(0, 8),
+  customOrderId,
+  userId: user._id,
+  resellerOwner: user.resellerOwner || null,
+  resellerCommission,
 
-      provider: serviceData.provider,
-      providerApiUrl: serviceData.providerApiUrl,
-      providerServiceId: serviceData.providerServiceId,
-      providerProfileId: serviceData.providerProfileId,
+  // ✅ SNAPSHOT (FIXED)
+  category: serviceData.category,
+  service: serviceData.name,
+  serviceId: serviceData.serviceId || serviceData._id.toString(),
+  rate: Number(serviceData.rate || 0),
 
-      cancelAllowed: serviceData.cancelAllowed,
-      refillAllowed: serviceData.refillAllowed,
+  link,
+  quantity: qty,
+  charge: finalCharge,
+  status: "pending",
+
+  isFreeOrder,
+  earningsCredited: false,
+  isCharged: !isFreeOrder,
+
+  provider: serviceData.provider,
+  providerApiUrl: serviceData.providerApiUrl,
+  providerServiceId: serviceData.providerServiceId,
+  providerProfileId: serviceData.providerProfileId,
+
+  cancelAllowed: serviceData.cancelAllowed,
+  refillAllowed: serviceData.refillAllowed,
+
+  // REFILL SNAPSHOT
+  refillPolicy: serviceData.refillAllowed
+    ? serviceData.refillPolicy || "none"
+    : "none",
+
+  customRefillDays: serviceData.refillAllowed
+    ? serviceData.refillPolicy === "custom"
+      ? serviceData.customRefillDays || null
+      : null
+    : null,
+});
 
       // ================= REFILL POLICY (SAFE SNAPSHOT) =================
   refillPolicy: serviceData.refillAllowed

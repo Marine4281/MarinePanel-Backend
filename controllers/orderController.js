@@ -251,46 +251,30 @@ export const createOrder = async (req, res) => {
     /* ================= CREATE ORDER ================= */
 
     const order = await Order.create({
-  orderId: "ORD-" + uuidv4().slice(0, 8),
-  customOrderId,
-  userId: user._id,
-  resellerOwner: user.resellerOwner || null,
-  resellerCommission,
+      orderId: "ORD-" + uuidv4().slice(0, 8),
+      customOrderId,
+      userId: user._id,
+      resellerOwner: user.resellerOwner || null,
+      resellerCommission,
+      category: serviceData.category,
+      service,
+      serviceId: serviceData.serviceId || serviceData._id.toString(),
+      rate : Number(serviceData.rate || 0),
+      link,
+      quantity: qty,
+      charge: finalCharge,
+      status: "pending",
+      isFreeOrder,
+      earningsCredited: false,
+      isCharged: !isFreeOrder, // 🔥 KEY FIX
 
-  // ✅ SNAPSHOT (FIXED)
-  category: serviceData.category,
-  service: serviceData.name,
-  serviceId: serviceData.serviceId || serviceData._id.toString(),
-  rate: Number(serviceData.rate || 0),
+      provider: serviceData.provider,
+      providerApiUrl: serviceData.providerApiUrl,
+      providerServiceId: serviceData.providerServiceId,
+      providerProfileId: serviceData.providerProfileId,
 
-  link,
-  quantity: qty,
-  charge: finalCharge,
-  status: "pending",
-
-  isFreeOrder,
-  earningsCredited: false,
-  isCharged: !isFreeOrder,
-
-  provider: serviceData.provider,
-  providerApiUrl: serviceData.providerApiUrl,
-  providerServiceId: serviceData.providerServiceId,
-  providerProfileId: serviceData.providerProfileId,
-
-  cancelAllowed: serviceData.cancelAllowed,
-  refillAllowed: serviceData.refillAllowed,
-
-  // REFILL SNAPSHOT
-  refillPolicy: serviceData.refillAllowed
-    ? serviceData.refillPolicy || "none"
-    : "none",
-
-  customRefillDays: serviceData.refillAllowed
-    ? serviceData.refillPolicy === "custom"
-      ? serviceData.customRefillDays || null
-      : null
-    : null,
-});
+      cancelAllowed: serviceData.cancelAllowed,
+      refillAllowed: serviceData.refillAllowed,
 
       // ================= REFILL POLICY (SAFE SNAPSHOT) =================
   refillPolicy: serviceData.refillAllowed

@@ -237,7 +237,7 @@ export const getResellerOrders = async (req, res) => {
     const orders = await Order.find({
       resellerOwner: req.user._id,
     })
-      .populate("user", "email phone") // ✅ 🔥 THIS FIXES EVERYTHING
+      .populate("userId", "email phone") // ✅ 🔥 THIS FIXES EVERYTHING
       .sort({ createdAt: -1 })
       .lean();
 

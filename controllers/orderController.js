@@ -258,6 +258,8 @@ export const createOrder = async (req, res) => {
       resellerCommission,
       category,
       service,
+      serviceId,
+      rate,
       link,
       quantity: qty,
       charge: finalCharge,

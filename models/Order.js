@@ -103,6 +103,13 @@ const orderSchema = new mongoose.Schema(
       default: 0,
     },
 
+    
+    isCharged: {
+      type: Boolean,
+      default: false,
+      index: true,
+    },
+
     /* ===============================
        💸 REFUND SAFETY
     =============================== */

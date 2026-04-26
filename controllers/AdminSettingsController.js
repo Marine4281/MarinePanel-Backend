@@ -49,7 +49,7 @@ export const updateCommission = async (req, res) => {
   try {
     const { commission } = req.body;
 
-    if (commission === undefined || commission < 0 || commission > 100) {
+    if (commission === undefined || commission < 0) {
       return res
         .status(400)
         .json({ message: "Commission value must be between 0 and 100" });

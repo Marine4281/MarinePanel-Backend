@@ -112,7 +112,7 @@ export const syncProviderOrders = async (io) => {
           // ===============================================
           if (
             !order.isFreeOrder &&
-            order.isCharged && // 🔥 KEY FIX
+            order.isCharged &&
             !order.refundProcessed &&
             !order.cancelProcessed
           ) {
@@ -133,54 +133,57 @@ export const syncProviderOrders = async (io) => {
                 t.reference?.toString() === order._id.toString()
             );
 
-            if (alreadyRefunded) continue;
+            // ✅ FIX: guard refund block instead of continue
+            // so commission + socket emit still run below
+            if (!alreadyRefunded) {
 
-            // ================= FAILED =================
-            if (mappedStatus === "failed") {
-              wallet.transactions.push({
-                type: "Refund",
-                amount: order.charge,
-                status: "Completed",
-                note: `Refund for failed order ${order.orderId}`,
-                reference: order._id,
-                createdAt: new Date(),
-              });
-
-              wallet.balance = calculateBalance(wallet.transactions);
-
-              order.refundProcessed = true;
-
-              await wallet.save();
-              await reverseResellerCommission(order);
-              await order.save();
-            }
-
-            // ================= PARTIAL =================
-            if (mappedStatus === "partial") {
-              const remaining = Number(providerOrder.remains) || 0;
-
-              if (remaining > 0) {
-                let refundAmount =
-                  (remaining / order.quantity) * order.charge;
-
-                refundAmount = Number(refundAmount.toFixed(4));
-
+              // ================= FAILED =================
+              if (mappedStatus === "failed") {
                 wallet.transactions.push({
                   type: "Refund",
-                  amount: refundAmount,
+                  amount: order.charge,
                   status: "Completed",
-                  note: `Partial refund for order ${order.orderId} (${remaining} undelivered)`,
+                  note: `Refund for failed order ${order.orderId}`,
                   reference: order._id,
                   createdAt: new Date(),
                 });
 
                 wallet.balance = calculateBalance(wallet.transactions);
-
                 order.refundProcessed = true;
 
                 await wallet.save();
+                await reverseResellerCommission(order);
                 await order.save();
               }
+
+              // ================= PARTIAL =================
+              if (mappedStatus === "partial") {
+                const remaining = Number(providerOrder.remains) || 0;
+
+                if (remaining > 0) {
+                  let refundAmount =
+                    (remaining / order.quantity) * order.charge;
+
+                  refundAmount = Number(refundAmount.toFixed(4));
+
+                  wallet.transactions.push({
+                    type: "Refund",
+                    amount: refundAmount,
+                    status: "Completed",
+                    note: `Partial refund for order ${order.orderId} (${remaining} undelivered)`,
+                    reference: order._id,
+                    createdAt: new Date(),
+                  });
+
+                  wallet.balance = calculateBalance(wallet.transactions);
+                  order.refundProcessed = true;
+
+                  await wallet.save();
+                  await reverseResellerCommission(order); // ✅ FIX: was missing
+                  await order.save();
+                }
+              }
+
             }
           }
 

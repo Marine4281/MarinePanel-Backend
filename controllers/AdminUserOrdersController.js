@@ -304,19 +304,6 @@ export const refundOrder = async (req, res) => {
       });
     }
 
-    // 🔒 NEW: check deduction exists
-    const deductionExists = wallet.transactions.find(
-      (t) =>
-        t.reference?.toString() === order._id.toString() &&
-        t.type === "Order"
-    );
-
-    if (!deductionExists) {
-      return res.status(400).json({
-        message: "No payment found for this order",
-      });
-    }
-
     // 🔒 NEW: prevent duplicate refund
     const alreadyRefunded = wallet.transactions.find(
       (t) =>

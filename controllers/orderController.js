@@ -332,6 +332,7 @@ export const createOrder = async (req, res) => {
       order.status = "failed";
       order.providerStatus = "failed";
       order.errorMessage = err.response?.data || err.message;
+      order.refundProcessed = true;
 
       await order.save();
 

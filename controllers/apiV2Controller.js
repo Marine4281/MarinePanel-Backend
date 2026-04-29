@@ -40,6 +40,7 @@ export const apiV2 = async (req, res) => {
             max: s.max,
             refill: s.refillAllowed,
             cancel: s.cancelAllowed,
+            description: s.description || "", 
           }))
         );
       }

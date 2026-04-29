@@ -36,7 +36,7 @@ export const syncProviderOrders = async (io) => {
     const grouped = {};
 
     for (const order of activeOrders) {
-      const key = order.provider;
+      const key = order.providerProfileId.toString();
       if (!grouped[key]) grouped[key] = [];
       grouped[key].push(order);
     }
@@ -44,7 +44,7 @@ export const syncProviderOrders = async (io) => {
     for (const providerName of Object.keys(grouped)) {
       const orders = grouped[providerName];
 
-      const profile = await ProviderProfile.findOne({ name: providerName });
+      const profile = await ProviderProfile.findOne({ providerName });
 
       if (!profile?.apiUrl || !profile?.apiKey) {
         console.warn("⚠ Missing provider profile:", providerName);

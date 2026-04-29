@@ -62,26 +62,25 @@ export const apiV2 = async (req, res) => {
 
         const cost = (quantity / 1000) * selectedService.rate;
 
-        // 💰 Use Wallet (NOT user.balance)
         const wallet = await Wallet.findOne({ user: user._id });
 
         if (!wallet || wallet.balance < cost) {
           return res.json({ error: "Insufficient balance" });
         }
 
-        // Deduct balance
+        // 💰 Deduct balance
         wallet.balance -= cost;
 
         wallet.transactions.push({
           type: "Order",
           amount: -cost,
           status: "Completed",
-          note: `API Order`,
+          note: "API Order",
         });
 
         await wallet.save();
 
-        // Create order
+        // 📦 Create order
         const order = await Order.create({
           userId: user._id,
           category: selectedService.category,
@@ -108,15 +107,51 @@ export const apiV2 = async (req, res) => {
       }
 
       /* =====================================================
-         📊 ORDER STATUS
+         📊 ORDER STATUS (SINGLE + MULTIPLE)
       ===================================================== */
       case "status": {
-        const orderId = req.body.order;
 
+        // 🔹 MULTIPLE STATUS
+        if (req.body.orders) {
+          const ids = req.body.orders.toString().split(",");
+
+          const orders = await Order.find({
+            $or: [
+              { customOrderId: { $in: ids } },
+              { orderId: { $in: ids } },
+            ],
+          });
+
+          const response = {};
+
+          ids.forEach((id) => {
+            const order = orders.find(
+              (o) =>
+                o.customOrderId?.toString() === id ||
+                o.orderId === id
+            );
+
+            if (!order) {
+              response[id] = { error: "Incorrect order ID" };
+            } else {
+              response[id] = {
+                charge: order.charge,
+                start_count: 0,
+                status: formatStatus(order.status),
+                remains: order.quantity - order.quantityDelivered,
+                currency: "USD",
+              };
+            }
+          });
+
+          return res.json(response);
+        }
+
+        // 🔹 SINGLE STATUS
         const order = await Order.findOne({
           $or: [
-            { customOrderId: orderId },
-            { orderId: orderId },
+            { customOrderId: req.body.order },
+            { orderId: req.body.order },
           ],
         });
 
@@ -134,6 +169,108 @@ export const apiV2 = async (req, res) => {
       }
 
       /* =====================================================
+         🔄 REFILL (SINGLE + MULTIPLE)
+      ===================================================== */
+      case "refill": {
+
+        const processRefill = async (id) => {
+          const order = await Order.findOne({
+            $or: [
+              { customOrderId: id },
+              { orderId: id },
+            ],
+          });
+
+          if (!order) return { error: "Incorrect order ID" };
+
+          if (!order.refillAllowed) {
+            return { error: "Refill not allowed" };
+          }
+
+          order.refillRequested = true;
+          order.refillRequestedAt = new Date();
+          order.refillStatus = "pending";
+
+          await order.save();
+
+          return 1;
+        };
+
+        // 🔹 MULTIPLE
+        if (req.body.orders) {
+          const ids = req.body.orders.toString().split(",");
+          const results = [];
+
+          for (const id of ids) {
+            const result = await processRefill(id);
+
+            results.push({
+              order: id,
+              refill: result,
+            });
+          }
+
+          return res.json(results);
+        }
+
+        // 🔹 SINGLE
+        const result = await processRefill(req.body.order);
+
+        if (typeof result === "object") {
+          return res.json(result);
+        }
+
+        return res.json({ refill: result });
+      }
+
+      /* =====================================================
+         ❌ CANCEL (MULTIPLE)
+      ===================================================== */
+      case "cancel": {
+        const ids = req.body.orders?.toString().split(",") || [];
+
+        const results = [];
+
+        for (const id of ids) {
+          const order = await Order.findOne({
+            $or: [
+              { customOrderId: id },
+              { orderId: id },
+            ],
+          });
+
+          if (!order) {
+            results.push({
+              order: id,
+              cancel: { error: "Incorrect order ID" },
+            });
+            continue;
+          }
+
+          if (!order.cancelAllowed) {
+            results.push({
+              order: id,
+              cancel: { error: "Cancel not allowed" },
+            });
+            continue;
+          }
+
+          order.cancelRequested = true;
+          order.cancelRequestedAt = new Date();
+          order.cancelStatus = "success";
+
+          await order.save();
+
+          results.push({
+            order: id,
+            cancel: 1,
+          });
+        }
+
+        return res.json(results);
+      }
+
+      /* =====================================================
          💰 BALANCE
       ===================================================== */
       case "balance": {
@@ -148,6 +285,7 @@ export const apiV2 = async (req, res) => {
       default:
         return res.json({ error: "Invalid action" });
     }
+
   } catch (err) {
     console.error(err);
     return res.json({ error: "Server error" });
@@ -155,7 +293,7 @@ export const apiV2 = async (req, res) => {
 };
 
 /* =====================================================
-   🔄 STATUS FORMATTER (IMPORTANT)
+   🔄 STATUS FORMATTER
 ===================================================== */
 const formatStatus = (status) => {
   switch (status) {

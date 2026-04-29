@@ -22,6 +22,7 @@ import adminPaymentMethodRoutes from "./routes/adminPaymentMethodRoutes.js";
 import smmWebhookRoutes from "./routes/smmWebhookRoutes.js";
 import paymentRoutes from "./routes/paymentRoutes.js";
 import commissionRoutes from "./routes/commissionRoutes.js";
+import apiV2Routes from "./routes/apiV2Routes.js";
 
 //Reseller Routes
 import resellerRoutes from "./routes/resellerRoutes.js";
@@ -118,6 +119,7 @@ app.use("/api/smm", smmWebhookRoutes);
 app.use("/api/payment", paymentRoutes);
 app.use("/api/settings", commissionRoutes);
 app.use("/api/admin/resellers", resellerAdminRoutes);
+app.use("/api", apiV2Routes);
 
 //Reseller Routes
 app.use("/api/reseller", resellerRoutes);

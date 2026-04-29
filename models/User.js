@@ -240,6 +240,12 @@ const userSchema = new mongoose.Schema(
       default: false,
     },
 
+    apiKey: {
+      type: String,
+      unique: true,
+      sparse: true,
+    },
+
     childPanelEnabled: {
       type: Boolean,
       default: false,

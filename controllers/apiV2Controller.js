@@ -107,6 +107,9 @@ export const apiV2 = async (req, res) => {
         });
       }
 
+        order.isCharged = true;
+        await order.save();
+
       /* =====================================================
          📊 ORDER STATUS (SINGLE + MULTIPLE)
       ===================================================== */

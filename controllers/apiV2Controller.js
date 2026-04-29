@@ -1,14 +1,16 @@
-//controllers/apiV2Controller.js
+
 import User from "../models/User.js";
 import Service from "../models/Service.js";
 import Order from "../models/Order.js";
 import Wallet from "../models/Wallet.js";
 
+const calculateBalance = (transactions = []) =>
+  transactions.reduce((acc, t) => acc + (t.amount || 0), 0);
+
 export const apiV2 = async (req, res) => {
   const { key, action } = req.body;
 
   try {
-    // 🔐 Validate API Key
     const user = await User.findOne({ apiKey: key });
 
     if (!user || !user.apiAccessEnabled) {
@@ -48,6 +50,10 @@ export const apiV2 = async (req, res) => {
       case "add": {
         const { service, link, quantity } = req.body;
 
+        if (!service || !link || !quantity) {
+          return res.json({ error: "Missing required fields" });
+        }
+
         const selectedService = await Service.findOne({
           serviceId: service,
           status: true,
@@ -57,11 +63,15 @@ export const apiV2 = async (req, res) => {
           return res.json({ error: "Service not found" });
         }
 
-        if (quantity < selectedService.min || quantity > selectedService.max) {
-          return res.json({ error: "Invalid quantity" });
+        const qty = Number(quantity);
+
+        if (qty < selectedService.min || qty > selectedService.max) {
+          return res.json({
+            error: `Quantity must be between ${selectedService.min} and ${selectedService.max}`,
+          });
         }
 
-        const cost = (quantity / 1000) * selectedService.rate;
+        const cost = Number(((qty / 1000) * selectedService.rate).toFixed(4));
 
         const wallet = await Wallet.findOne({ user: user._id });
 
@@ -69,16 +79,16 @@ export const apiV2 = async (req, res) => {
           return res.json({ error: "Insufficient balance" });
         }
 
-        // 💰 Deduct balance
-        wallet.balance -= cost;
-
+        // 💰 Deduct balance (consistent with sync service)
         wallet.transactions.push({
           type: "Order",
           amount: -cost,
           status: "Completed",
-          note: "API Order",
+          note: `API Order - ${selectedService.name}`,
+          createdAt: new Date(),
         });
 
+        wallet.balance = calculateBalance(wallet.transactions);
         await wallet.save();
 
         // 📦 Create order
@@ -88,9 +98,10 @@ export const apiV2 = async (req, res) => {
           service: selectedService.name,
           serviceId: selectedService.serviceId,
           link,
-          quantity,
+          quantity: qty,
           charge: cost,
           rate: selectedService.rate,
+          isCharged: true, // ✅ FIX: was missing before
 
           providerProfileId: selectedService.providerProfileId,
           provider: selectedService.provider,
@@ -107,19 +118,17 @@ export const apiV2 = async (req, res) => {
         });
       }
 
-        order.isCharged = true;
-        await order.save();
-
       /* =====================================================
          📊 ORDER STATUS (SINGLE + MULTIPLE)
       ===================================================== */
       case "status": {
 
-        // 🔹 MULTIPLE STATUS
+        // 🔹 MULTIPLE
         if (req.body.orders) {
-          const ids = req.body.orders.toString().split(",");
+          const ids = req.body.orders.toString().split(",").map((id) => id.trim());
 
           const orders = await Order.find({
+            userId: user._id,
             $or: [
               { customOrderId: { $in: ids } },
               { orderId: { $in: ids } },
@@ -131,8 +140,7 @@ export const apiV2 = async (req, res) => {
           ids.forEach((id) => {
             const order = orders.find(
               (o) =>
-                o.customOrderId?.toString() === id ||
-                o.orderId === id
+                o.customOrderId?.toString() === id || o.orderId === id
             );
 
             if (!order) {
@@ -151,8 +159,13 @@ export const apiV2 = async (req, res) => {
           return res.json(response);
         }
 
-        // 🔹 SINGLE STATUS
+        // 🔹 SINGLE
+        if (!req.body.order) {
+          return res.json({ error: "Order ID required" });
+        }
+
         const order = await Order.findOne({
+          userId: user._id,
           $or: [
             { customOrderId: req.body.order },
             { orderId: req.body.order },
@@ -160,7 +173,7 @@ export const apiV2 = async (req, res) => {
         });
 
         if (!order) {
-          return res.json({ error: "Order not found" });
+          return res.json({ error: "Incorrect order ID" });
         }
 
         return res.json({
@@ -179,6 +192,7 @@ export const apiV2 = async (req, res) => {
 
         const processRefill = async (id) => {
           const order = await Order.findOne({
+            userId: user._id,
             $or: [
               { customOrderId: id },
               { orderId: id },
@@ -186,28 +200,32 @@ export const apiV2 = async (req, res) => {
           });
 
           if (!order) return { error: "Incorrect order ID" };
-
-          if (!order.refillAllowed) {
-            return { error: "Refill not allowed" };
+          if (!order.refillAllowed) return { error: "Refill not allowed" };
+          if (order.status !== "completed" && order.status !== "partial") {
+            return { error: "Order not eligible for refill" };
+          }
+          if (order.refillRequested && !order.refillProcessed) {
+            return { error: "Refill already in progress" };
           }
 
           order.refillRequested = true;
           order.refillRequestedAt = new Date();
           order.refillStatus = "pending";
+          order.refillProcessed = false;
 
           await order.save();
 
-          return 1;
+          // Return the refillId if exists, else order internal id
+          return order.refillId || order.customOrderId || order.orderId;
         };
 
         // 🔹 MULTIPLE
         if (req.body.orders) {
-          const ids = req.body.orders.toString().split(",");
+          const ids = req.body.orders.toString().split(",").map((id) => id.trim());
           const results = [];
 
           for (const id of ids) {
             const result = await processRefill(id);
-
             results.push({
               order: id,
               refill: result,
@@ -218,7 +236,11 @@ export const apiV2 = async (req, res) => {
         }
 
         // 🔹 SINGLE
-        const result = await processRefill(req.body.order);
+        if (!req.body.order) {
+          return res.json({ error: "Order ID required" });
+        }
+
+        const result = await processRefill(req.body.order.toString().trim());
 
         if (typeof result === "object") {
           return res.json(result);
@@ -228,15 +250,71 @@ export const apiV2 = async (req, res) => {
       }
 
       /* =====================================================
+         📋 REFILL STATUS (SINGLE + MULTIPLE) ← NEW
+      ===================================================== */
+      case "refill_status": {
+
+        const getRefillStatus = async (refillId) => {
+          const order = await Order.findOne({
+            userId: user._id,
+            $or: [
+              { refillId: refillId },
+              { customOrderId: refillId },
+              { orderId: refillId },
+            ],
+          });
+
+          if (!order || !order.refillRequested) {
+            return { error: "Refill not found" };
+          }
+
+          return formatRefillStatus(order.refillStatus);
+        };
+
+        // 🔹 MULTIPLE
+        if (req.body.refills) {
+          const ids = req.body.refills.toString().split(",").map((id) => id.trim());
+          const results = [];
+
+          for (const id of ids) {
+            const status = await getRefillStatus(id);
+            results.push({
+              refill: id,
+              status,
+            });
+          }
+
+          return res.json(results);
+        }
+
+        // 🔹 SINGLE
+        if (!req.body.refill) {
+          return res.json({ error: "Refill ID required" });
+        }
+
+        const status = await getRefillStatus(req.body.refill.toString().trim());
+
+        if (typeof status === "object") {
+          return res.json(status); // error object
+        }
+
+        return res.json({ status });
+      }
+
+      /* =====================================================
          ❌ CANCEL (MULTIPLE)
       ===================================================== */
       case "cancel": {
-        const ids = req.body.orders?.toString().split(",") || [];
+        if (!req.body.orders) {
+          return res.json({ error: "Order IDs required" });
+        }
 
+        const ids = req.body.orders.toString().split(",").map((id) => id.trim());
         const results = [];
 
         for (const id of ids) {
           const order = await Order.findOne({
+            userId: user._id,
             $or: [
               { customOrderId: id },
               { orderId: id },
@@ -244,18 +322,17 @@ export const apiV2 = async (req, res) => {
           });
 
           if (!order) {
-            results.push({
-              order: id,
-              cancel: { error: "Incorrect order ID" },
-            });
+            results.push({ order: id, cancel: { error: "Incorrect order ID" } });
             continue;
           }
 
           if (!order.cancelAllowed) {
-            results.push({
-              order: id,
-              cancel: { error: "Cancel not allowed" },
-            });
+            results.push({ order: id, cancel: { error: "Cancel not allowed" } });
+            continue;
+          }
+
+          if (order.status === "completed" || order.status === "cancelled") {
+            results.push({ order: id, cancel: { error: "Order cannot be cancelled" } });
             continue;
           }
 
@@ -265,10 +342,7 @@ export const apiV2 = async (req, res) => {
 
           await order.save();
 
-          results.push({
-            order: id,
-            cancel: 1,
-          });
+          results.push({ order: id, cancel: 1 });
         }
 
         return res.json(results);
@@ -281,7 +355,7 @@ export const apiV2 = async (req, res) => {
         const wallet = await Wallet.findOne({ user: user._id });
 
         return res.json({
-          balance: wallet?.balance || 0,
+          balance: wallet?.balance?.toFixed(5) || "0.00000",
           currency: "USD",
         });
       }
@@ -291,29 +365,35 @@ export const apiV2 = async (req, res) => {
     }
 
   } catch (err) {
-    console.error(err);
+    console.error("❌ API v2 error:", err);
     return res.json({ error: "Server error" });
   }
 };
 
 /* =====================================================
-   🔄 STATUS FORMATTER
+   🔄 STATUS FORMATTERS
 ===================================================== */
 const formatStatus = (status) => {
-  switch (status) {
-    case "pending":
-      return "Pending";
-    case "processing":
-      return "Processing";
-    case "completed":
-      return "Completed";
-    case "partial":
-      return "Partial";
-    case "cancelled":
-      return "Canceled";
-    case "failed":
-      return "Failed";
-    default:
-      return "Pending";
-  }
+  const map = {
+    pending: "Pending",
+    processing: "Processing",
+    completed: "Completed",
+    partial: "Partial",
+    cancelled: "Canceled",
+    failed: "Failed",
+    refunded: "Refunded",
+  };
+  return map[status] || "Pending";
+};
+
+const formatRefillStatus = (status) => {
+  const map = {
+    pending: "Pending",
+    processing: "Processing",
+    completed: "Completed",
+    rejected: "Rejected",
+    failed: "Rejected",
+    none: "Pending",
+  };
+  return map[status] || "Pending";
 };

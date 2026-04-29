@@ -218,23 +218,3 @@ export const syncProviderOrders = async (io) => {
   }
 };
 
-// ===============================================
-// 🚀 START AUTO SYNC LOOP
-// ===============================================
-export const startProviderStatusSync = (io) => {
-  console.log("🚀 Provider order sync started");
-
-  const runSync = async () => {
-    try {
-      await syncProviderOrders(io);
-    } catch (err) {
-      console.error("❌ Sync loop error:", err.message);
-    }
-  };
-
-  // ✅ Run immediately on server start
-  runSync();
-
-  // ✅ Run every 45 seconds (PRODUCTION SAFE)
-  setInterval(runSync, 45000);
-};

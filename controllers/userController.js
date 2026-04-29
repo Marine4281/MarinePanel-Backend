@@ -3,6 +3,7 @@ import User from "../models/User.js";
 import Wallet from "../models/Wallet.js";
 import bcrypt from "bcryptjs";
 import logAdminAction from "../utils/logAdminAction.js";
+import crypto from "crypto";
 
 // =======================
 // GET LOGGED-IN USER PROFILE
@@ -181,5 +182,33 @@ export const getUserTransactions = async (req, res) => {
   } catch (error) {
     console.error("GET USER TRANSACTIONS ERROR:", error);
     res.status(500).json({ message: "Server error" });
+  }
+};
+export const generateApiKey = async (req, res) => {
+  try {
+    const user = await User.findById(req.user._id);
+    if (!user) return res.status(404).json({ message: "User not found" });
+
+    const apiKey = "mk_" + crypto.randomBytes(24).toString("hex");
+    user.apiKey = apiKey;
+    user.apiAccessEnabled = true;
+    await user.save();
+
+    res.json({ apiKey });
+  } catch (err) {
+    res.status(500).json({ message: "Failed to generate API key" });
+  }
+};
+
+export const revokeApiKey = async (req, res) => {
+  try {
+    const user = await User.findById(req.user._id);
+    user.apiKey = undefined;
+    user.apiAccessEnabled = false;
+    await user.save();
+
+    res.json({ message: "API key revoked" });
+  } catch (err) {
+    res.status(500).json({ message: "Failed to revoke API key" });
   }
 };

@@ -388,24 +388,6 @@ const userSchema = new mongoose.Schema(
       default: null,
     },
 
-    // Earnings wallet — credited from reseller order commissions
-    childPanelWallet: {
-      type: Number,
-      default: 0,
-    },
-
-    // Lifetime total earned by this child panel
-    childPanelTotalEarned: {
-      type: Number,
-      default: 0,
-    },
-
-    // Commission % earned from orders placed on their panel
-    childPanelCommissionRate: {
-      type: Number,
-      default: 0,
-    },
-
     // Activation fee this child panel charges their own resellers
     childPanelResellerActivationFee: {
       type: Number,

@@ -9,8 +9,8 @@ import cookieParser from "cookie-parser";
 
 // Routes
 import authRoutes from "./routes/authRoutes.js";
-import serviceRoutes from "./routes/serviceRoutes.js";           // ✅ Public service routes
-import adminServiceRoutes from "./routes/adminServiceRoutes.js"; // ✅ Admin-only services
+import serviceRoutes from "./routes/serviceRoutes.js";
+import adminServiceRoutes from "./routes/adminServiceRoutes.js";
 import orderRoutes from "./routes/orderRoutes.js";
 import walletRoutes from "./routes/walletRoutes.js";
 import userRoutes from "./routes/userRoutes.js";
@@ -24,7 +24,7 @@ import paymentRoutes from "./routes/paymentRoutes.js";
 import commissionRoutes from "./routes/commissionRoutes.js";
 import apiV2Routes from "./routes/apiV2Routes.js";
 
-//Reseller Routes
+// Reseller Routes
 import resellerRoutes from "./routes/resellerRoutes.js";
 import { detectResellerDomain } from "./middlewares/resellerDomainMiddleware.js";
 import brandingRoutes from "./routes/brandingRoutes.js";
@@ -33,16 +33,20 @@ import resellerServiceRoutes from "./routes/resellerServiceRoutes.js";
 import endUserRoutes from "./routes/endUserRoutes.js";
 import resellerAdminRoutes from "./routes/resellerAdminRoutes.js";
 
-
-
-// ← NEW: Admin Orders Route
+// Admin Orders
 import adminOrderRoutes from "./routes/adminOrderRoutes.js";
 import adminUserOrdersRoutes from "./routes/adminUserOrdersRoutes.js";
 import providerRoutes from "./routes/providerRoutes.js";
 import adminLogRoutes from "./routes/adminLogRoutes.js";
 import providerProfileRoutes from "./routes/providerProfileRoutes.js";
 
-// ✅ Last Seen Middleware (SAFE VERSION)
+// Child Panel Routes (new)
+import childPanelRoutes from "./routes/childPanelRoutes.js";
+import childPanelAdminRoutes from "./routes/childPanelAdminRoutes.js";
+import { detectChildPanelDomain } from "./middlewares/childPanelMiddleware.js";
+import { attachScope } from "./middlewares/scopeMiddleware.js";
+
+// Middleware
 import { protect as authMiddleware } from "./middlewares/authMiddleware.js";
 import updateLastSeen from "./middlewares/updateLastSeen.js";
 import { adminOnly } from "./middlewares/adminMiddleware.js";
@@ -60,17 +64,16 @@ app.use(helmet());
 
 /* Rate limit */
 app.use(
-rateLimit({
-windowMs: 15 * 60 * 1000, // 15 minutes
-max: 100,                 // limit each IP
-})
+  rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 100,
+  })
 );
 
-/* Middlewares */
+/* CORS */
 app.use(
   cors({
     origin: (origin, callback) => {
-
       if (!origin) return callback(null, true);
 
       if (
@@ -93,27 +96,38 @@ app.use(
 app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ limit: "50mb", extended: true }));
 app.use(morgan("dev"));
+
 /* Health check */
 app.get("/", (req, res) => {
-res.json({ status: "Marine backend running" });
+  res.json({ status: "Marine backend running" });
 });
 
 /* CORS preflight */
 app.options(/./, cors());
 
-/* Cookies routes */
+/* Cookies */
 app.use(cookieParser());
 
-/* Detect reseller subdomain */
+/*
+----------------------------------------------------------------
+DOMAIN & SCOPE DETECTION
+Order matters:
+1. detectResellerDomain  — checks if request is from a reseller domain
+2. detectChildPanelDomain — checks if request is from a child panel domain
+3. attachScope           — sets req.scope based on the above results
+                           used in all auth lookups for user isolation
+----------------------------------------------------------------
+*/
 app.use(detectResellerDomain);
-
+app.use(detectChildPanelDomain);
+app.use(attachScope);
 
 /* Public routes */
 app.use("/api/auth", authRoutes);
-app.use("/api/services", serviceRoutes); // ✅ public service routes
-app.use("/api/orders", withLastSeen,orderRoutes);
-app.use("/api/wallet", withLastSeen,walletRoutes);
-app.use("/api/users",withLastSeen, userRoutes);
+app.use("/api/services", serviceRoutes);
+app.use("/api/orders", withLastSeen, orderRoutes);
+app.use("/api/wallet", withLastSeen, walletRoutes);
+app.use("/api/users", withLastSeen, userRoutes);
 app.use("/api/payment-methods", paymentMethodRoutes);
 app.use("/api/smm", smmWebhookRoutes);
 app.use("/api/payment", paymentRoutes);
@@ -121,22 +135,24 @@ app.use("/api/settings", commissionRoutes);
 app.use("/api/admin/resellers", resellerAdminRoutes);
 app.use("/api", apiV2Routes);
 
-//Reseller Routes
+// Reseller routes
 app.use("/api/reseller", resellerRoutes);
 app.use("/api/branding", brandingRoutes);
 app.use("/api/reseller-guides", resellerGuideRoutes);
 app.use("/api/reseller/services", resellerServiceRoutes);
 app.use("/api/end-users", endUserRoutes);
 
+// Child panel routes (new)
+app.use("/api/child-panel", childPanelRoutes);
+app.use("/api/admin/child-panels", childPanelAdminRoutes);
+
 /* Admin routes */
 app.use("/api/admin", adminRoutes);
-app.use("/api/admin/users",adminStack, adminUserRoutes);
-app.use("/api/admin/services", adminServiceRoutes); // ✅ admin-only service routes
+app.use("/api/admin/users", adminStack, adminUserRoutes);
+app.use("/api/admin/services", adminServiceRoutes);
 app.use("/api/admin/settings", adminSettingsRoutes);
 app.use("/api/admin/payment-methods", adminPaymentMethodRoutes);
 app.use("/api/provider", providerRoutes);
-
-// ← NEW: Admin Orders
 app.use("/api/admin/orders", adminOrderRoutes);
 app.use("/api/admin/user-orders", adminUserOrdersRoutes);
 app.use("/api/admin-logs", adminLogRoutes);

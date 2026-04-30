@@ -22,6 +22,9 @@ const providerServiceSchema = new mongoose.Schema(
       trim: true,
     },
 
+    cpOwner: { 
+      type: mongoose.Schema.Types.ObjectId, ref: "User", default: null, index: true }
+
     category: {
       type: String,
       required: true,

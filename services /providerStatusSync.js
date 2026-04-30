@@ -2,6 +2,7 @@
 import Order from "../models/Order.js";
 import ProviderProfile from "../models/ProviderProfile.js";
 import Wallet from "../models/Wallet.js";
+import User from "../models/User.js";
 import axios from "axios";
 import {
   mapProviderStatus,
@@ -154,8 +155,19 @@ export const syncProviderOrders = async (io) => {
                 await wallet.save();
                 await reverseResellerCommission(order);
                 await order.save();
+
+                // 🔥 SYNC USER BALANCE
                 await User.findByIdAndUpdate(order.userId, {
                   balance: wallet.balance,
+                });
+
+                // 📡 EMIT WALLET UPDATE
+                if (io) {
+                  io.emit("wallet:update", {
+                    userId: order.userId.toString(),
+                    balance: wallet.balance,
+                  });
+                }
               }
 
               // ================= PARTIAL =================
@@ -183,6 +195,19 @@ export const syncProviderOrders = async (io) => {
                   await wallet.save();
                   await reverseResellerCommission(order); // ✅ FIX: was missing
                   await order.save();
+
+                  // 🔥 SYNC USER BALANCE
+                  await User.findByIdAndUpdate(order.userId, {
+                    balance: wallet.balance,
+                  });
+
+                  // 📡 EMIT WALLET UPDATE
+                  if (io) {
+                    io.emit("wallet:update", {
+                      userId: order.userId.toString(),
+                      balance: wallet.balance,
+                    });
+                  }
                 }
               }
 

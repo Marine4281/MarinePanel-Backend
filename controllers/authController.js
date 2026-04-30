@@ -10,7 +10,7 @@ import logAdminAction from "../utils/logAdminAction.js";
 
 // ======================= HELPERS =======================
 
-const generateToken = (id) => {
+const generateToken = (user) => {
   return jwt.sign({ id: user._id, scope: user.scope}, process.env.JWT_SECRET, { expiresIn: "7d" });
 };
 

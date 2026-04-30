@@ -8,6 +8,7 @@ import {
   getChildPanelResellers,
   getChildPanelUsers,
   getChildPanelOrders,
+  updateChildPanelResellerCommission,
   toggleChildPanelResellerStatus,
   updateChildPanelBranding,
   updateChildPanelDomain,

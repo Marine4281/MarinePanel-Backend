@@ -65,19 +65,6 @@ const orderSchema = new mongoose.Schema(
       index: true,
     },
 
-    // Commission amount earned by the child panel from this order
-    childPanelCommission: {
-      type: Number,
-      default: 0,
-    },
-
-    // Has the child panel commission been credited to their wallet?
-    childPanelEarningsCredited: {
-      type: Boolean,
-      default: false,
-      index: true,
-    },
-
     /* ===============================
        📦 ORDER DETAILS
     =============================== */
@@ -318,7 +305,6 @@ orderSchema.index({ refillRequested: 1, refillProcessed: 1 });
 
 // Child panel indexes (new)
 orderSchema.index({ childPanelOwner: 1, createdAt: -1 });
-orderSchema.index({ childPanelOwner: 1, childPanelEarningsCredited: 1 });
 
 export default mongoose.models.Order ||
   mongoose.model("Order", orderSchema);

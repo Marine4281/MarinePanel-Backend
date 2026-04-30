@@ -21,6 +21,9 @@ const providerProfileSchema = new mongoose.Schema(
       required: true,
       trim: true,
     },
+
+    cpOwner: { 
+      type: mongoose.Schema.Types.ObjectId, ref: "User", default: null, index: true }
   },
   {
     timestamps: true,

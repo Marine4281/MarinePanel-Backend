@@ -4,7 +4,7 @@ import User from "../models/User.js";
 import Wallet from "../models/Wallet.js";
 import { 
   creditResellerCommission,
-  reverseResellerCommission // ✅ ADDED
+  reverseResellerCommission
 } from "./orderController.js";
 
 /* ======================================================
@@ -26,16 +26,10 @@ export const getUserOrders = async (req, res) => {
 
     let query = {};
 
-    /* ===============================
-       STATUS FILTER
-    =============================== */
     if (status) {
       query.status = status;
     }
 
-    /* ===============================
-       DATE FILTER
-    =============================== */
     if (fromDate || toDate) {
       query.createdAt = {};
 
@@ -45,18 +39,14 @@ export const getUserOrders = async (req, res) => {
 
       if (toDate) {
         const end = new Date(toDate);
-        end.setHours(23, 59, 59, 999); // ✅ full day
+        end.setHours(23, 59, 59, 999);
         query.createdAt.$lte = end;
       }
     }
 
-    /* ===============================
-       SEARCH (SAFE)
-    =============================== */
     if (search && search.trim() !== "") {
       const cleanSearch = search.replace("#", "").trim();
 
-      // 🔍 Find users by email
       const users = await User.find({
         email: { $regex: cleanSearch, $options: "i" },
       }).select("_id");
@@ -64,19 +54,17 @@ export const getUserOrders = async (req, res) => {
       const userIds = users.map((u) => u._id);
 
       const orConditions = [
-        { orderId: { $regex: cleanSearch, $options: "i" } }, // string
+        { orderId: { $regex: cleanSearch, $options: "i" } },
         { service: { $regex: cleanSearch, $options: "i" } },
         { provider: { $regex: cleanSearch, $options: "i" } },
         { link: { $regex: cleanSearch, $options: "i" } },
       ];
 
-      // ✅ numeric-safe search
       if (!isNaN(cleanSearch)) {
-        orConditions.push({ customOrderId: Number(cleanSearch) }); // FIXED
+        orConditions.push({ customOrderId: Number(cleanSearch) });
         orConditions.push({ rate: Number(cleanSearch) });
       }
 
-      // ✅ user email match
       if (userIds.length > 0) {
         orConditions.push({ userId: { $in: userIds } });
       }
@@ -84,9 +72,6 @@ export const getUserOrders = async (req, res) => {
       query.$or = orConditions;
     }
 
-    /* ===============================
-       FETCH
-    =============================== */
     const [orders, total] = await Promise.all([
       Order.find(query)
         .populate("userId", "email balance")
@@ -161,7 +146,6 @@ export const updateOrderStatus = async (req, res) => {
 
     await order.save();
 
-    // 💰 CREDIT RESELLER (SAFE)
     if (order.status === "completed") {
       await creditResellerCommission(order);
     }
@@ -237,7 +221,6 @@ export const updateOrderProgress = async (req, res) => {
 
     await order.save();
 
-    // 💰 CREDIT RESELLER (SAFE)
     if (order.status === "completed") {
       await creditResellerCommission(order);
     }
@@ -289,7 +272,6 @@ export const refundOrder = async (req, res) => {
       });
     }
 
-    // 🔒 NEW: ensure order was actually charged
     if (!order.isCharged) {
       return res.status(400).json({
         message: "This order was never charged",
@@ -304,7 +286,6 @@ export const refundOrder = async (req, res) => {
       });
     }
 
-    // 🔒 NEW: prevent duplicate refund
     const alreadyRefunded = wallet.transactions.find(
       (t) =>
         t.reference?.toString() === order._id.toString() &&
@@ -354,7 +335,7 @@ export const refundOrder = async (req, res) => {
       amount: refundAmount,
       status: "Completed",
       note: `Refund for Order ${order.orderId}`,
-      reference: order._id, // 🔥 important
+      reference: order._id,
       createdAt: new Date(),
     });
 
@@ -365,15 +346,17 @@ export const refundOrder = async (req, res) => {
     );
 
     await wallet.save();
-    await User.findByIdAndUpdate(order.userId, {
+    
+    // ✅ CRITICAL FIX: Sync User.balance with Wallet.balance
+    await User.findByIdAndUpdate(order.userId._id, {
       balance: wallet.balance,
+    });
 
     order.status = "refunded";
     order.refundProcessed = true;
 
     await order.save();
 
-    
     // 💸 REVERSE RESELLER COMMISSION (CRITICAL FIX)
     await reverseResellerCommission(order);
 
@@ -412,17 +395,14 @@ export const getOrderStats = async (req, res) => {
 
     const match = {};
 
-    /* STATUS */
     if (status) match.status = status;
 
-    /* DATE */
     if (fromDate || toDate) {
       match.createdAt = {};
       if (fromDate) match.createdAt.$gte = new Date(fromDate);
       if (toDate) match.createdAt.$lte = new Date(toDate);
     }
 
-    /* SEARCH */
     if (search) {
       const regex = new RegExp(search, "i");
 

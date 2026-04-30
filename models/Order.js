@@ -52,6 +52,33 @@ const orderSchema = new mongoose.Schema(
     },
 
     /* ===============================
+       👥 CHILD PANEL
+    =============================== */
+
+    // Which child panel does this order belong to?
+    // null = order placed on main platform or a platform reseller
+    // ObjId = order placed on a reseller that is under a child panel
+    childPanelOwner: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      default: null,
+      index: true,
+    },
+
+    // Commission amount earned by the child panel from this order
+    childPanelCommission: {
+      type: Number,
+      default: 0,
+    },
+
+    // Has the child panel commission been credited to their wallet?
+    childPanelEarningsCredited: {
+      type: Boolean,
+      default: false,
+      index: true,
+    },
+
+    /* ===============================
        📦 ORDER DETAILS
     =============================== */
     category: { type: String, required: true },
@@ -71,7 +98,7 @@ const orderSchema = new mongoose.Schema(
       index: true,
     },
 
-   rate: {
+    rate: {
       type: Number,
       default: 0,
     },
@@ -103,7 +130,6 @@ const orderSchema = new mongoose.Schema(
       default: 0,
     },
 
-    
     isCharged: {
       type: Boolean,
       default: false,
@@ -138,7 +164,7 @@ const orderSchema = new mongoose.Schema(
     },
 
     /* =====================================================
-       🧠 SNAPSHOT FROM SERVICE (CRITICAL)
+       🧠 SNAPSHOT FROM SERVICE
     ===================================================== */
 
     cancelAllowed: {
@@ -185,7 +211,7 @@ const orderSchema = new mongoose.Schema(
 
     cancelProcessed: {
       type: Boolean,
-      default: true, // ✅ instant system (no async cancel)
+      default: true,
       index: true,
     },
 
@@ -287,9 +313,12 @@ orderSchema.index({ userId: 1, service: 1, isFreeOrder: 1 });
 orderSchema.index({ status: 1 });
 orderSchema.index({ createdAt: -1 });
 orderSchema.index({ refundProcessed: 1 });
-
 orderSchema.index({ cancelRequested: 1, cancelProcessed: 1 });
 orderSchema.index({ refillRequested: 1, refillProcessed: 1 });
+
+// Child panel indexes (new)
+orderSchema.index({ childPanelOwner: 1, createdAt: -1 });
+orderSchema.index({ childPanelOwner: 1, childPanelEarningsCredited: 1 });
 
 export default mongoose.models.Order ||
   mongoose.model("Order", orderSchema);

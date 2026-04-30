@@ -16,7 +16,7 @@ const calculateBalance = (transactions = []) =>
   transactions.reduce((acc, t) => acc + (t.amount || 0), 0);
 
 /* =========================================================
-CREDIT RESELLER (SAFE - CALLED ON COMPLETION)
+CREDIT RESELLER COMMISSION (SAFE - CALLED ON COMPLETION)
 ========================================================= */
 export const creditResellerCommission = async (order) => {
   try {
@@ -42,11 +42,9 @@ export const creditResellerCommission = async (order) => {
     });
 
     wallet.balance = calculateBalance(wallet.transactions);
-
     order.earningsCredited = true;
 
     await Promise.all([wallet.save(), order.save()]);
-
   } catch (error) {
     console.error("Commission error:", error);
   }
@@ -58,9 +56,9 @@ REVERSE RESELLER COMMISSION (ON REFUND)
 export const reverseResellerCommission = async (order) => {
   try {
     if (
-      !order.earningsCredited ||      // nothing credited yet
-      !order.resellerOwner ||         // no reseller
-      order.resellerCommission <= 0   // zero commission
+      !order.earningsCredited ||
+      !order.resellerOwner ||
+      order.resellerCommission <= 0
     ) {
       return;
     }
@@ -78,14 +76,86 @@ export const reverseResellerCommission = async (order) => {
     });
 
     wallet.balance = calculateBalance(wallet.transactions);
+    order.earningsCredited = false;
 
-    order.earningsCredited = false; // 🔥 prevents double reversal
     await Promise.all([wallet.save(), order.save()]);
-
   } catch (err) {
     console.error("Commission Reversal Error:", err);
   }
 };
+
+/* =========================================================
+CREDIT CHILD PANEL COMMISSION (SAFE - CALLED ON COMPLETION)
+Mirrors creditResellerCommission but for child panel owners.
+Child panel owner earns based on childPanelCommissionRate set
+by main admin on their account.
+========================================================= */
+export const creditChildPanelCommission = async (order) => {
+  try {
+    if (
+      order.status !== "completed" ||
+      order.childPanelEarningsCredited ||
+      !order.childPanelOwner ||
+      order.childPanelCommission <= 0
+    ) {
+      return;
+    }
+
+    const wallet = await Wallet.findOne({ user: order.childPanelOwner });
+    if (!wallet) return;
+
+    wallet.transactions.push({
+      type: "CP Commission",
+      amount: Number(order.childPanelCommission),
+      status: "Completed",
+      note: `CP Commission - #${order.customOrderId}`,
+      reference: order._id,
+      createdAt: new Date(),
+    });
+
+    wallet.balance = calculateBalance(wallet.transactions);
+    order.childPanelEarningsCredited = true;
+
+    await Promise.all([wallet.save(), order.save()]);
+  } catch (error) {
+    console.error("Child panel commission error:", error);
+  }
+};
+
+/* =========================================================
+REVERSE CHILD PANEL COMMISSION (ON REFUND)
+========================================================= */
+export const reverseChildPanelCommission = async (order) => {
+  try {
+    if (
+      !order.childPanelEarningsCredited ||
+      !order.childPanelOwner ||
+      order.childPanelCommission <= 0
+    ) {
+      return;
+    }
+
+    const wallet = await Wallet.findOne({ user: order.childPanelOwner });
+    if (!wallet) return;
+
+    wallet.transactions.push({
+      type: "CP Commission Reversal",
+      amount: -Number(order.childPanelCommission),
+      status: "Completed",
+      note: `CP Reversal - #${order.customOrderId}`,
+      reference: order._id,
+      createdAt: new Date(),
+    });
+
+    wallet.balance = calculateBalance(wallet.transactions);
+    order.childPanelEarningsCredited = false;
+
+    await Promise.all([wallet.save(), order.save()]);
+  } catch (err) {
+    console.error("Child panel commission reversal error:", err);
+  }
+};
+
 /* =========================================================
 CREATE ORDER
 ========================================================= */
@@ -135,16 +205,41 @@ export const createOrder = async (req, res) => {
       return res.status(403).json({ message: "Service not available" });
     }
 
-    /* ================= 🔥 VALIDATE PROVIDER FIRST ================= */
+    /* ================= VALIDATE PROVIDER ================= */
 
     const providerProfile = await ProviderProfile.findById(
       serviceData.providerProfileId
     );
 
     if (!providerProfile) {
-      return res.status(400).json({
-        message: "Provider profile not found",
-      });
+      return res.status(400).json({ message: "Provider profile not found" });
+    }
+
+    /* ================= RESOLVE CHILD PANEL OWNER =================
+    If this user belongs to a child panel (via scope), we resolve
+    the child panel owner so we can stamp it on the order and later
+    credit their commission when the order completes.
+    ================================================================ */
+    let childPanelOwnerId = null;
+    let childPanelCommission = 0;
+    let childPanelPerOrderFee = 0;
+
+    if (user.childPanelOwner) {
+      const cpOwner = await User.findById(user.childPanelOwner);
+      if (cpOwner && cpOwner.isChildPanel && cpOwner.childPanelIsActive) {
+        childPanelOwnerId = cpOwner._id;
+
+        // Per-order fee charged by main admin to child panel owner
+        // This is deducted from child panel owner's wallet on completion
+        childPanelPerOrderFee = Number(cpOwner.childPanelPerOrderFee || 0);
+
+        // Commission rate the child panel owner earns on each order
+        // Set by main admin on the child panel owner's account
+        const cpCommissionRate = Number(cpOwner.childPanelCommissionRate || 0);
+        if (cpCommissionRate > 0) {
+          // Will be calculated properly after finalCharge is known (below)
+        }
+      }
     }
 
     /* ================= INIT ================= */
@@ -218,6 +313,15 @@ export const createOrder = async (req, res) => {
       finalCharge = (qty / 1000) * finalRate;
       baseCharge = (qty / 1000) * providerRate;
 
+      // Now that finalCharge is known, calculate child panel commission
+      if (childPanelOwnerId) {
+        const cpOwner = await User.findById(childPanelOwnerId);
+        const cpCommissionRate = Number(cpOwner?.childPanelCommissionRate || 0);
+        if (cpCommissionRate > 0) {
+          childPanelCommission = (finalCharge * cpCommissionRate) / 100;
+        }
+      }
+
       const currentBalance = calculateBalance(wallet.transactions);
 
       if (currentBalance < finalCharge) {
@@ -229,7 +333,7 @@ export const createOrder = async (req, res) => {
 
     const customOrderId = await getNextOrderId();
 
-    /* ================= 🔥 WALLET DEDUCT FIRST ================= */
+    /* ================= WALLET DEDUCT FIRST ================= */
 
     if (!isFreeOrder) {
       wallet.transactions.push({
@@ -243,9 +347,7 @@ export const createOrder = async (req, res) => {
       wallet.balance = calculateBalance(wallet.transactions);
       await wallet.save();
 
-      await User.findByIdAndUpdate(user._id, {
-        balance: wallet.balance,
-      });
+      await User.findByIdAndUpdate(user._id, { balance: wallet.balance });
     }
 
     /* ================= CREATE ORDER ================= */
@@ -254,19 +356,29 @@ export const createOrder = async (req, res) => {
       orderId: "ORD-" + uuidv4().slice(0, 8),
       customOrderId,
       userId: user._id,
+
+      // Reseller
       resellerOwner: user.resellerOwner || null,
       resellerCommission,
+
+      // Child panel — stamped here so dashboard, billing,
+      // and commission tracking all work correctly
+      childPanelOwner: childPanelOwnerId,
+      childPanelCommission,
+      childPanelEarningsCredited: false,
+      childPanelPerOrderFee,
+
       category: serviceData.category,
       service,
       serviceId: serviceData.serviceId || serviceData._id.toString(),
-      rate : Number(serviceData.rate || 0),
+      rate: Number(serviceData.rate || 0),
       link,
       quantity: qty,
       charge: finalCharge,
       status: "pending",
       isFreeOrder,
       earningsCredited: false,
-      isCharged: !isFreeOrder, // 🔥 KEY FIX
+      isCharged: !isFreeOrder,
 
       provider: serviceData.provider,
       providerApiUrl: serviceData.providerApiUrl,
@@ -276,16 +388,15 @@ export const createOrder = async (req, res) => {
       cancelAllowed: serviceData.cancelAllowed,
       refillAllowed: serviceData.refillAllowed,
 
-      // ================= REFILL POLICY (SAFE SNAPSHOT) =================
-  refillPolicy: serviceData.refillAllowed
-    ? serviceData.refillPolicy || "none"
-    : "none",
+      refillPolicy: serviceData.refillAllowed
+        ? serviceData.refillPolicy || "none"
+        : "none",
 
-  customRefillDays: serviceData.refillAllowed
-    ? serviceData.refillPolicy === "custom"
-      ? serviceData.customRefillDays || null
-      : null
-    : null,
+      customRefillDays: serviceData.refillAllowed
+        ? serviceData.refillPolicy === "custom"
+          ? serviceData.customRefillDays || null
+          : null
+        : null,
     });
 
     /* ================= PROVIDER CALL ================= */
@@ -311,9 +422,8 @@ export const createOrder = async (req, res) => {
 
       order.providerResponse = response.data;
       await order.save();
-
     } catch (err) {
-      /* ================= 🔥 SAFE REFUND ================= */
+      /* ================= SAFE REFUND ON PROVIDER FAILURE ================= */
 
       if (!isFreeOrder) {
         wallet.transactions.push({
@@ -356,14 +466,12 @@ export const createOrder = async (req, res) => {
       order,
       balance: wallet.balance,
     });
-
   } catch (error) {
     console.error("CREATE ORDER ERROR:", error);
     res.status(500).json({ message: "Order failed" });
   }
 };
 
-    
 /* =========================================================
 GET MY ORDERS
 ========================================================= */
@@ -379,10 +487,9 @@ export const getMyOrders = async (req, res) => {
     } = req.query;
 
     const query = {
-      userId: req.user._id, // 🔒 ONLY USER'S ORDERS
+      userId: req.user._id,
     };
 
-    /* 🔍 SEARCH (SAFE) */
     if (search && search.trim() !== "") {
       const cleanSearch = search.replace("#", "").trim();
 
@@ -391,7 +498,6 @@ export const getMyOrders = async (req, res) => {
         { link: { $regex: cleanSearch, $options: "i" } },
       ];
 
-      // 👉 ONLY match ID as number (no regex!)
       if (!isNaN(cleanSearch)) {
         orConditions.push({ customOrderId: Number(cleanSearch) });
       }
@@ -399,19 +505,13 @@ export const getMyOrders = async (req, res) => {
       query.$or = orConditions;
     }
 
-    /* 📌 STATUS */
     if (status) {
       query.status = status;
     }
 
-    /* 📅 DATE */
     if (fromDate || toDate) {
       query.createdAt = {};
-
-      if (fromDate) {
-        query.createdAt.$gte = new Date(fromDate);
-      }
-
+      if (fromDate) query.createdAt.$gte = new Date(fromDate);
       if (toDate) {
         const end = new Date(toDate);
         end.setHours(23, 59, 59, 999);
@@ -419,7 +519,6 @@ export const getMyOrders = async (req, res) => {
       }
     }
 
-    /* 📄 PAGINATION */
     const pageNum = Math.max(1, Number(page));
     const limitNum = Math.max(1, Number(limit));
     const skip = (pageNum - 1) * limitNum;
@@ -438,7 +537,6 @@ export const getMyOrders = async (req, res) => {
       orders,
       totalPages: Math.ceil(total / limitNum),
     });
-
   } catch (error) {
     console.error("GET MY ORDERS ERROR:", error);
     res.status(500).json({ message: "Failed to fetch orders" });
@@ -468,11 +566,7 @@ export const previewOrder = async (req, res) => {
     }
 
     if (serviceData.isFree) {
-      return res.json({
-        finalCharge: 0,
-        baseCharge: 0,
-        isFree: true,
-      });
+      return res.json({ finalCharge: 0, baseCharge: 0, isFree: true });
     }
 
     const providerRate = Number(serviceData.rate || 0);
@@ -487,9 +581,7 @@ export const previewOrder = async (req, res) => {
 
     if (user?.resellerOwner) {
       const reseller = await User.findById(user.resellerOwner);
-
       const rRate = Number(reseller?.resellerCommissionRate || 0);
-
       finalRate = systemRate + (systemRate * rRate) / 100;
     }
 
@@ -503,35 +595,32 @@ export const previewOrder = async (req, res) => {
       finalRate,
       isFree: false,
     });
-
   } catch (error) {
     res.status(500).json({ message: "Preview failed" });
   }
 };
 
-//Stats
+/* =========================================================
+GET MY ORDERS STATS
+========================================================= */
 export const getMyOrdersStats = async (req, res) => {
   try {
     const { search, status, fromDate, toDate } = req.query;
 
     const match = {
-      userId: req.user._id, // 🔒 ONLY USER DATA
+      userId: req.user._id,
     };
 
-    /* STATUS */
     if (status) match.status = status;
 
-    /* DATE */
     if (fromDate || toDate) {
       match.createdAt = {};
       if (fromDate) match.createdAt.$gte = new Date(fromDate);
       if (toDate) match.createdAt.$lte = new Date(toDate);
     }
 
-    /* SEARCH */
     if (search) {
       const regex = new RegExp(search, "i");
-
       match.$or = [
         { customOrderId: regex },
         { service: regex },
@@ -541,7 +630,6 @@ export const getMyOrdersStats = async (req, res) => {
 
     const stats = await Order.aggregate([
       { $match: match },
-
       {
         $facet: {
           total: [{ $count: "count" }],
@@ -564,7 +652,6 @@ export const getMyOrdersStats = async (req, res) => {
       partial: result.partial[0]?.count || 0,
       failed: result.failed[0]?.count || 0,
     });
-
   } catch (err) {
     console.error("USER STATS ERROR:", err);
     res.status(500).json({ message: "Failed to fetch stats" });

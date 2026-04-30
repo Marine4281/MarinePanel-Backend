@@ -1,4 +1,4 @@
-//middlewares/authMiddleware.js
+// middlewares/authMiddleware.js
 import jwt from "jsonwebtoken";
 import User from "../models/User.js";
 
@@ -27,11 +27,19 @@ export const protect = async (req, res, next) => {
   try {
     // 4️⃣ Verify token
     const decoded = jwt.verify(token, process.env.JWT_SECRET, {
-      algorithms: ["HS256"], // explicit (safer)
+      algorithms: ["HS256"],
     });
 
-    // 5️⃣ Fetch user
-    const user = await User.findById(decoded.id).select("-password");
+    // 5️⃣ Fetch user — scope-aware
+    // We look up by _id AND scope together so a token from
+    // Child Panel A can never authenticate on Child Panel B
+    // even if someone copies the token across panels.
+    const scope = req.scope || "platform";
+
+    const user = await User.findOne({
+      _id: decoded.id,
+      scope: scope,
+    }).select("-password");
 
     if (!user) {
       return res
@@ -46,7 +54,16 @@ export const protect = async (req, res, next) => {
       });
     }
 
-    // 7️⃣ Attach user
+    // 7️⃣ Child panel suspension check
+    // If this user IS a child panel owner and their panel
+    // has been suspended by admin, block all requests
+    if (user.isChildPanel && !user.childPanelIsActive) {
+      return res.status(403).json({
+        message: "Your panel has been suspended. Contact support.",
+      });
+    }
+
+    // 8️⃣ Attach user
     req.user = user;
 
     next();

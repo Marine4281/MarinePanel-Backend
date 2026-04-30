@@ -47,6 +47,7 @@ import { detectChildPanelDomain } from "./middlewares/childPanelMiddleware.js";
 import { attachScope } from "./middlewares/scopeMiddleware.js";
 import cpOwnerUserRoutes.js from "./routes/cpOwnerUserRoutes.js";
 import cpOwnerOrderRoutes.js from "./routes/cpOwnerOrderRoutes.js";
+import cpOwnerResellerRoutes.js from "./routes/cpOwnerResellerRoutes.js";
 
 // Middleware
 import { protect as authMiddleware } from "./middlewares/authMiddleware.js";
@@ -149,6 +150,7 @@ app.use("/api/child-panel", childPanelRoutes);
 app.use("/api/admin/child-panels", childPanelAdminRoutes);
 app.use("/api/cp/users", protect, childPanelOnly, updateLastSeen, cpOwnerUserRoutes);
 app.use("/api/cp/orders", protect, childPanelOnly, updateLastSeen, cpOwnerOrderRoutes);
+app.use("/api/cp/resellers", protect, childPanelOnly, updateLastSeen, cpOwnerResellerRoutes);
 
 /* Admin routes */
 app.use("/api/admin", adminRoutes);

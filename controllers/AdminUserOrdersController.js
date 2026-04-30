@@ -365,6 +365,8 @@ export const refundOrder = async (req, res) => {
     );
 
     await wallet.save();
+    await User.findByIdAndUpdate(order.userId, {
+      balance: wallet.balance,
 
     order.status = "refunded";
     order.refundProcessed = true;

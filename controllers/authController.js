@@ -11,7 +11,7 @@ import logAdminAction from "../utils/logAdminAction.js";
 // ======================= HELPERS =======================
 
 const generateToken = (id) => {
-  return jwt.sign({ id }, process.env.JWT_SECRET, { expiresIn: "7d" });
+  return jwt.sign({ id: user._id, scope: user.scope}, process.env.JWT_SECRET, { expiresIn: "7d" });
 };
 
 const getCookieOptions = () => {
@@ -98,7 +98,7 @@ export const register = async (req, res) => {
 
     await Wallet.create({ user: user._id, balance: 0 });
 
-    const token = generateToken(user._id);
+    const token = generateToken(user);
 
     res.cookie("token", token, getCookieOptions());
 
@@ -175,7 +175,7 @@ export const login = async (req, res) => {
       });
     }
 
-    const token = generateToken(user._id);
+    const token = generateToken(user);
     res.cookie("token", token, getCookieOptions());
 
     if (user.isAdmin) {

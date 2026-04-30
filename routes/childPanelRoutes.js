@@ -9,11 +9,9 @@ import {
   getChildPanelUsers,
   getChildPanelOrders,
   toggleChildPanelResellerStatus,
-  updateChildPanelResellerCommission,
   updateChildPanelBranding,
   updateChildPanelDomain,
   updateChildPanelSettings,
-  withdrawChildPanelFunds,
 } from "../controllers/childPanelController.js";
 
 import { protect } from "../middlewares/authMiddleware.js";
@@ -87,11 +85,5 @@ Settings (fees, commission)
 */
 router.put("/settings", protect, childPanelOnly, updateChildPanelSettings);
 
-/*
---------------------------------
-Withdraw earnings
---------------------------------
-*/
-router.post("/withdraw", protect, childPanelOnly, withdrawChildPanelFunds);
 
 export default router;

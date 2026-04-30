@@ -534,39 +534,3 @@ export const updateChildPanelSettings = async (req, res) => {
   }
 };
 
-/* ================================================
-   WITHDRAW FROM CHILD PANEL WALLET
-================================================ */
-
-export const withdrawChildPanelFunds = async (req, res) => {
-  try {
-    const { amount } = req.body;
-
-    if (!amount || amount <= 0) {
-      return res.status(400).json({ message: "Invalid amount" });
-    }
-
-    const user = await User.findById(req.user._id);
-
-    if (amount < user.childPanelWithdrawMin) {
-      return res.status(400).json({
-        message: `Minimum withdrawal is $${user.childPanelWithdrawMin}`,
-      });
-    }
-
-    if (user.childPanelWallet < amount) {
-      return res.status(400).json({ message: "Insufficient balance" });
-    }
-
-    user.childPanelWallet -= Number(amount);
-    await user.save();
-
-    res.json({
-      success: true,
-      message: "Withdrawal successful",
-      remainingBalance: user.childPanelWallet,
-    });
-  } catch (error) {
-    res.status(500).json({ message: "Withdrawal failed" });
-  }
-};

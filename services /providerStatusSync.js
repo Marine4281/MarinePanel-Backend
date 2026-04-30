@@ -154,6 +154,8 @@ export const syncProviderOrders = async (io) => {
                 await wallet.save();
                 await reverseResellerCommission(order);
                 await order.save();
+                await User.findByIdAndUpdate(order.userId, {
+                  balance: wallet.balance,
               }
 
               // ================= PARTIAL =================

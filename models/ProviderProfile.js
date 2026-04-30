@@ -29,5 +29,5 @@ const providerProfileSchema = new mongoose.Schema(
     timestamps: true,
   }
 );
-
+providerProfileSchema.index({ name: 1, cpOwner: 1 }, { unique: true });
 export default mongoose.model("ProviderProfile", providerProfileSchema);

@@ -56,6 +56,9 @@ const serviceSchema = new mongoose.Schema(
       index: true,
     },
 
+    cpOwner: { 
+      type: mongoose.Schema.Types.ObjectId, ref: "User", default: null, index: true }
+
     // =====================================================
     // 💰 PRICING
     // =====================================================

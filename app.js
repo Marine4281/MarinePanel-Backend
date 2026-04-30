@@ -45,6 +45,7 @@ import childPanelRoutes from "./routes/childPanelRoutes.js";
 import childPanelAdminRoutes from "./routes/childPanelAdminRoutes.js";
 import { detectChildPanelDomain } from "./middlewares/childPanelMiddleware.js";
 import { attachScope } from "./middlewares/scopeMiddleware.js";
+import cpOwnerUserRoutes.js from "./routes/cpOwnerUserRoutes.js";
 
 // Middleware
 import { protect as authMiddleware } from "./middlewares/authMiddleware.js";
@@ -145,6 +146,7 @@ app.use("/api/end-users", endUserRoutes);
 // Child panel routes (new)
 app.use("/api/child-panel", childPanelRoutes);
 app.use("/api/admin/child-panels", childPanelAdminRoutes);
+app.use("/api/cp/users", protect, childPanelOnly, updateLastSeen, cpOwnerUserRoutes);
 
 /* Admin routes */
 app.use("/api/admin", adminRoutes);

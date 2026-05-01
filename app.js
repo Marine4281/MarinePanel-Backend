@@ -45,10 +45,10 @@ import childPanelRoutes from "./routes/childPanelRoutes.js";
 import childPanelAdminRoutes from "./routes/childPanelAdminRoutes.js";
 import { detectChildPanelDomain } from "./middlewares/childPanelMiddleware.js";
 import { attachScope } from "./middlewares/scopeMiddleware.js";
-import cpOwnerUserRoutes.js from "./routes/cpOwnerUserRoutes.js";
-import cpOwnerOrderRoutes.js from "./routes/cpOwnerOrderRoutes.js";
-import cpOwnerResellerRoutes.js from "./routes/cpOwnerResellerRoutes.js";
-import cpOwnerProviderRoutes.js from "./routes/cpOwnerProviderRoutes.js";
+import cpOwnerUserRoutes from "./routes/cpOwnerUserRoutes.js";
+import cpOwnerOrderRoutes from "./routes/cpOwnerOrderRoutes.js";
+import cpOwnerResellerRoutes from "./routes/cpOwnerResellerRoutes.js";
+import cpOwnerProviderRoutes from "./routes/cpOwnerProviderRoutes.js";
 
 // Middleware
 import { protect as authMiddleware } from "./middlewares/authMiddleware.js";

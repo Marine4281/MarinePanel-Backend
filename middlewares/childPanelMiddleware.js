@@ -101,3 +101,13 @@ export const detectChildPanelDomain = async (req, res, next) => {
     next();
   }
 };
+
+export const childPanelOnly = (req, res, next) => {
+  if (!req.childPanel) {
+    return res.status(403).json({
+      message: "Access denied: Child panel only route",
+    });
+  }
+
+  next();
+};

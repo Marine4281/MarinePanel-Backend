@@ -43,7 +43,7 @@ import providerProfileRoutes from "./routes/providerProfileRoutes.js";
 // Child Panel Routes (new)
 import childPanelRoutes from "./routes/childPanelRoutes.js";
 import childPanelAdminRoutes from "./routes/childPanelAdminRoutes.js";
-import { detectChildPanelDomain } from "./middlewares/childPanelMiddleware.js";
+import { detectChildPanelDomain , childPanelOnly} from "./middlewares/childPanelMiddleware.js";
 import { attachScope } from "./middlewares/scopeMiddleware.js";
 import cpOwnerUserRoutes from "./routes/cpOwnerUserRoutes.js";
 import cpOwnerOrderRoutes from "./routes/cpOwnerOrderRoutes.js";

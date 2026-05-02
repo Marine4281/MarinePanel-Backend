@@ -215,8 +215,8 @@ app.use("/api/end-users", endUserRoutes);
 ================================================= */
 app.use("/api/child-panel", childPanelRoutes);
 app.use("/api/admin/child-panels", childPanelAdminRoutes);
-app.use("/api/cp/users", authMiddlewarer, cpOwnerOnly, updateLastSeen, cpOwnerUserRoutes);
-app.use("/api/cp/orders", authMiddlewar, cpOwnerOnly, updateLastSeen, cpOwnerOrderRoutes);
+app.use("/api/cp/users", authMiddleware, cpOwnerOnly, updateLastSeen, cpOwnerUserRoutes);
+app.use("/api/cp/orders", authMiddleware, cpOwnerOnly, updateLastSeen, cpOwnerOrderRoutes);
 app.use("/api/cp/resellers", authMiddleware, cpOwnerOnly, updateLastSeen, cpOwnerResellerRoutes);
 app.use("/api/cp/providers", authMiddleware, cpOwnerOnly, updateLastSeen, cpOwnerProviderRoutes);
 app.use("/api/cp/settings", authMiddleware, cpOwnerOnly, updateLastSeen, cpOwnerSettingsRoutes);

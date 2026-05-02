@@ -99,6 +99,7 @@ const loadChildDomains = async () => {
   }
 };
 
+await loadChildDomains();
 /* CORS */
 app.use(
   cors({

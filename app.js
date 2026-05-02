@@ -40,10 +40,10 @@ import providerRoutes from "./routes/providerRoutes.js";
 import adminLogRoutes from "./routes/adminLogRoutes.js";
 import providerProfileRoutes from "./routes/providerProfileRoutes.js";
 
-// Child Panel Routes (new)
+// Child Panel Routes
 import childPanelRoutes from "./routes/childPanelRoutes.js";
 import childPanelAdminRoutes from "./routes/childPanelAdminRoutes.js";
-import { detectChildPanelDomain , childPanelOnly} from "./middlewares/childPanelMiddleware.js";
+import { detectChildPanelDomain, childPanelOnly } from "./middlewares/childPanelMiddleware.js";
 import { attachScope } from "./middlewares/scopeMiddleware.js";
 import cpOwnerUserRoutes from "./routes/cpOwnerUserRoutes.js";
 import cpOwnerOrderRoutes from "./routes/cpOwnerOrderRoutes.js";
@@ -75,7 +75,17 @@ app.use(
   })
 );
 
+/* =========================
+   CHILD PANEL DOMAIN CACHE
+========================= */
 const allowedChildDomains = new Set();
+
+const normalizeDomain = (domain) =>
+  domain
+    .replace(/^https?:\/\//, "")
+    .replace(/^www\./, "")
+    .split("/")[0]
+    .toLowerCase();
 
 const loadChildDomains = async () => {
   try {
@@ -89,7 +99,7 @@ const loadChildDomains = async () => {
 
     domains.forEach((d) => {
       if (d.childPanelDomain) {
-        allowedChildDomains.add(d.childPanelDomain.toLowerCase());
+        allowedChildDomains.add(normalizeDomain(d.childPanelDomain));
       }
     });
 
@@ -100,36 +110,33 @@ const loadChildDomains = async () => {
 };
 
 await loadChildDomains();
-/* CORS */
-app.use(
-  cors({
-    origin: (origin, callback) => {
-      // Allow non-browser requests (Postman, mobile apps, etc.)
-      if (!origin) return callback(null, true);
 
-      // Normalize origin → remove protocol + www + path
-      const cleanOrigin = origin
-        .replace(/^https?:\/\//, "")
-        .replace(/^www\./, "")
-        .split("/")[0]
-        .toLowerCase();
+/* =========================
+   CORS CONFIG
+========================= */
+const corsOptions = {
+  origin: (origin, callback) => {
+    if (!origin) return callback(null, true);
 
-      // ✅ Allow main domains + vercel + child panel custom domains
-      if (
-        cleanOrigin.endsWith(".marinepanel.online") ||
-        cleanOrigin === "marinepanel.online" ||
-        /\.vercel\.app$/.test(cleanOrigin) ||
-        allowedChildDomains.has(cleanOrigin)
-      ) {
-        return callback(null, true);
-      }
+    const cleanOrigin = normalizeDomain(origin);
 
-      console.log("🚫 Blocked by CORS:", cleanOrigin);
-      return callback(new Error("Not allowed by CORS"));
-    },
-    credentials: true,
-  })
-);
+    if (
+      cleanOrigin.endsWith(".marinepanel.online") ||
+      cleanOrigin === "marinepanel.online" ||
+      /\.vercel\.app$/.test(cleanOrigin) ||
+      allowedChildDomains.has(cleanOrigin)
+    ) {
+      return callback(null, true);
+    }
+
+    console.log("🚫 Blocked by CORS:", cleanOrigin);
+    return callback(new Error("Not allowed by CORS"));
+  },
+  credentials: true,
+};
+
+app.use(cors(corsOptions));
+app.options(/./, cors(corsOptions));
 
 /* Body parser */
 app.use(express.json({ limit: "50mb" }));
@@ -141,22 +148,12 @@ app.get("/", (req, res) => {
   res.json({ status: "Marine backend running" });
 });
 
-/* CORS preflight */
-app.options(/./, cors());
-
 /* Cookies */
 app.use(cookieParser());
 
-/*
-----------------------------------------------------------------
-DOMAIN & SCOPE DETECTION
-Order matters:
-1. detectResellerDomain  — checks if request is from a reseller domain
-2. detectChildPanelDomain — checks if request is from a child panel domain
-3. attachScope           — sets req.scope based on the above results
-                           used in all auth lookups for user isolation
-----------------------------------------------------------------
-*/
+/* =========================
+   DOMAIN & SCOPE DETECTION
+========================= */
 app.use(detectResellerDomain);
 app.use(detectChildPanelDomain);
 app.use(attachScope);
@@ -174,14 +171,14 @@ app.use("/api/settings", commissionRoutes);
 app.use("/api/admin/resellers", resellerAdminRoutes);
 app.use("/api", apiV2Routes);
 
-// Reseller routes
+/* Reseller routes */
 app.use("/api/reseller", resellerRoutes);
 app.use("/api/branding", brandingRoutes);
 app.use("/api/reseller-guides", resellerGuideRoutes);
 app.use("/api/reseller/services", resellerServiceRoutes);
 app.use("/api/end-users", endUserRoutes);
 
-// Child panel routes (new)
+/* Child panel routes */
 app.use("/api/child-panel", childPanelRoutes);
 app.use("/api/admin/child-panels", childPanelAdminRoutes);
 app.use("/api/cp/users", authMiddleware, childPanelOnly, updateLastSeen, cpOwnerUserRoutes);

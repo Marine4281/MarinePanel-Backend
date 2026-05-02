@@ -1,8 +1,16 @@
-import cpOwnerWithdrawalRoutes from "./routes/cpOwnerWithdrawalRoutes.js";
-import adminWithdrawalRoutes from "./routes/adminWithdrawalRoutes.js";
+import express from "express";
+import {
+  getPendingWithdrawals,
+  approveWithdrawal,
+  rejectWithdrawal,
+} from "../controllers/adminWithdrawalController.js";
 
-// Child panel withdrawal
-app.use("/api/child-panel", authMiddleware, childPanelOnly, updateLastSeen, cpOwnerWithdrawalRoutes);
+const router = express.Router();
 
-// Admin withdrawal management
-app.use("/api/admin/withdrawals", authMiddleware, adminOnly, adminWithdrawalRoutes);
+// protect + adminOnly applied in app.js
+
+router.get("/pending", getPendingWithdrawals);
+router.post("/:userId/:txId/approve", approveWithdrawal);
+router.post("/:userId/:txId/reject", rejectWithdrawal);
+
+export default router;

@@ -75,42 +75,56 @@ app.use(
   })
 );
 
+const allowedChildDomains = new Set();
+
+const loadChildDomains = async () => {
+  try {
+    const { default: User } = await import("./models/User.js");
+
+    const domains = await User.find({
+      isChildPanel: true,
+      childPanelIsActive: true,
+      childPanelDomain: { $ne: null },
+    }).select("childPanelDomain");
+
+    domains.forEach((d) => {
+      if (d.childPanelDomain) {
+        allowedChildDomains.add(d.childPanelDomain.toLowerCase());
+      }
+    });
+
+    console.log("✅ Loaded child panel domains:", allowedChildDomains.size);
+  } catch (err) {
+    console.error("❌ Failed to load child domains:", err.message);
+  }
+};
+
 /* CORS */
 app.use(
   cors({
     origin: (origin, callback) => {
+      // Allow non-browser requests (Postman, mobile apps, etc.)
       if (!origin) return callback(null, true);
 
+      // Normalize origin → remove protocol + www + path
+      const cleanOrigin = origin
+        .replace(/^https?:\/\//, "")
+        .replace(/^www\./, "")
+        .split("/")[0]
+        .toLowerCase();
+
+      // ✅ Allow main domains + vercel + child panel custom domains
       if (
-        origin.endsWith(".marinepanel.online") ||
-        origin === "https://marinepanel.online" ||
-        origin === "http://marinepanel.online" ||
-        /\.vercel\.app$/.test(origin)
+        cleanOrigin.endsWith(".marinepanel.online") ||
+        cleanOrigin === "marinepanel.online" ||
+        /\.vercel\.app$/.test(cleanOrigin) ||
+        allowedChildDomains.has(cleanOrigin)
       ) {
         return callback(null, true);
       }
 
-      // Allow any registered child panel custom domain
-      try {
-        const cleanOrigin = origin
-          .replace(/^https?:\/\//, "")
-          .replace(/^www\./, "")
-          .split("/")[0];
-
-        const { default: User } = await import("./models/User.js");
-        const cp = await User.findOne({
-          childPanelDomain: cleanOrigin,
-          isChildPanel: true,
-          childPanelIsActive: true,
-        });
-
-        if (cp) return callback(null, true);
-      } catch (e) {
-        console.error("CORS child panel check failed:", e.message);
-      }
-      
-      console.log("Blocked by CORS:", origin);
-      callback(new Error("Not allowed by CORS"));
+      console.log("🚫 Blocked by CORS:", cleanOrigin);
+      return callback(new Error("Not allowed by CORS"));
     },
     credentials: true,
   })

@@ -86,5 +86,8 @@ Settings (fees, commission)
 */
 router.put("/settings", protect, childPanelOnly, updateChildPanelSettings);
 
+//Branding
+router.get("/branding", getChildPanelBranding); // public
+
 
 export default router;

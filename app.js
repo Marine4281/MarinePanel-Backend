@@ -215,11 +215,11 @@ app.use("/api/end-users", endUserRoutes);
 ================================================= */
 app.use("/api/child-panel", childPanelRoutes);
 app.use("/api/admin/child-panels", childPanelAdminRoutes);
-app.use("/api/cp/users", authMiddleware, childPanelOnly, updateLastSeen, cpOwnerUserRoutes);
-app.use("/api/cp/orders", authMiddleware, childPanelOnly, updateLastSeen, cpOwnerOrderRoutes);
-app.use("/api/cp/resellers", authMiddleware, childPanelOnly, updateLastSeen, cpOwnerResellerRoutes);
-app.use("/api/cp/providers", authMiddleware, childPanelOnly, updateLastSeen, cpOwnerProviderRoutes);
-app.use("/api/cp/settings", authMiddleware, childPanelOnly, updateLastSeen, cpOwnerSettingsRoutes);
+app.use("/api/cp/users", authMiddleware, cpOwnerOnly, updateLastSeen, cpOwnerUserRoutes);
+app.use("/api/cp/orders", authMiddlewar, cpOwnerOnly, updateLastSeen, cpOwnerOrderRoutes);
+app.use("/api/cp/resellers", authMiddleware, cpOwnerOnly, updateLastSeen, cpOwnerResellerRoutes);
+app.use("/api/cp/providers", authMiddleware, cpOwnerOnly, updateLastSeen, cpOwnerProviderRoutes);
+app.use("/api/cp/settings", authMiddleware, cpOwnerOnly, updateLastSeen, cpOwnerSettingsRoutes);
 
 /* =================================================
    ADMIN ROUTES

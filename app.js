@@ -90,6 +90,25 @@ app.use(
         return callback(null, true);
       }
 
+      // Allow any registered child panel custom domain
+      try {
+        const cleanOrigin = origin
+          .replace(/^https?:\/\//, "")
+          .replace(/^www\./, "")
+          .split("/")[0];
+
+        const { default: User } = await import("./models/User.js");
+        const cp = await User.findOne({
+          childPanelDomain: cleanOrigin,
+          isChildPanel: true,
+          childPanelIsActive: true,
+        });
+
+        if (cp) return callback(null, true);
+      } catch (e) {
+        console.error("CORS child panel check failed:", e.message);
+      }
+      
       console.log("Blocked by CORS:", origin);
       callback(new Error("Not allowed by CORS"));
     },
@@ -154,6 +173,8 @@ app.use("/api/cp/users", authMiddleware, childPanelOnly, updateLastSeen, cpOwner
 app.use("/api/cp/orders", authMiddleware, childPanelOnly, updateLastSeen, cpOwnerOrderRoutes);
 app.use("/api/cp/resellers", authMiddleware, childPanelOnly, updateLastSeen, cpOwnerResellerRoutes);
 app.use("/api/cp/settings", authMiddleware, childPanelOnly, updateLastSeen, cpOwnerSettingsRoutes);
+app.use("/api/cp/providers", authMiddleware, childPanelOnly, updateLastSeen, cpOwnerProviderRoutes);
+
 /* Admin routes */
 app.use("/api/admin", adminRoutes);
 app.use("/api/admin/users", adminStack, adminUserRoutes);

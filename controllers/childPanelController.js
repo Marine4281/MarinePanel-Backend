@@ -534,3 +534,31 @@ export const updateChildPanelSettings = async (req, res) => {
   }
 };
 
+// GET /child-panel/branding
+// Public — called by frontend to get branding for current domain
+export const getChildPanelBranding = async (req, res) => {
+  try {
+    // req.childPanel is set by detectChildPanelDomain middleware
+    if (!req.childPanel) {
+      return res.status(404).json({ message: "Not a child panel domain" });
+    }
+
+    const cp = req.childPanel;
+
+    res.json({
+      brandName: cp.childPanelBrandName || "Panel",
+      logo: cp.childPanelLogo || null,
+      themeColor: cp.childPanelThemeColor || "#1e40af",
+      slug: cp.childPanelSlug || null,
+      domain: cp.childPanelDomain || null,
+      support: {
+        whatsapp: cp.childPanelSupportWhatsapp || null,
+        telegram: cp.childPanelSupportTelegram || null,
+        whatsappChannel: cp.childPanelSupportWhatsappChannel || null,
+      },
+    });
+  } catch (err) {
+    console.error("GET CP BRANDING ERROR:", err);
+    res.status(500).json({ message: "Server error" });
+  }
+};

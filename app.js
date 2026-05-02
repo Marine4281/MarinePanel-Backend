@@ -149,10 +149,9 @@ app.use("/api/end-users", endUserRoutes);
 // Child panel routes (new)
 app.use("/api/child-panel", childPanelRoutes);
 app.use("/api/admin/child-panels", childPanelAdminRoutes);
-app.use("/api/cp/users", protect, childPanelOnly, updateLastSeen, cpOwnerUserRoutes);
-app.use("/api/cp/orders", protect, childPanelOnly, updateLastSeen, cpOwnerOrderRoutes);
-app.use("/api/cp/resellers", protect, childPanelOnly, updateLastSeen, cpOwnerResellerRoutes);
-app.use("/api/cp/orders", protect, childPanelOnly, updateLastSeen, cpOwnerOrderRoutes);
+app.use("/api/cp/users", authMiddleware, childPanelOnly, updateLastSeen, cpOwnerUserRoutes);
+app.use("/api/cp/orders", authMiddleware, childPanelOnly, updateLastSeen, cpOwnerOrderRoutes);
+app.use("/api/cp/resellers", authMiddleware, childPanelOnly, updateLastSeen, cpOwnerResellerRoutes);
 
 /* Admin routes */
 app.use("/api/admin", adminRoutes);

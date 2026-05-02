@@ -51,7 +51,7 @@ import cpOwnerResellerRoutes from "./routes/cpOwnerResellerRoutes.js";
 import cpOwnerProviderRoutes from "./routes/cpOwnerProviderRoutes.js";
 import cpOwnerSettingsRoutes from "./routes/cpOwnerSettingsRoutes.js";
 import cpOwnerWithdrawalRoutes from "./routes/cpOwnerWithdrawalRoutes.js";
-import adminWithdrawalRoutes from "./routes/adminWithdrawalRoutes.js";
+//import adminWithdrawalRoutes from "./routes/adminWithdrawalRoutes.js";
 
 
 // Middleware
@@ -227,7 +227,7 @@ app.use("/api/cp/settings", authMiddleware, cpOwnerOnly, updateLastSeen, cpOwner
 app.use("/api/child-panel", authMiddleware, childPanelOnly, updateLastSeen, cpOwnerWithdrawalRoutes);
 
 // Admin withdrawal management
-app.use("/api/admin/withdrawals", authMiddleware, adminOnly, adminWithdrawalRoutes);
+//app.use("/api/admin/withdrawals", authMiddleware, adminOnly, adminWithdrawalRoutes);
 
 /* =================================================
    ADMIN ROUTES

@@ -102,12 +102,36 @@ export const detectChildPanelDomain = async (req, res, next) => {
   }
 };
 
+// For end-users accessing via a child panel domain
 export const childPanelOnly = (req, res, next) => {
   if (!req.childPanel) {
     return res.status(403).json({
       message: "Access denied: Child panel only route",
     });
   }
+
+  next();
+};
+
+// For the child panel OWNER managing their panel from the main platform
+export const cpOwnerOnly = (req, res, next) => {
+  const user = req.user;
+
+  if (!user) {
+    return res.status(401).json({ message: "Not authorized" });
+  }
+
+  if (!user.isChildPanel) {
+    return res.status(403).json({ message: "Access denied: Child panel owners only" });
+  }
+
+  if (!user.childPanelIsActive) {
+    return res.status(403).json({ message: "Your panel has been suspended. Contact support." });
+  }
+
+  // Attach owner as req.childPanel so controllers that read
+  // req.childPanel._id continue to work without any changes
+  req.childPanel = user;
 
   next();
 };

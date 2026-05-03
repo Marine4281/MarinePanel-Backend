@@ -13,6 +13,7 @@ import {
   updateChildPanelBranding,
   updateChildPanelDomain,
   updateChildPanelSettings,
+  getChildPanelBranding,           // ← was missing
 } from "../controllers/childPanelController.js";
 
 import { protect } from "../middlewares/authMiddleware.js";
@@ -20,74 +21,36 @@ import { childPanelOnly } from "../middlewares/adminMiddleware.js";
 
 const router = express.Router();
 
-/*
---------------------------------
-Activation fee — public so the
-page can show price before login
---------------------------------
-*/
+// Public — show activation fee before login
 router.get("/activation-fee", getChildPanelActivationFee);
 
-/*
---------------------------------
-Activate child panel
---------------------------------
-*/
+// Public — child panel domain branding (used by ChildPanelContext on frontend)
+router.get("/branding", getChildPanelBranding);
+
+// Activate
 router.post("/activate", protect, activateChildPanel);
 
-/*
---------------------------------
-Dashboard
---------------------------------
-*/
+// Dashboard
 router.get("/dashboard", protect, childPanelOnly, getChildPanelDashboard);
 
-/*
---------------------------------
-Resellers under this child panel
---------------------------------
-*/
+// Resellers
 router.get("/resellers", protect, childPanelOnly, getChildPanelResellers);
 router.put("/resellers/:id/toggle-status", protect, childPanelOnly, toggleChildPanelResellerStatus);
 router.put("/resellers/:id/commission", protect, childPanelOnly, updateChildPanelResellerCommission);
 
-/*
---------------------------------
-Users under this child panel
---------------------------------
-*/
+// Users
 router.get("/users", protect, childPanelOnly, getChildPanelUsers);
 
-/*
---------------------------------
-Orders under this child panel
---------------------------------
-*/
+// Orders
 router.get("/orders", protect, childPanelOnly, getChildPanelOrders);
 
-/*
---------------------------------
-Branding
---------------------------------
-*/
+// Branding (owner update)
 router.put("/branding", protect, childPanelOnly, updateChildPanelBranding);
 
-/*
---------------------------------
-Domain
---------------------------------
-*/
+// Domain
 router.put("/domain", protect, childPanelOnly, updateChildPanelDomain);
 
-/*
---------------------------------
-Settings (fees, commission)
---------------------------------
-*/
+// Settings
 router.put("/settings", protect, childPanelOnly, updateChildPanelSettings);
-
-//Branding
-router.get("/branding", getChildPanelBranding); // public
-
 
 export default router;

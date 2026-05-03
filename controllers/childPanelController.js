@@ -58,18 +58,32 @@ export const getChildPanelActivationFee = async (req, res) => {
 };
 
 /* ================================================
+   RESERVED SLUGS
+   These can never be used as child panel slugs.
+   They either conflict with platform routes,
+   DNS records we own, or common abuse targets.
+================================================ */
+const RESERVED_SLUGS = new Set([
+  "api", "admin", "www", "mail", "app", "panel", "support",
+  "marinepanel", "marine", "help", "status", "blog", "cdn",
+  "assets", "static", "media", "auth", "login", "register",
+  "dashboard", "billing", "reseller", "child", "cp", "root",
+  "system", "dev", "test", "staging", "demo", "sandbox",
+]);
+
+/* ================================================
    ACTIVATE CHILD PANEL
    User pays activation fee from their wallet
    Gets their own child panel with a slug for testing
    or custom domain for production
 ================================================ */
-
 export const activateChildPanel = async (req, res) => {
   try {
     const userId = req.user._id;
     const { brandName, slug, customDomain } = req.body;
 
-    if (!brandName) {
+    // ── 1. Basic validation ──────────────────────────
+    if (!brandName || !brandName.trim()) {
       return res.status(400).json({ message: "Brand name is required" });
     }
 
@@ -80,27 +94,88 @@ export const activateChildPanel = async (req, res) => {
       return res.status(400).json({ message: "Already a child panel owner" });
     }
 
-    // Determine slug from brandName if not provided
-    const finalSlug = slug
-      ? slug.toLowerCase().trim().replace(/\s+/g, "").replace(/[^a-z0-9]/g, "")
-      : brandName.toLowerCase().trim().replace(/\s+/g, "").replace(/[^a-z0-9]/g, "");
+    // ── 2. Build & validate slug ─────────────────────
+    const finalSlug = (slug || brandName)
+      .toLowerCase()
+      .trim()
+      .replace(/\s+/g, "")
+      .replace(/[^a-z0-9]/g, "");
 
-    // Check slug is unique
-    const slugExists = await User.findOne({ childPanelSlug: finalSlug });
-    if (slugExists) {
-      return res.status(400).json({ message: "Brand slug already taken" });
+    if (!finalSlug || finalSlug.length < 3) {
+      return res.status(400).json({
+        message: "Slug must be at least 3 characters (letters and numbers only)",
+      });
     }
 
-    // Check custom domain uniqueness if provided
-    if (customDomain) {
-      const cleanDomain = normalizeDomain(customDomain);
-      const domainExists = await User.findOne({ childPanelDomain: cleanDomain });
-      if (domainExists) {
-        return res.status(400).json({ message: "Domain already in use" });
+    if (finalSlug.length > 30) {
+      return res.status(400).json({
+        message: "Slug must be 30 characters or fewer",
+      });
+    }
+
+    // ── 3. Reserved slug check (SEC-1) ───────────────
+    if (RESERVED_SLUGS.has(finalSlug)) {
+      return res.status(400).json({
+        message: `"${finalSlug}" is a reserved name and cannot be used. Please choose another.`,
+      });
+    }
+
+    // ── 4. Uniqueness: check against BOTH resellers
+    //       and existing child panels (SEC-1) ─────────
+    const slugConflict = await User.findOne({
+      $or: [
+        { isReseller: true, brandSlug: finalSlug },
+        { isChildPanel: true, childPanelSlug: finalSlug },
+      ],
+    }).lean();
+
+    if (slugConflict) {
+      return res.status(400).json({
+        message: "This brand slug is already taken. Please choose a different one.",
+      });
+    }
+
+    // ── 5. Custom domain validation ──────────────────
+    let cleanDomain = null;
+
+    if (customDomain && customDomain.trim()) {
+      cleanDomain = normalizeDomain(customDomain.trim());
+
+      // Must not be the main platform domain or any subdomain of it
+      const PLATFORM_DOMAIN = "marinepanel.online";
+      if (
+        cleanDomain === PLATFORM_DOMAIN ||
+        cleanDomain.endsWith(`.${PLATFORM_DOMAIN}`)
+      ) {
+        return res.status(400).json({
+          message: "You cannot use the marinepanel.online domain as your custom domain. Point your own domain instead.",
+        });
+      }
+
+      // Must look like a real domain (basic format check)
+      const domainPattern = /^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z]{2,})+$/;
+      if (!domainPattern.test(cleanDomain)) {
+        return res.status(400).json({
+          message: "Invalid custom domain format. Example: mypanel.com",
+        });
+      }
+
+      // Must not be already registered to another child panel or reseller
+      const domainConflict = await User.findOne({
+        $or: [
+          { isChildPanel: true, childPanelDomain: cleanDomain },
+          { isReseller: true, resellerDomain: cleanDomain },
+        ],
+      }).lean();
+
+      if (domainConflict) {
+        return res.status(400).json({
+          message: "This domain is already in use on this platform.",
+        });
       }
     }
 
-    // Get current fees — respect active offer
+    // ── 6. Load settings & resolve fees ─────────────
     const settings = await Settings.findOne().lean();
 
     const offerActive =
@@ -109,66 +184,107 @@ export const activateChildPanel = async (req, res) => {
         new Date(settings.childPanelOfferExpiresAt) > new Date());
 
     const activationFee = offerActive
-      ? settings.childPanelOfferActivationFee
-      : settings?.childPanelActivationFee || 100;
+      ? Number(settings.childPanelOfferActivationFee ?? 2)
+      : Number(settings?.childPanelActivationFee ?? 100);
 
     const monthlyFee = offerActive
-      ? settings.childPanelOfferMonthlyFee
-      : settings?.childPanelMonthlyFee || 20;
+      ? Number(settings.childPanelOfferMonthlyFee ?? 0)
+      : Number(settings?.childPanelMonthlyFee ?? 20);
 
+    const billingMode = settings?.childPanelBillingMode || "monthly";
+    const perOrderFee = Number(settings?.childPanelPerOrderFee ?? 0);
+    const withdrawMin = Number(settings?.childPanelWithdrawMin ?? 10);
+    const platformDomain = settings?.platformDomain || "marinepanel.online";
+
+    // ── 7. Wallet balance check ──────────────────────
     const wallet = await Wallet.findOne({ user: userId });
     if (!wallet) return res.status(404).json({ message: "Wallet not found" });
 
     if (wallet.balance < activationFee) {
       return res.status(400).json({
-        message: `You need $${activationFee} to activate a child panel`,
+        message: `Insufficient balance. You need $${activationFee.toFixed(2)} to activate a child panel. Your balance: $${wallet.balance.toFixed(2)}.`,
       });
     }
 
-    // Deduct activation fee
+    // ── 8. Deduct activation fee ─────────────────────
     wallet.transactions.push({
       type: "CP Activation Fee",
-      amount: -Number(activationFee),
+      amount: -activationFee,
       status: "Completed",
-      note: "Child panel activation fee",
-      reference: `CP-ACT-${userId}`,
+      note: `Child panel activation fee${offerActive ? " (offer price)" : ""}`,
+      reference: `CP-ACT-${userId}-${Date.now()}`,
       createdAt: new Date(),
     });
 
     wallet.balance = calculateBalance(wallet.transactions);
     await wallet.save();
 
-    // Activate child panel on user
+    // ── 9. Stamp child panel fields on user ──────────
     user.isChildPanel = true;
+    user.childPanelEnabled = true;          // backward-compat field
     user.childPanelIsActive = true;
     user.childPanelActivatedAt = new Date();
-    user.childPanelBrandName = brandName;
+    user.childPanelBrandName = brandName.trim();
     user.childPanelSlug = finalSlug;
-    user.childPanelDomain = customDomain ? normalizeDomain(customDomain) : null;
+    user.childPanelDomain = cleanDomain;    // null if no custom domain given
+
+    // Billing — inherited from admin settings at time of activation
+    user.childPanelBillingMode = billingMode;
     user.childPanelMonthlyFee = monthlyFee;
-    user.childPanelBillingMode = settings?.childPanelBillingMode || "monthly";
-    user.childPanelPerOrderFee = settings?.childPanelPerOrderFee || 0;
-    user.childPanelWithdrawMin = settings?.childPanelWithdrawMin || 10;
-    user.childPanelResellerActivationFee = 25; // default, they can change later
+    user.childPanelPerOrderFee = perOrderFee;
+    user.childPanelLastBilledAt = new Date();
+
+    // Defaults the CP owner can change later from their settings page
+    user.childPanelWithdrawMin = withdrawMin;
+    user.childPanelResellerActivationFee = 25;
+    user.childPanelCommissionRate = 0;
+    user.childPanelPaymentMode = "none";
+    user.childPanelServiceMode = "none";
 
     await user.save();
 
-    // Sync user balance
+    // ── 10. Keep User.balance in sync ────────────────
     await User.findByIdAndUpdate(userId, { balance: wallet.balance });
 
-    const platformDomain = settings?.platformDomain || "marinepanel.online";
+    // ── 11. Refresh CORS domain cache if custom domain ──
+    if (cleanDomain) {
+      try {
+        const { refreshChildDomains } = await import("../app.js");
+        await refreshChildDomains();
+      } catch (cacheErr) {
+        // Non-fatal — CORS cache will sync on next restart
+        console.warn("CORS cache refresh skipped:", cacheErr.message);
+      }
+    }
 
-    res.json({
+    // ── 12. Respond ──────────────────────────────────
+    const panelUrl = cleanDomain
+      ? `https://${cleanDomain}`
+      : `https://${finalSlug}.${platformDomain}`;
+
+    res.status(201).json({
       message: "Child panel activated successfully",
       slug: finalSlug,
-      domain: customDomain
-        ? normalizeDomain(customDomain)
-        : `${finalSlug}.${platformDomain}`,
+      domain: cleanDomain || `${finalSlug}.${platformDomain}`,
+      panelUrl,
       remainingBalance: wallet.balance,
+      billingMode,
+      monthlyFee,
+      offerApplied: offerActive,
     });
+
   } catch (error) {
     console.error("CHILD PANEL ACTIVATION ERROR:", error);
-    res.status(500).json({ message: "Activation failed" });
+
+    // Surface Mongoose duplicate-key errors cleanly
+    if (error.code === 11000) {
+      const field = Object.keys(error.keyPattern || {})[0] || "field";
+      return res.status(400).json({
+        message: `That ${field} is already taken. Please try a different one.`,
+      });
+    }
+
+    res.status(500).json({ message: "Activation failed. Please try again." });
   }
 };
 

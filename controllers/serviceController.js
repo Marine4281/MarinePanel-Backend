@@ -10,6 +10,58 @@ import { getCache, setCache } from "../utils/cache.js";
 ========================================================= */
 export const getServicesPublic = async (req, res) => {
   try {
+
+     //Child Panel
+     if (req.childPanel) {
+      const cp = req.childPanel;
+      const serviceMode = cp.childPanelServiceMode || "none";
+
+      const cpSettings = await Settings.findOne().lean();
+      const adminCommission = Number(cpSettings?.commission || 0);
+
+      let services = [];
+
+      if (serviceMode === "own" || serviceMode === "both") {
+        // Fetch services imported by this child panel from their own providers
+        // These live in a separate ProviderService collection scoped by childPanelOwner
+        const { default: ProviderService } = await import("../models/ProviderService.js");
+        const ownServices = await ProviderService.find({
+          childPanelOwner: cp._id,
+          status: true,
+        }).lean();
+        services = [...services, ...ownServices];
+      }
+
+      if (serviceMode === "platform" || serviceMode === "both") {
+        // Fetch main platform services that admin has made available to child panels
+        const platformServices = await Service.find({
+          status: true,
+          availableToChildPanels: true,
+        }).lean();
+
+        const cpCommission = Number(cp.childPanelCommissionRate || 0);
+
+        const priced = platformServices.map((s) => {
+          const providerRate = Number(s.rate || 0);
+          const systemRate = providerRate + (providerRate * adminCommission) / 100;
+          const finalRate = systemRate + (systemRate * cpCommission) / 100;
+          return {
+            ...s,
+            providerRate,
+            systemRate,
+            finalRate,
+            rate: finalRate,
+            source: "platform",
+          };
+        });
+
+        services = [...services, ...priced];
+      }
+
+      // If serviceMode is 'none' — return empty, child panel hasn't configured yet
+      const visible = services.filter((s) => s.visible !== false);
+      return res.status(200).json(visible);
+     }
     /*
     ========================================================
     🟢 CASE 1: Reseller Domain

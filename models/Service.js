@@ -109,6 +109,11 @@ const serviceSchema = new mongoose.Schema(
       default: 0,
     },
 
+    availableToChildPanels: { 
+      type: Boolean, 
+      default: false 
+    },
+
     // =====================================================
     // 📝 OPTIONAL INFO
     // =====================================================

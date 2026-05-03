@@ -8,7 +8,6 @@ export const detectChildPanelDomain = async (req, res, next) => {
   try {
     let host =
       req.headers["x-childpanel-domain"] ||
-      req.headers["x-reseller-domain"] ||
       req.headers.host ||
       "";
 

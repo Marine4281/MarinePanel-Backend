@@ -24,9 +24,13 @@ export const detectResellerDomain = async (req, res, next) => {
 
     /*
     -----------------------------
-    Skip platform domain
+    Skip platform domain && Child panel
     -----------------------------
     */
+    if (req.headers["x-childpanel-domain"]) {
+      return next();
+    }
+    
     if (host === BASE_DOMAIN) {
       return next();
     }

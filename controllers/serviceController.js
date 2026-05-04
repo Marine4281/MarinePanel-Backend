@@ -13,55 +13,69 @@ export const getServicesPublic = async (req, res) => {
 
      //Child Panel
      if (req.childPanel) {
-      const cp = req.childPanel;
-      const serviceMode = cp.childPanelServiceMode || "none";
+  const cp = req.childPanel;
+  const serviceMode = cp.childPanelServiceMode || "none";
 
-      const cpSettings = await Settings.findOne().lean();
-      const adminCommission = Number(cpSettings?.commission || 0);
+  // CP owner's commission markup applied on top of every rate
+  const cpCommission = Number(cp.childPanelCommissionRate || 0);
 
-      let services = [];
+  let services = [];
 
-      if (serviceMode === "own" || serviceMode === "both") {
-        // Fetch services imported by this child panel from their own providers
-        // These live in a separate ProviderService collection scoped by childPanelOwner
-        const { default: ProviderService } = await import("../models/ProviderService.js");
-        const ownServices = await ProviderService.find({
-          childPanelOwner: cp._id,
-          status: true,
-        }).lean();
-        services = [...services, ...ownServices];
-      }
+  if (serviceMode === "own" || serviceMode === "both") {
+    // Own services already have the CP owner's cost rate stored in Service.rate
+    // We apply the CP commission on top so end users see the marked-up price
+    const ownServices = await Service.find({
+      cpOwner: cp._id,
+      status: true,
+    }).lean();
 
-      if (serviceMode === "platform" || serviceMode === "both") {
-        // Fetch main platform services that admin has made available to child panels
-        const platformServices = await Service.find({
-          status: true,
-          availableToChildPanels: true,
-        }).lean();
+    const priced = ownServices.map((s) => {
+      const costRate = Number(s.rate || 0);
+      const finalRate = costRate + (costRate * cpCommission) / 100;
+      return {
+        ...s,
+        costRate,
+        finalRate,
+        rate: finalRate,          // end users see this price
+        source: "own",
+      };
+    });
 
-        const cpCommission = Number(cp.childPanelCommissionRate || 0);
+    services = [...services, ...priced];
+  }
 
-        const priced = platformServices.map((s) => {
-          const providerRate = Number(s.rate || 0);
-          const systemRate = providerRate + (providerRate * adminCommission) / 100;
-          const finalRate = systemRate + (systemRate * cpCommission) / 100;
-          return {
-            ...s,
-            providerRate,
-            systemRate,
-            finalRate,
-            rate: finalRate,
-            source: "platform",
-          };
-        });
+  if (serviceMode === "platform" || serviceMode === "both") {
+    // Platform services: adminCommission applied first, then CP commission on top
+    const { default: Settings } = await import("../models/Settings.js");
+    const cpSettings = await Settings.findOne().lean();
+    const adminCommission = Number(cpSettings?.commission || 0);
 
-        services = [...services, ...priced];
-      }
+    const platformServices = await Service.find({
+      status: true,
+      availableToChildPanels: true,
+      cpOwner: null,              // only main-panel services
+    }).lean();
 
-      // If serviceMode is 'none' — return empty, child panel hasn't configured yet
-      const visible = services.filter((s) => s.visible !== false);
-      return res.status(200).json(visible);
-     }
+    const priced = platformServices.map((s) => {
+      const providerRate = Number(s.rate || 0);
+      const systemRate = providerRate + (providerRate * adminCommission) / 100;
+      const finalRate = systemRate + (systemRate * cpCommission) / 100;
+      return {
+        ...s,
+        providerRate,
+        systemRate,
+        finalRate,
+        rate: finalRate,
+        source: "platform",
+      };
+    });
+
+    services = [...services, ...priced];
+  }
+
+  const visible = services.filter((s) => s.visible !== false);
+  return res.status(200).json(visible);
+                                        }
     /*
     ========================================================
     🟢 CASE 1: Reseller Domain

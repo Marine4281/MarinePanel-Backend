@@ -551,35 +551,38 @@ export const updateChildPanelResellerCommission = async (req, res) => {
 /* ================================================
    UPDATE CHILD PANEL BRANDING
 ================================================ */
-
-export const updateChildPanelBranding = async (req, res) => {
+export const getChildPanelBranding = async (req, res) => {
   try {
-    const {
-      brandName,
-      logo,
-      themeColor,
-      supportWhatsapp,
-      supportTelegram,
-      supportWhatsappChannel,
-    } = req.body;
+    // req.childPanel is set by detectChildPanelDomain middleware
+    if (!req.childPanel) {
+      return res.status(404).json({ message: "Not a child panel domain" });
+    }
 
-    const user = await User.findById(req.user._id);
-    if (!user) return res.status(404).json({ message: "User not found" });
+    const cp = req.childPanel;
 
-    if (brandName) user.childPanelBrandName = brandName;
-    if (logo !== undefined) user.childPanelLogo = logo;
-    if (themeColor) user.childPanelThemeColor = themeColor;
-    if (supportWhatsapp !== undefined) user.childPanelSupportWhatsapp = supportWhatsapp;
-    if (supportTelegram !== undefined) user.childPanelSupportTelegram = supportTelegram;
-    if (supportWhatsappChannel !== undefined) user.childPanelSupportWhatsappChannel = supportWhatsappChannel;
-
-    await user.save();
-
-    res.json({ success: true, message: "Branding updated" });
-  } catch (error) {
-    res.status(500).json({ message: "Failed to update branding" });
+    res.json({
+      brandName:  cp.childPanelBrandName  || "Panel",
+      logo:       cp.childPanelLogo       || null,
+      themeColor: cp.childPanelThemeColor || "#1e40af",
+      slug:       cp.childPanelSlug       || null,
+      domain:     cp.childPanelDomain     || null,
+      // ── ADDED ──────────────────────────────────────────────
+      // TemplateRouter reads this on every page load to decide
+      // which template to render. null = use default pages.
+      templateId: cp.childPanelTemplateId || null,
+      // ───────────────────────────────────────────────────────
+      support: {
+        whatsapp:        cp.childPanelSupportWhatsapp        || null,
+        telegram:        cp.childPanelSupportTelegram        || null,
+        whatsappChannel: cp.childPanelSupportWhatsappChannel || null,
+      },
+    });
+  } catch (err) {
+    console.error("GET CP BRANDING ERROR:", err);
+    res.status(500).json({ message: "Server error" });
   }
 };
+
 
 /* ================================================
    UPDATE CHILD PANEL DOMAIN

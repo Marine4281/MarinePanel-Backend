@@ -447,8 +447,7 @@ const userSchema = new mongoose.Schema(
 
     // UI template selected by this child panel owner
     childPanelTemplateId: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "ChildPanelTemplate",
+      type: String,
       default: null,
     },
 

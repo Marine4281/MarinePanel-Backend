@@ -270,25 +270,32 @@ export const updateCPDomain = async (req, res) => {
 };
 
 // ======================= UPDATE TEMPLATE =======================
-// Child panel owner selects a UI template for their panel
+// Child panel owner selects a UI template for their panel.
+// templateId can be a valid string ("aurora", "pulse", "neon", "tide")
+// or explicitly null to remove the template and restore default pages.
 
 export const updateCPTemplate = async (req, res) => {
   try {
     const { templateId } = req.body;
 
-    if (!templateId) {
-      return res.status(400).json({ message: "Template ID is required" });
+    // Allow null (remove template) or a non-empty string
+    const VALID = ["aurora", "pulse", "neon", "tide"];
+    if (templateId !== null && templateId !== undefined && !VALID.includes(templateId)) {
+      return res.status(400).json({
+        message: `Invalid template. Must be one of: ${VALID.join(", ")} or null`,
+      });
     }
 
     const user = await User.findById(req.user._id);
     if (!user) return res.status(404).json({ message: "User not found" });
 
-    user.childPanelTemplateId = templateId;
+    // null removes the template (restores default pages)
+    user.childPanelTemplateId = templateId ?? null;
     await user.save();
 
     res.json({
       success: true,
-      message: "Template updated",
+      message: templateId ? "Template updated" : "Template removed",
       templateId: user.childPanelTemplateId,
     });
   } catch (err) {

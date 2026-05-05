@@ -1,4 +1,3 @@
-
 import User from "../models/User.js";
 import Service from "../models/Service.js";
 import Order from "../models/Order.js";
@@ -6,6 +5,37 @@ import Wallet from "../models/Wallet.js";
 
 const calculateBalance = (transactions = []) =>
   transactions.reduce((acc, t) => acc + (t.amount || 0), 0);
+
+// ✅ FIX: Safe query builder for customOrderId (Number) + orderId (String).
+// Passing a string like "ORD-05a7fc8f" directly into customOrderId causes
+// a Mongoose CastError. This helper only includes customOrderId in the $or
+// when the value is actually numeric.
+const buildOrderQuery = (userId, rawId) => {
+  const str = rawId?.toString().trim();
+  const num = !isNaN(str) && str !== "" ? Number(str) : null;
+
+  return {
+    userId,
+    $or: [
+      ...(num !== null ? [{ customOrderId: num }] : []),
+      { orderId: str },
+    ],
+  };
+};
+
+// Same as above but for arrays (status + cancel + refill multi queries)
+const buildMultiOrderQuery = (userId, rawIds) => {
+  const numericIds = rawIds.filter((id) => !isNaN(id) && id !== "").map(Number);
+  const stringIds = rawIds;
+
+  return {
+    userId,
+    $or: [
+      ...(numericIds.length ? [{ customOrderId: { $in: numericIds } }] : []),
+      { orderId: { $in: stringIds } },
+    ],
+  };
+};
 
 export const apiV2 = async (req, res) => {
   const { key, action } = req.body;
@@ -40,7 +70,7 @@ export const apiV2 = async (req, res) => {
             max: s.max,
             refill: s.refillAllowed,
             cancel: s.cancelAllowed,
-            description: s.description || "", 
+            description: s.description || "",
           }))
         );
       }
@@ -80,7 +110,6 @@ export const apiV2 = async (req, res) => {
           return res.json({ error: "Insufficient balance" });
         }
 
-        // 💰 Deduct balance (consistent with sync service)
         wallet.transactions.push({
           type: "Order",
           amount: -cost,
@@ -92,7 +121,6 @@ export const apiV2 = async (req, res) => {
         wallet.balance = calculateBalance(wallet.transactions);
         await wallet.save();
 
-        // 📦 Create order
         const order = await Order.create({
           userId: user._id,
           category: selectedService.category,
@@ -102,7 +130,7 @@ export const apiV2 = async (req, res) => {
           quantity: qty,
           charge: cost,
           rate: selectedService.rate,
-          isCharged: true, // ✅ FIX: was missing before
+          isCharged: true,
 
           providerProfileId: selectedService.providerProfileId,
           provider: selectedService.provider,
@@ -128,13 +156,8 @@ export const apiV2 = async (req, res) => {
         if (req.body.orders) {
           const ids = req.body.orders.toString().split(",").map((id) => id.trim());
 
-          const orders = await Order.find({
-            userId: user._id,
-            $or: [
-              { customOrderId: { $in: ids } },
-              { orderId: { $in: ids } },
-            ],
-          });
+          // ✅ FIX: use safe multi-query builder
+          const orders = await Order.find(buildMultiOrderQuery(user._id, ids));
 
           const response = {};
 
@@ -151,7 +174,7 @@ export const apiV2 = async (req, res) => {
                 charge: order.charge,
                 start_count: 0,
                 status: formatStatus(order.status),
-                remains: order.quantity - order.quantityDelivered,
+                remains: order.quantity - (order.quantityDelivered || 0),
                 currency: "USD",
               };
             }
@@ -165,13 +188,10 @@ export const apiV2 = async (req, res) => {
           return res.json({ error: "Order ID required" });
         }
 
-        const order = await Order.findOne({
-          userId: user._id,
-          $or: [
-            { customOrderId: req.body.order },
-            { orderId: req.body.order },
-          ],
-        });
+        // ✅ FIX: use safe single-query builder
+        const order = await Order.findOne(
+          buildOrderQuery(user._id, req.body.order)
+        );
 
         if (!order) {
           return res.json({ error: "Incorrect order ID" });
@@ -181,7 +201,7 @@ export const apiV2 = async (req, res) => {
           charge: order.charge,
           start_count: 0,
           status: formatStatus(order.status),
-          remains: order.quantity - order.quantityDelivered,
+          remains: order.quantity - (order.quantityDelivered || 0),
           currency: "USD",
         });
       }
@@ -192,13 +212,8 @@ export const apiV2 = async (req, res) => {
       case "refill": {
 
         const processRefill = async (id) => {
-          const order = await Order.findOne({
-            userId: user._id,
-            $or: [
-              { customOrderId: id },
-              { orderId: id },
-            ],
-          });
+          // ✅ FIX: use safe single-query builder
+          const order = await Order.findOne(buildOrderQuery(user._id, id));
 
           if (!order) return { error: "Incorrect order ID" };
           if (!order.refillAllowed) return { error: "Refill not allowed" };
@@ -216,7 +231,6 @@ export const apiV2 = async (req, res) => {
 
           await order.save();
 
-          // Return the refillId if exists, else order internal id
           return order.refillId || order.customOrderId || order.orderId;
         };
 
@@ -227,10 +241,7 @@ export const apiV2 = async (req, res) => {
 
           for (const id of ids) {
             const result = await processRefill(id);
-            results.push({
-              order: id,
-              refill: result,
-            });
+            results.push({ order: id, refill: result });
           }
 
           return res.json(results);
@@ -251,17 +262,21 @@ export const apiV2 = async (req, res) => {
       }
 
       /* =====================================================
-         📋 REFILL STATUS (SINGLE + MULTIPLE) ← NEW
+         📋 REFILL STATUS (SINGLE + MULTIPLE)
       ===================================================== */
       case "refill_status": {
 
         const getRefillStatus = async (refillId) => {
+          const str = refillId?.toString().trim();
+          const num = !isNaN(str) && str !== "" ? Number(str) : null;
+
+          // ✅ FIX: customOrderId condition guarded by numeric check
           const order = await Order.findOne({
             userId: user._id,
             $or: [
-              { refillId: refillId },
-              { customOrderId: refillId },
-              { orderId: refillId },
+              { refillId: str },
+              ...(num !== null ? [{ customOrderId: num }] : []),
+              { orderId: str },
             ],
           });
 
@@ -279,10 +294,7 @@ export const apiV2 = async (req, res) => {
 
           for (const id of ids) {
             const status = await getRefillStatus(id);
-            results.push({
-              refill: id,
-              status,
-            });
+            results.push({ refill: id, status });
           }
 
           return res.json(results);
@@ -296,7 +308,7 @@ export const apiV2 = async (req, res) => {
         const status = await getRefillStatus(req.body.refill.toString().trim());
 
         if (typeof status === "object") {
-          return res.json(status); // error object
+          return res.json(status);
         }
 
         return res.json({ status });
@@ -314,13 +326,8 @@ export const apiV2 = async (req, res) => {
         const results = [];
 
         for (const id of ids) {
-          const order = await Order.findOne({
-            userId: user._id,
-            $or: [
-              { customOrderId: id },
-              { orderId: id },
-            ],
-          });
+          // ✅ FIX: use safe single-query builder
+          const order = await Order.findOne(buildOrderQuery(user._id, id));
 
           if (!order) {
             results.push({ order: id, cancel: { error: "Incorrect order ID" } });

@@ -1,23 +1,20 @@
 // controllers/cpOwnerServiceController.js
 //
 // Child panel owner — full control over their own service catalog.
-//
-// Service storage: Service model with cpOwner = req.user._id
-//   - Imported from own providers (via cpOwnerProviderController)
-//   - Manually added (this controller)
-//
-// Commission: childPanelCommissionRate on User doc — applied on top of
-//   service.rate when end users fetch /api/services on CP domain.
-//
-// Default service system mirrors main admin:
-//   isDefault                → default in its category
-//   isDefaultCategoryGlobal  → default across ALL categories
-//   isDefaultCategoryPlatform → default in its platform
+// Includes:
+//   - CRUD + bulk ops
+//   - Commission get/set
+//   - Platform services preview
+//   - Rate changes panel (provider rate vs stored rate)
+//   - Deleted services sync (detect provider-deleted services)
+//   - Bulk rate sync
 
 import Service from "../models/Service.js";
 import Counter from "../models/Counter.js";
 import User from "../models/User.js";
 import Settings from "../models/Settings.js";
+import ProviderProfile from "../models/ProviderProfile.js";
+import axios from "axios";
 
 // ── Auto-increment service ID ──
 async function getNextServiceId() {
@@ -39,9 +36,6 @@ async function getNextServiceId() {
 // ──────────────────────────────────────────────
 // GET ALL CP SERVICES
 // GET /api/cp/services
-// Returns services sorted newest first.
-// Also attaches admin commission so frontend can show
-// "platform rate" for services imported from main panel.
 // ──────────────────────────────────────────────
 export const getCPServices = async (req, res) => {
   try {
@@ -50,20 +44,15 @@ export const getCPServices = async (req, res) => {
       .lean();
     const commission = Number(user?.childPanelCommissionRate ?? 0);
 
-    // Fetch admin commission so CP table can show the correct "cost" for
-    // platform-imported services (admin rate + admin commission = what CP pays)
     const settings = await Settings.findOne().lean();
     const adminCommission = Number(settings?.commission ?? 0);
 
     const services = await Service.find({ cpOwner: req.user._id })
-      .sort({ createdAt: -1 })   // newest first
+      .sort({ createdAt: -1 })
       .lean();
 
     const withFinal = services.map((s) => {
       const costRate  = Number(s.rate || 0);
-      // For platform-sourced services, costRate already reflects raw provider
-      // rate. The admin commission was applied at import time OR we show it here.
-      // Either way, the CP commission goes on top of whatever rate is stored.
       const finalRate = costRate + (costRate * commission) / 100;
       return {
         ...s,
@@ -81,10 +70,8 @@ export const getCPServices = async (req, res) => {
 };
 
 // ──────────────────────────────────────────────
-// GET PLATFORM SERVICES (for import tab preview)
+// GET PLATFORM SERVICES (import tab preview)
 // GET /api/cp/services/platform
-// Returns main admin services with admin commission applied,
-// so CP owner sees the actual cost they'd be paying per service.
 // ──────────────────────────────────────────────
 export const getCPPlatformServices = async (req, res) => {
   try {
@@ -106,7 +93,6 @@ export const getCPPlatformServices = async (req, res) => {
         ...s,
         providerRate,
         systemRate,
-        // 'rate' shown to CP owner = what they "pay" (system rate after admin commission)
         rate: systemRate,
         adminCommission,
       };
@@ -126,30 +112,16 @@ export const getCPPlatformServices = async (req, res) => {
 export const addCPService = async (req, res) => {
   try {
     const {
-      name,
-      category,
-      platform,
-      rate,
-      min,
-      max,
-      description,
-      refillAllowed,
-      cancelAllowed,
-      refillPolicy,
-      customRefillDays,
-      isFree,
-      freeQuantity,
-      cooldownHours,
-      isDefault,
-      isDefaultCategoryGlobal,
-      isDefaultCategoryPlatform,
+      name, category, platform, rate, min, max, description,
+      refillAllowed, cancelAllowed, refillPolicy, customRefillDays,
+      isFree, freeQuantity, cooldownHours,
+      isDefault, isDefaultCategoryGlobal, isDefaultCategoryPlatform,
     } = req.body;
 
     if (!name || !category || !platform) {
       return res.status(400).json({ message: "name, category and platform are required" });
     }
 
-    // Free service validation
     if (isFree && (freeQuantity === undefined || cooldownHours === undefined)) {
       return res.status(400).json({ message: "Free service requires freeQuantity and cooldownHours" });
     }
@@ -158,7 +130,6 @@ export const addCPService = async (req, res) => {
     let finalMin  = isFree ? 1 : (Number(min) || 1);
     let finalMax  = isFree ? Number(freeQuantity) : (Number(max) || 100000);
 
-    // Handle defaults — scoped to this CP owner
     if (isDefault) {
       await Service.updateMany(
         { category, cpOwner: req.user._id },
@@ -178,36 +149,32 @@ export const addCPService = async (req, res) => {
       );
     }
 
-    const serviceId  = await getNextServiceId();
-    const numericRate = finalRate;
+    const serviceId = await getNextServiceId();
 
     const service = await Service.create({
       serviceId,
-      name,
-      category,
-      platform,
-      description:  description || "",
-      rate:         numericRate,
-      lastSyncedRate: numericRate,
-      previousRate:   numericRate,
-      min:  finalMin,
-      max:  finalMax,
+      name, category, platform,
+      description: description || "",
+      rate: finalRate,
+      lastSyncedRate: finalRate,
+      previousRate: finalRate,
+      min: finalMin,
+      max: finalMax,
       status: true,
-      isFree:       Boolean(isFree),
+      isFree: Boolean(isFree),
       freeQuantity: isFree ? Number(freeQuantity) : 0,
       cooldownHours: isFree ? Number(cooldownHours) : 0,
       refillAllowed: Boolean(refillAllowed ?? false),
       cancelAllowed: Boolean(cancelAllowed ?? false),
-      refillPolicy:    refillAllowed ? (refillPolicy || "30d") : "none",
+      refillPolicy: refillAllowed ? (refillPolicy || "30d") : "none",
       customRefillDays: refillPolicy === "custom" ? Number(customRefillDays) : null,
-      isDefault:                Boolean(isDefault),
-      isDefaultCategoryGlobal:  Boolean(isDefaultCategoryGlobal),
+      isDefault: Boolean(isDefault),
+      isDefaultCategoryGlobal: Boolean(isDefaultCategoryGlobal),
       isDefaultCategoryPlatform: Boolean(isDefaultCategoryPlatform),
-      // Scoped to this CP — no external provider
-      cpOwner:           req.user._id,
-      provider:          "manual",
+      cpOwner: req.user._id,
+      provider: "manual",
       providerServiceId: `manual-${serviceId}`,
-      providerProfileId: req.user._id, // sentinel — required by schema
+      providerProfileId: req.user._id,
     });
 
     res.status(201).json({ message: "Service created", service });
@@ -231,24 +198,10 @@ export const updateCPService = async (req, res) => {
     if (!service) return res.status(404).json({ message: "Service not found" });
 
     const {
-      name,
-      category,
-      platform,
-      rate,
-      min,
-      max,
-      description,
-      status,
-      refillAllowed,
-      cancelAllowed,
-      refillPolicy,
-      customRefillDays,
-      isFree,
-      freeQuantity,
-      cooldownHours,
-      isDefault,
-      isDefaultCategoryGlobal,
-      isDefaultCategoryPlatform,
+      name, category, platform, rate, min, max, description, status,
+      refillAllowed, cancelAllowed, refillPolicy, customRefillDays,
+      isFree, freeQuantity, cooldownHours,
+      isDefault, isDefaultCategoryGlobal, isDefaultCategoryPlatform,
     } = req.body;
 
     if (name !== undefined)        service.name        = name;
@@ -259,7 +212,6 @@ export const updateCPService = async (req, res) => {
     if (min !== undefined)         service.min         = Number(min);
     if (max !== undefined)         service.max         = Number(max);
 
-    // Free service
     if (isFree !== undefined) {
       service.isFree = Boolean(isFree);
       if (service.isFree) {
@@ -275,14 +227,12 @@ export const updateCPService = async (req, res) => {
     if (!service.isFree && freeQuantity !== undefined) service.freeQuantity  = Number(freeQuantity);
     if (!service.isFree && cooldownHours !== undefined) service.cooldownHours = Number(cooldownHours);
 
-    // Rate
     if (!service.isFree && rate !== undefined && Number(rate) !== service.rate) {
       service.previousRate   = service.rate;
       service.rate           = Number(rate);
       service.lastSyncedRate = Number(rate);
     }
 
-    // Refill
     if (refillAllowed !== undefined) service.refillAllowed = Boolean(refillAllowed);
     if (service.refillAllowed) {
       if (refillPolicy !== undefined)    service.refillPolicy    = refillPolicy;
@@ -294,7 +244,6 @@ export const updateCPService = async (req, res) => {
 
     if (cancelAllowed !== undefined) service.cancelAllowed = Boolean(cancelAllowed);
 
-    // Defaults (scoped)
     if (isDefault) {
       await Service.updateMany(
         { category: service.category, cpOwner: req.user._id, _id: { $ne: service._id } },
@@ -427,5 +376,193 @@ export const setCPCommission = async (req, res) => {
   } catch (err) {
     console.error("CP SET COMMISSION ERROR:", err);
     res.status(500).json({ message: "Failed to update commission" });
+  }
+};
+
+// ──────────────────────────────────────────────
+// GET RATE CHANGES (provider rate vs stored rate)
+// GET /api/cp/services/rate-changes
+// Fetches fresh rates from each provider API and compares
+// against stored rates, returning services with diffs.
+// ──────────────────────────────────────────────
+export const getCPRateChanges = async (req, res) => {
+  try {
+    // Only check services that came from real provider APIs (not manual)
+    const services = await Service.find({
+      cpOwner: req.user._id,
+      provider: { $ne: "manual" },
+    }).lean();
+
+    if (!services.length) return res.json([]);
+
+    // Group by providerProfileId
+    const profileIds = [...new Set(services.map((s) => s.providerProfileId?.toString()).filter(Boolean))];
+    const profiles   = await ProviderProfile.find({ _id: { $in: profileIds }, cpOwner: req.user._id }).lean();
+    const profileMap = {};
+    profiles.forEach((p) => { profileMap[p._id.toString()] = p; });
+
+    // For each profile, fetch services list from provider API
+    const providerRateMap = {}; // providerServiceId → newRate
+    await Promise.allSettled(
+      profiles.map(async (profile) => {
+        try {
+          const response = await axios.post(
+            profile.apiUrl,
+            new URLSearchParams({ key: profile.apiKey, action: "services" }).toString(),
+            { headers: { "Content-Type": "application/x-www-form-urlencoded" }, timeout: 10000 }
+          );
+          const list = Array.isArray(response.data) ? response.data : [];
+          list.forEach((item) => {
+            if (item.service !== undefined) {
+              providerRateMap[String(item.service)] = Number(item.rate || 0);
+            }
+          });
+        } catch {
+          // skip unavailable providers silently
+        }
+      })
+    );
+
+    // Compare
+    const changes = services
+      .map((s) => {
+        const providerRate = providerRateMap[String(s.providerServiceId)];
+        if (providerRate === undefined) return null;
+        const storedRate = Number(s.rate || 0);
+        if (Math.abs(providerRate - storedRate) < 0.0001) return null;
+        return {
+          _id: s._id,
+          serviceId: s.serviceId,
+          name: s.name,
+          category: s.category,
+          platform: s.platform,
+          provider: s.provider,
+          storedRate,
+          newRate: providerRate,
+          diff: providerRate - storedRate,
+        };
+      })
+      .filter(Boolean);
+
+    res.json(changes);
+  } catch (err) {
+    console.error("CP RATE CHANGES ERROR:", err);
+    res.status(500).json({ message: "Failed to fetch rate changes" });
+  }
+};
+
+// ──────────────────────────────────────────────
+// SYNC SINGLE SERVICE RATE
+// PATCH /api/cp/services/:id/sync-rate
+// ──────────────────────────────────────────────
+export const syncCPServiceRate = async (req, res) => {
+  try {
+    const { newRate } = req.body;
+    const rate = Number(newRate);
+    if (isNaN(rate)) return res.status(400).json({ message: "Invalid rate" });
+
+    const service = await Service.findOne({ _id: req.params.id, cpOwner: req.user._id });
+    if (!service) return res.status(404).json({ message: "Service not found" });
+
+    service.previousRate   = service.rate;
+    service.rate           = rate;
+    service.lastSyncedRate = rate;
+    await service.save();
+
+    res.json({ message: "Rate synced", service });
+  } catch (err) {
+    console.error("CP SYNC RATE ERROR:", err);
+    res.status(500).json({ message: "Failed to sync rate" });
+  }
+};
+
+// ──────────────────────────────────────────────
+// BULK SYNC ALL RATE CHANGES
+// PATCH /api/cp/services/sync-all-rates
+// Body: { changes: [{ _id, newRate }] }
+// ──────────────────────────────────────────────
+export const syncAllCPRates = async (req, res) => {
+  try {
+    const { changes } = req.body;
+    if (!changes?.length) return res.status(400).json({ message: "No changes provided" });
+
+    const results = await Promise.allSettled(
+      changes.map(async ({ _id, newRate }) => {
+        const service = await Service.findOne({ _id, cpOwner: req.user._id });
+        if (!service) return;
+        service.previousRate   = service.rate;
+        service.rate           = Number(newRate);
+        service.lastSyncedRate = Number(newRate);
+        await service.save();
+      })
+    );
+
+    const synced = results.filter((r) => r.status === "fulfilled").length;
+    res.json({ message: `${synced} rate(s) synced`, synced });
+  } catch (err) {
+    console.error("CP SYNC ALL RATES ERROR:", err);
+    res.status(500).json({ message: "Failed to sync rates" });
+  }
+};
+
+// ──────────────────────────────────────────────
+// GET DELETED SERVICES SYNC
+// GET /api/cp/services/deleted-sync
+// Checks all non-manual CP services against live provider
+// APIs to find services that were removed from provider side.
+// ──────────────────────────────────────────────
+export const getCPDeletedSync = async (req, res) => {
+  try {
+    const services = await Service.find({
+      cpOwner: req.user._id,
+      provider: { $ne: "manual" },
+    }).lean();
+
+    if (!services.length) return res.json([]);
+
+    const profileIds = [...new Set(services.map((s) => s.providerProfileId?.toString()).filter(Boolean))];
+    const profiles   = await ProviderProfile.find({ _id: { $in: profileIds }, cpOwner: req.user._id }).lean();
+
+    // Build set of live service IDs per provider
+    const liveServiceIds = {}; // providerProfileId → Set of providerServiceId strings
+    await Promise.allSettled(
+      profiles.map(async (profile) => {
+        try {
+          const response = await axios.post(
+            profile.apiUrl,
+            new URLSearchParams({ key: profile.apiKey, action: "services" }).toString(),
+            { headers: { "Content-Type": "application/x-www-form-urlencoded" }, timeout: 10000 }
+          );
+          const list = Array.isArray(response.data) ? response.data : [];
+          liveServiceIds[profile._id.toString()] = new Set(list.map((i) => String(i.service)));
+        } catch {
+          // provider unreachable — skip
+        }
+      })
+    );
+
+    // Find services missing from provider
+    const deletedFromProvider = services.filter((s) => {
+      const pId = s.providerProfileId?.toString();
+      if (!pId || !liveServiceIds[pId]) return false; // provider unreachable — skip
+      return !liveServiceIds[pId].has(String(s.providerServiceId));
+    });
+
+    const result = deletedFromProvider.map((s) => ({
+      _id: s._id,
+      serviceId: s.serviceId,
+      name: s.name,
+      category: s.category,
+      platform: s.platform,
+      provider: s.provider,
+      rate: s.rate,
+      status: s.status,
+      providerServiceId: s.providerServiceId,
+    }));
+
+    res.json(result);
+  } catch (err) {
+    console.error("CP DELETED SYNC ERROR:", err);
+    res.status(500).json({ message: "Failed to check deleted services" });
   }
 };

@@ -1,11 +1,10 @@
 // routes/cpOwnerServiceRoutes.js
-//
-// Mounted at /api/cp/services in app.js
-// All routes require: protect + childPanelOnly
+// Mount at: app.use("/api/cp/services", authMiddleware, cpOwnerOnly, updateLastSeen, cpOwnerServiceRoutes)
 
 import express from "express";
 import {
   getCPServices,
+  getCPPlatformServices,
   addCPService,
   updateCPService,
   deleteCPService,
@@ -16,18 +15,16 @@ import {
   setCPCommission,
 } from "../controllers/cpOwnerServiceController.js";
 
-import { protect } from "../middlewares/authMiddleware.js";
-import { childPanelOnly } from "../middlewares/adminMiddleware.js";
-
 const router = express.Router();
-
-router.use(protect, childPanelOnly);
 
 // Commission
 router.get("/commission", getCPCommission);
 router.patch("/commission", setCPCommission);
 
-// Bulk operations (must come before /:id routes)
+// Platform services (main admin published services, with admin commission applied)
+router.get("/platform", getCPPlatformServices);
+
+// Bulk operations — must be before /:id
 router.patch("/bulk-toggle", bulkToggleCPServices);
 router.delete("/bulk", bulkDeleteCPServices);
 

@@ -2,14 +2,12 @@ import User from "../models/User.js";
 import Service from "../models/Service.js";
 import Order from "../models/Order.js";
 import Wallet from "../models/Wallet.js";
+import Settings from "../models/Settings.js";
 
 const calculateBalance = (transactions = []) =>
   transactions.reduce((acc, t) => acc + (t.amount || 0), 0);
 
-// ✅ FIX: Safe query builder for customOrderId (Number) + orderId (String).
-// Passing a string like "ORD-05a7fc8f" directly into customOrderId causes
-// a Mongoose CastError. This helper only includes customOrderId in the $or
-// when the value is actually numeric.
+// ✅ Safe query builder for customOrderId (Number) + orderId (String).
 const buildOrderQuery = (userId, rawId) => {
   const str = rawId?.toString().trim();
   const num = !isNaN(str) && str !== "" ? Number(str) : null;
@@ -23,7 +21,7 @@ const buildOrderQuery = (userId, rawId) => {
   };
 };
 
-// Same as above but for arrays (status + cancel + refill multi queries)
+// Same as above but for arrays
 const buildMultiOrderQuery = (userId, rawIds) => {
   const numericIds = rawIds.filter((id) => !isNaN(id) && id !== "").map(Number);
   const stringIds = rawIds;
@@ -34,6 +32,70 @@ const buildMultiOrderQuery = (userId, rawIds) => {
       ...(numericIds.length ? [{ customOrderId: { $in: numericIds } }] : []),
       { orderId: { $in: stringIds } },
     ],
+  };
+};
+
+/* =====================================================
+   💰 RATE RESOLVER
+   Mirrors the exact same logic as orderController.js
+   so API orders are charged identically to web orders.
+   Returns finalRate, finalCharge, resellerCommission,
+   childPanelOwner, childPanelCommission.
+===================================================== */
+const resolveRateAndOwnership = async (user, selectedService, qty) => {
+  const providerRate = Number(selectedService.rate || 0);
+  const settings = await Settings.findOne().lean();
+  const adminRate = Number(settings?.commission || 0);
+
+  // Admin commission baked in — same as web flow
+  const systemRate = providerRate + (providerRate * adminRate) / 100;
+
+  let finalRate = systemRate;
+  let resellerCommission = 0;
+  let resellerOwnerId = null;
+
+  // If the API key owner is a user who belongs to a reseller
+  if (user.resellerOwner) {
+    const reseller = await User.findById(user.resellerOwner);
+    const resellerRate = Number(reseller?.resellerCommissionRate || 0);
+
+    if (resellerRate > 0) {
+      finalRate = systemRate + (systemRate * resellerRate) / 100;
+      resellerCommission = ((qty / 1000) * systemRate * resellerRate) / 100;
+    }
+
+    resellerOwnerId = user.resellerOwner;
+  }
+
+  const finalCharge = Number(((qty / 1000) * finalRate).toFixed(4));
+
+  // Child panel ownership
+  let childPanelOwnerId = null;
+  let childPanelCommission = 0;
+  let childPanelPerOrderFee = 0;
+
+  if (user.childPanelOwner) {
+    const cpOwner = await User.findById(user.childPanelOwner);
+    if (cpOwner && cpOwner.isChildPanel && cpOwner.childPanelIsActive) {
+      childPanelOwnerId = cpOwner._id;
+      childPanelPerOrderFee = Number(cpOwner.childPanelPerOrderFee || 0);
+      const cpCommissionRate = Number(cpOwner.childPanelCommissionRate || 0);
+      if (cpCommissionRate > 0) {
+        childPanelCommission = (finalCharge * cpCommissionRate) / 100;
+      }
+    }
+  }
+
+  return {
+    providerRate,
+    systemRate,
+    finalRate,
+    finalCharge,
+    resellerOwnerId,
+    resellerCommission,
+    childPanelOwnerId,
+    childPanelCommission,
+    childPanelPerOrderFee,
   };
 };
 
@@ -55,28 +117,52 @@ export const apiV2 = async (req, res) => {
 
       /* =====================================================
          📦 SERVICES
+         ✅ FIX: Rate returned is now the correct final rate
+         for this user (admin commission + reseller markup),
+         not the raw provider rate.
       ===================================================== */
       case "services": {
         const services = await Service.find({ status: true });
 
+        const settings = await Settings.findOne().lean();
+        const adminRate = Number(settings?.commission || 0);
+
+        let resellerRate = 0;
+        if (user.resellerOwner) {
+          const reseller = await User.findById(user.resellerOwner);
+          resellerRate = Number(reseller?.resellerCommissionRate || 0);
+        }
+
         return res.json(
-          services.map((s) => ({
-            service: s.serviceId,
-            name: s.name,
-            type: "Default",
-            category: `${s.platform} - ${s.category}`,
-            rate: s.rate,
-            min: s.min,
-            max: s.max,
-            refill: s.refillAllowed,
-            cancel: s.cancelAllowed,
-            description: s.description || "",
-          }))
+          services.map((s) => {
+            const providerRate = Number(s.rate || 0);
+            const systemRate = providerRate + (providerRate * adminRate) / 100;
+            const finalRate =
+              resellerRate > 0
+                ? systemRate + (systemRate * resellerRate) / 100
+                : systemRate;
+
+            return {
+              service: s.serviceId,
+              name: s.name,
+              type: "Default",
+              category: `${s.platform} - ${s.category}`,
+              rate: Number(finalRate.toFixed(4)),
+              min: s.min,
+              max: s.max,
+              refill: s.refillAllowed,
+              cancel: s.cancelAllowed,
+              description: s.description || "",
+            };
+          })
         );
       }
 
       /* =====================================================
          ➕ ADD ORDER
+         ✅ FIX: Applies admin commission + reseller markup,
+         stamps resellerOwner + childPanelOwner on the order,
+         identical to the web order flow.
       ===================================================== */
       case "add": {
         const { service, link, quantity } = req.body;
@@ -102,17 +188,26 @@ export const apiV2 = async (req, res) => {
           });
         }
 
-        const cost = Number(((qty / 1000) * selectedService.rate).toFixed(4));
+        // ✅ FIX: Resolve correct charge with full commission chain
+        const {
+          finalCharge,
+          resellerOwnerId,
+          resellerCommission,
+          childPanelOwnerId,
+          childPanelCommission,
+          childPanelPerOrderFee,
+        } = await resolveRateAndOwnership(user, selectedService, qty);
 
         const wallet = await Wallet.findOne({ user: user._id });
 
-        if (!wallet || wallet.balance < cost) {
+        if (!wallet || wallet.balance < finalCharge) {
           return res.json({ error: "Insufficient balance" });
         }
 
+        // Deduct balance
         wallet.transactions.push({
           type: "Order",
-          amount: -cost,
+          amount: -finalCharge,
           status: "Completed",
           note: `API Order - ${selectedService.name}`,
           createdAt: new Date(),
@@ -121,6 +216,8 @@ export const apiV2 = async (req, res) => {
         wallet.balance = calculateBalance(wallet.transactions);
         await wallet.save();
 
+        // ✅ FIX: Stamp resellerOwner + childPanelOwner so commission
+        // tracking, dashboards, and billing all work correctly
         const order = await Order.create({
           userId: user._id,
           category: selectedService.category,
@@ -128,9 +225,20 @@ export const apiV2 = async (req, res) => {
           serviceId: selectedService.serviceId,
           link,
           quantity: qty,
-          charge: cost,
-          rate: selectedService.rate,
+          charge: finalCharge,
+          rate: Number(selectedService.rate || 0),
           isCharged: true,
+
+          // Reseller
+          resellerOwner: resellerOwnerId,
+          resellerCommission,
+          earningsCredited: false,
+
+          // Child panel
+          childPanelOwner: childPanelOwnerId,
+          childPanelCommission,
+          childPanelEarningsCredited: false,
+          childPanelPerOrderFee,
 
           providerProfileId: selectedService.providerProfileId,
           provider: selectedService.provider,
@@ -156,7 +264,6 @@ export const apiV2 = async (req, res) => {
         if (req.body.orders) {
           const ids = req.body.orders.toString().split(",").map((id) => id.trim());
 
-          // ✅ FIX: use safe multi-query builder
           const orders = await Order.find(buildMultiOrderQuery(user._id, ids));
 
           const response = {};
@@ -188,7 +295,6 @@ export const apiV2 = async (req, res) => {
           return res.json({ error: "Order ID required" });
         }
 
-        // ✅ FIX: use safe single-query builder
         const order = await Order.findOne(
           buildOrderQuery(user._id, req.body.order)
         );
@@ -212,7 +318,6 @@ export const apiV2 = async (req, res) => {
       case "refill": {
 
         const processRefill = async (id) => {
-          // ✅ FIX: use safe single-query builder
           const order = await Order.findOne(buildOrderQuery(user._id, id));
 
           if (!order) return { error: "Incorrect order ID" };
@@ -270,7 +375,6 @@ export const apiV2 = async (req, res) => {
           const str = refillId?.toString().trim();
           const num = !isNaN(str) && str !== "" ? Number(str) : null;
 
-          // ✅ FIX: customOrderId condition guarded by numeric check
           const order = await Order.findOne({
             userId: user._id,
             $or: [
@@ -326,7 +430,6 @@ export const apiV2 = async (req, res) => {
         const results = [];
 
         for (const id of ids) {
-          // ✅ FIX: use safe single-query builder
           const order = await Order.findOne(buildOrderQuery(user._id, id));
 
           if (!order) {

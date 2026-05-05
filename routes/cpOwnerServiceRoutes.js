@@ -1,5 +1,4 @@
 // routes/cpOwnerServiceRoutes.js
-// Mount at: app.use("/api/cp/services", authMiddleware, cpOwnerOnly, updateLastSeen, cpOwnerServiceRoutes)
 
 import express from "express";
 import {
@@ -13,6 +12,10 @@ import {
   bulkDeleteCPServices,
   getCPCommission,
   setCPCommission,
+  getCPRateChanges,
+  syncCPServiceRate,
+  syncAllCPRates,
+  getCPDeletedSync,
 } from "../controllers/cpOwnerServiceController.js";
 
 const router = express.Router();
@@ -21,8 +24,15 @@ const router = express.Router();
 router.get("/commission", getCPCommission);
 router.patch("/commission", setCPCommission);
 
-// Platform services (main admin published services, with admin commission applied)
+// Platform services (main admin published)
 router.get("/platform", getCPPlatformServices);
+
+// Rate changes + sync
+router.get("/rate-changes", getCPRateChanges);
+router.patch("/sync-all-rates", syncAllCPRates);
+
+// Deleted services sync
+router.get("/deleted-sync", getCPDeletedSync);
 
 // Bulk operations — must be before /:id
 router.patch("/bulk-toggle", bulkToggleCPServices);
@@ -34,5 +44,6 @@ router.post("/", addCPService);
 router.put("/:id", updateCPService);
 router.delete("/:id", deleteCPService);
 router.patch("/:id/toggle", toggleCPServiceStatus);
+router.patch("/:id/sync-rate", syncCPServiceRate);
 
 export default router;

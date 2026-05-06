@@ -274,6 +274,17 @@ export const updateCPService = async (req, res) => {
       service.isDefaultCategoryPlatform = false;
     }
 
+    // Provider fields — allow updating provider link
+    if (req.body.providerProfileId !== undefined) {
+      service.providerProfileId = req.body.providerProfileId || service.providerProfileId;
+    }
+    if (req.body.providerServiceId !== undefined) {
+      service.providerServiceId = req.body.providerServiceId || service.providerServiceId;
+    }
+    if (req.body.provider !== undefined) {
+      service.provider = req.body.provider;
+        }
+
     await service.save();
     res.json({ message: "Service updated", service });
   } catch (err) {

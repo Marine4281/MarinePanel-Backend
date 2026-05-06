@@ -283,7 +283,7 @@ export const createOrder = async (req, res) => {
       }
     }
 
-    /* ================= PAID ================= */
+/* ================= PAID ================= */
 
     if (!isFreeOrder) {
       if (qty < serviceData.min || qty > serviceData.max) {
@@ -294,27 +294,55 @@ export const createOrder = async (req, res) => {
 
       const providerRate = Number(serviceData.rate || 0);
       const settings = await Settings.findOne().lean();
-      const adminRate = Number(settings?.commission || 0);
 
-      const systemRate = providerRate + (providerRate * adminRate) / 100;
+      let finalRate;
 
-      let finalRate = systemRate;
+      // ── CP-OWNED SERVICE (cpOwner !== null) ──
+      // Rate stored is the raw provider rate. The CP owner sets their own
+      // commission on top. Admin commission does NOT apply here — the CP
+      // owner pays the provider directly, not through the main panel.
+      if (serviceData.cpOwner) {
+        const cpOwner = childPanelOwnerId
+          ? await User.findById(childPanelOwnerId)
+          : null;
+        const cpCommissionRate = Number(cpOwner?.childPanelCommissionRate || 0);
+        finalRate = providerRate + (providerRate * cpCommissionRate) / 100;
 
-      if (user.resellerOwner) {
-        const reseller = await User.findById(user.resellerOwner);
-        const resellerRate = Number(reseller?.resellerCommissionRate || 0);
+        // CP owner earns the commission markup
+        if (cpOwner && cpCommissionRate > 0) {
+          childPanelCommission = (qty / 1000) * (finalRate - providerRate);
+        }
+      } else {
+        // ── MAIN PLATFORM SERVICE ──
+        // Apply admin commission on top of provider rate
+        const adminRate = Number(settings?.commission || 0);
+        const systemRate = providerRate + (providerRate * adminRate) / 100;
 
-        finalRate = systemRate + (systemRate * resellerRate) / 100;
+        finalRate = systemRate;
 
-        resellerCommission =
-          ((qty / 1000) * systemRate * resellerRate) / 100;
+        if (user.resellerOwner) {
+          const reseller = await User.findById(user.resellerOwner);
+          const resellerRate = Number(reseller?.resellerCommissionRate || 0);
+          finalRate = systemRate + (systemRate * resellerRate) / 100;
+          resellerCommission = ((qty / 1000) * systemRate * resellerRate) / 100;
+        }
+
+        // CP owner commission on platform service orders (based on finalCharge)
+        if (childPanelOwnerId && !serviceData.cpOwner) {
+          const cpOwner = await User.findById(childPanelOwnerId);
+          const cpCommissionRate = Number(cpOwner?.childPanelCommissionRate || 0);
+          if (cpCommissionRate > 0) {
+            // Commission calculated after finalCharge is set below
+            childPanelCommission = 0; // will set after finalCharge
+          }
+        }
       }
 
       finalCharge = (qty / 1000) * finalRate;
       baseCharge = (qty / 1000) * providerRate;
 
-      // Now that finalCharge is known, calculate child panel commission
-      if (childPanelOwnerId) {
+      // For platform services with CP owner, finalize CP commission now
+      if (childPanelOwnerId && !serviceData.cpOwner) {
         const cpOwner = await User.findById(childPanelOwnerId);
         const cpCommissionRate = Number(cpOwner?.childPanelCommissionRate || 0);
         if (cpCommissionRate > 0) {
@@ -569,20 +597,38 @@ export const previewOrder = async (req, res) => {
       return res.json({ finalCharge: 0, baseCharge: 0, isFree: true });
     }
 
-    const providerRate = Number(serviceData.rate || 0);
-    const settings = await Settings.findOne().lean();
-
-    const systemRate =
-      providerRate + (providerRate * settings.commission) / 100;
-
-    let finalRate = systemRate;
-
     const user = await User.findById(req.user._id);
+    const providerRate = Number(serviceData.rate || 0);
+    let finalRate;
 
-    if (user?.resellerOwner) {
-      const reseller = await User.findById(user.resellerOwner);
-      const rRate = Number(reseller?.resellerCommissionRate || 0);
-      finalRate = systemRate + (systemRate * rRate) / 100;
+    // ── CP-OWNED SERVICE ──
+    // Admin commission does NOT apply. Only CP owner's commission applies.
+    if (serviceData.cpOwner) {
+      let cpCommissionRate = 0;
+
+      if (user?.childPanelOwner) {
+        const cpOwner = await User.findById(user.childPanelOwner);
+        cpCommissionRate = Number(cpOwner?.childPanelCommissionRate || 0);
+      } else if (serviceData.cpOwner) {
+        // The ordering user IS on a CP — find the CP owner by cpOwner field
+        const cpOwner = await User.findById(serviceData.cpOwner);
+        cpCommissionRate = Number(cpOwner?.childPanelCommissionRate || 0);
+      }
+
+      finalRate = providerRate + (providerRate * cpCommissionRate) / 100;
+    } else {
+      // ── MAIN PLATFORM SERVICE ──
+      const settings = await Settings.findOne().lean();
+      const adminRate = Number(settings?.commission || 0);
+      const systemRate = providerRate + (providerRate * adminRate) / 100;
+
+      finalRate = systemRate;
+
+      if (user?.resellerOwner) {
+        const reseller = await User.findById(user.resellerOwner);
+        const rRate = Number(reseller?.resellerCommissionRate || 0);
+        finalRate = systemRate + (systemRate * rRate) / 100;
+      }
     }
 
     const baseCharge = (qty / 1000) * providerRate;
@@ -591,15 +637,14 @@ export const previewOrder = async (req, res) => {
     res.json({
       baseCharge,
       finalCharge,
-      systemRate,
       finalRate,
       isFree: false,
     });
   } catch (error) {
+    console.error("Preview error:", error);
     res.status(500).json({ message: "Preview failed" });
   }
 };
-
 /* =========================================================
 GET MY ORDERS STATS
 ========================================================= */

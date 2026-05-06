@@ -204,7 +204,7 @@ app.use("/api/smm", smmWebhookRoutes);
 app.use("/api/payment", paymentRoutes);
 app.use("/api/settings", commissionRoutes);
 app.use("/api/admin/resellers", resellerAdminRoutes);
-app.use("/api", apiV2Routes);
+app.use("/api/v2", apiV2Routes);
 
 /* =================================================
    RESELLER ROUTES

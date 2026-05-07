@@ -3,6 +3,6 @@ import { apiV2 } from "../controllers/apiV2Controller.js";
 
 const router = express.Router();
 
-router.post("/v2", apiV2);
+router.post("/", apiV2);
 
 export default router;

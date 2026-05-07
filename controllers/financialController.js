@@ -160,7 +160,7 @@ export const getProfit = async (req, res) => {
           as: "user",
         },
       },
-      { $unwind: { path: "$user", preserveNullAndEmpty: true } },
+      { $unwind: { path: "$user", preserveNullAndEmptyArrays: true } },
     ];
     if (country !== "All") {
       chartPipeline.push({ $match: { "user.country": country } });

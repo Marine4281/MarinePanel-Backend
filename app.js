@@ -40,6 +40,7 @@ import providerRoutes from "./routes/providerRoutes.js";
 import adminLogRoutes from "./routes/adminLogRoutes.js";
 import providerProfileRoutes from "./routes/providerProfileRoutes.js";
 import categoryMetaRoutes from "./routes/categoryMetaRoutes.js";
+import financialRoutes from "./routes/financialRoutes.js";
 
 // Child Panel Routes
 import childPanelRoutes from "./routes/childPanelRoutes.js";
@@ -246,5 +247,6 @@ app.use("/api/admin/user-orders", adminUserOrdersRoutes);
 app.use("/api/admin-logs", adminLogRoutes);
 app.use("/provider", providerProfileRoutes);
 app.use("/api/category-meta", categoryMetaRoutes);
+app.use("/api/admin/financial", authMiddleware, adminOnly, financialRoutes);
 
 export default app;

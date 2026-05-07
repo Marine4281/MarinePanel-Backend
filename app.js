@@ -214,7 +214,7 @@ app.use("/api/reseller", resellerRoutes);
 app.use("/api/branding", brandingRoutes);
 app.use("/api/reseller-guides", resellerGuideRoutes);
 app.use("/api/reseller/services", resellerServiceRoutes);
-app.use("/api/end-users", endUserRoutes);
+app.use("/api/end-user", endUserRoutes);
 
 /* =================================================
    CHILD PANEL ROUTES

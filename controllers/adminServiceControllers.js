@@ -74,6 +74,7 @@ export const importService = async (req, res) => {
       platform,
       refillAllowed,
       cancelAllowed,
+      type,
     } = req.body;
 
     if (!name || !category || !providerServiceId || !providerProfileId) {
@@ -113,7 +114,7 @@ export const importService = async (req, res) => {
       category,
       platform: platform || "General",
       description: description || "",
-      serviceType: s.type || "Default",  // provider returns "type": "Custom Comments"
+      serviceType: type || "Default",  // provider returns "type": "Custom Comments"
       rate: numericRate,
 
       // 🔥 sync tracking

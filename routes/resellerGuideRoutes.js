@@ -11,12 +11,37 @@ import { adminOnly } from "../middlewares/adminMiddleware.js";
 
 const router = express.Router();
 
-/* Public */
+/*
+--------------------------------
+Public Routes
+--------------------------------
+Examples:
+GET /api/reseller-guides
+GET /api/reseller-guides?placement=activation
+GET /api/reseller-guides?placement=dashboard
+--------------------------------
+*/
 router.get("/", getResellerGuides);
 
-/* Admin */
+/*
+--------------------------------
+Admin Routes
+--------------------------------
+*/
 router.post("/", protect, adminOnly, createGuide);
-router.put("/:id", protect, adminOnly, updateGuide);
-router.delete("/:id", protect, adminOnly, deleteGuide);
+
+router.put(
+  "/:id",
+  protect,
+  adminOnly,
+  updateGuide
+);
+
+router.delete(
+  "/:id",
+  protect,
+  adminOnly,
+  deleteGuide
+);
 
 export default router;

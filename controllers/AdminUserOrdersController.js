@@ -2,10 +2,103 @@
 import Order from "../models/Order.js";
 import User from "../models/User.js";
 import Wallet from "../models/Wallet.js";
-import { 
+import {
   creditResellerCommission,
-  reverseResellerCommission // ✅ ADDED
+  reverseResellerCommission,
 } from "./orderController.js";
+
+/* ======================================================
+   HELPER: PROCESS REFUND
+====================================================== */
+const processRefund = async ({
+  order,
+  refundType = "full",
+  customAmount = 0,
+}) => {
+  if (!order) return;
+
+  if (order.isFreeOrder) return;
+
+  if (order.refundProcessed) return;
+
+  if (!order.isCharged) return;
+
+  const wallet = await Wallet.findOne({
+    user: order.userId,
+  });
+
+  if (!wallet) return;
+
+  // prevent duplicate refund
+  const alreadyRefunded = wallet.transactions.find(
+    (t) =>
+      t.reference?.toString() === order._id.toString() &&
+      t.type === "Refund"
+  );
+
+  if (alreadyRefunded) return;
+
+  let refundAmount = 0;
+
+  // FULL REFUND
+  if (refundType === "full") {
+    refundAmount = Number(order.charge || 0);
+  }
+
+  // PARTIAL REFUND
+  else if (refundType === "partial") {
+    const remaining =
+      Number(order.quantity || 0) -
+      Number(order.quantityDelivered || 0);
+
+    if (remaining <= 0) return;
+
+    refundAmount =
+      (remaining / Number(order.quantity || 1)) *
+      Number(order.charge || 0);
+  }
+
+  // CUSTOM REFUND
+  else if (refundType === "custom") {
+    refundAmount = Number(customAmount || 0);
+
+    if (refundAmount <= 0) return;
+  }
+
+  refundAmount = Number(refundAmount.toFixed(4));
+
+  if (refundAmount <= 0) return;
+
+  wallet.transactions.push({
+    type: "Refund",
+    amount: refundAmount,
+    status: "Completed",
+    note: `Refund for Order ${order.orderId}`,
+    reference: order._id,
+    createdAt: new Date(),
+  });
+
+  // safe recalc
+  wallet.balance = wallet.transactions.reduce(
+    (acc, t) => acc + (Number(t.amount) || 0),
+    0
+  );
+
+  await wallet.save();
+
+  order.refundProcessed = true;
+
+  await order.save();
+
+  // reverse reseller commission
+  await reverseResellerCommission(order);
+
+  return {
+    refundAmount,
+    walletBalance: wallet.balance,
+    walletUserId: wallet.user,
+  };
+};
 
 /* ======================================================
    GET ALL USER ORDERS (Search + Pagination)
@@ -45,7 +138,8 @@ export const getUserOrders = async (req, res) => {
 
       if (toDate) {
         const end = new Date(toDate);
-        end.setHours(23, 59, 59, 999); // ✅ full day
+        end.setHours(23, 59, 59, 999);
+
         query.createdAt.$lte = end;
       }
     }
@@ -56,7 +150,6 @@ export const getUserOrders = async (req, res) => {
     if (search && search.trim() !== "") {
       const cleanSearch = search.replace("#", "").trim();
 
-      // 🔍 Find users by email
       const users = await User.find({
         email: { $regex: cleanSearch, $options: "i" },
       }).select("_id");
@@ -64,21 +157,26 @@ export const getUserOrders = async (req, res) => {
       const userIds = users.map((u) => u._id);
 
       const orConditions = [
-        { orderId: { $regex: cleanSearch, $options: "i" } }, // string
+        { orderId: { $regex: cleanSearch, $options: "i" } },
         { service: { $regex: cleanSearch, $options: "i" } },
         { provider: { $regex: cleanSearch, $options: "i" } },
         { link: { $regex: cleanSearch, $options: "i" } },
       ];
 
-      // ✅ numeric-safe search
       if (!isNaN(cleanSearch)) {
-        orConditions.push({ customOrderId: Number(cleanSearch) }); // FIXED
-        orConditions.push({ rate: Number(cleanSearch) });
+        orConditions.push({
+          customOrderId: Number(cleanSearch),
+        });
+
+        orConditions.push({
+          rate: Number(cleanSearch),
+        });
       }
 
-      // ✅ user email match
       if (userIds.length > 0) {
-        orConditions.push({ userId: { $in: userIds } });
+        orConditions.push({
+          userId: { $in: userIds },
+        });
       }
 
       query.$or = orConditions;
@@ -102,10 +200,12 @@ export const getUserOrders = async (req, res) => {
       orders,
       totalPages: Math.ceil(total / limitNum),
     });
-
   } catch (error) {
     console.error("Get Orders Error:", error);
-    res.status(500).json({ message: "Failed to fetch orders" });
+
+    res.status(500).json({
+      message: "Failed to fetch orders",
+    });
   }
 };
 
@@ -127,13 +227,18 @@ export const updateOrderStatus = async (req, res) => {
     ];
 
     if (!allowedStatuses.includes(status)) {
-      return res.status(400).json({ message: "Invalid status" });
+      return res.status(400).json({
+        message: "Invalid status",
+      });
     }
 
     const order = await Order.findById(req.params.id);
 
-    if (!order)
-      return res.status(404).json({ message: "Order not found" });
+    if (!order) {
+      return res.status(404).json({
+        message: "Order not found",
+      });
+    }
 
     if (order.status === "refunded") {
       return res.status(400).json({
@@ -141,27 +246,50 @@ export const updateOrderStatus = async (req, res) => {
       });
     }
 
-    if (order.status === "completed" && status !== "completed") {
+    if (
+      order.status === "completed" &&
+      status !== "completed"
+    ) {
       return res.status(400).json({
         message: "Completed order cannot be modified",
       });
     }
 
-    if (status === "partial" && order.quantityDelivered === 0) {
-      return res.status(400).json({
-        message: "Partial requires delivered quantity",
-      });
-    }
+    // ✅ REMOVED OLD BLOCK
+    // partial now allowed even with 0 delivered
 
     order.status = status;
 
+    // auto-complete quantity
     if (status === "completed") {
       order.quantityDelivered = order.quantity;
     }
 
     await order.save();
 
-    // 💰 CREDIT RESELLER (SAFE)
+    /* =========================================
+       AUTO REFUND WHEN FAILED
+    ========================================= */
+    let refundData = null;
+
+    if (status === "failed") {
+      refundData = await processRefund({
+        order,
+        refundType: "full",
+      });
+    }
+
+    /* =========================================
+       AUTO REFUND WHEN PARTIAL
+    ========================================= */
+    if (status === "partial") {
+      refundData = await processRefund({
+        order,
+        refundType: "partial",
+      });
+    }
+
+    // credit reseller
     if (order.status === "completed") {
       await creditResellerCommission(order);
     }
@@ -174,12 +302,27 @@ export const updateOrderStatus = async (req, res) => {
         status: order.status,
         quantityDelivered: order.quantityDelivered,
       });
+
+      // wallet realtime update
+      if (refundData) {
+        io.emit("wallet:update", {
+          userId: refundData.walletUserId,
+          balance: refundData.walletBalance,
+        });
+      }
     }
 
-    res.json({ message: "Status updated", order });
+    res.json({
+      message: "Status updated",
+      order,
+      refundAmount: refundData?.refundAmount || 0,
+    });
   } catch (error) {
     console.error("Update Status Error:", error);
-    res.status(500).json({ message: "Failed to update status" });
+
+    res.status(500).json({
+      message: "Failed to update status",
+    });
   }
 };
 
@@ -193,7 +336,9 @@ export const updateOrderProgress = async (req, res) => {
     const order = await Order.findById(req.params.id);
 
     if (!order)
-      return res.status(404).json({ message: "Order not found" });
+      return res.status(404).json({
+        message: "Order not found",
+      });
 
     if (order.status === "refunded") {
       return res.status(400).json({
@@ -258,6 +403,7 @@ export const updateOrderProgress = async (req, res) => {
     });
   } catch (error) {
     console.error("Update Progress Error:", error);
+
     res.status(500).json({
       message: "Failed to update progress",
     });
@@ -274,106 +420,27 @@ export const refundOrder = async (req, res) => {
     const order = await Order.findById(req.params.id)
       .populate("userId");
 
-    if (!order)
-      return res.status(404).json({ message: "Order not found" });
-
-    if (order.isFreeOrder) {
-      return res.status(400).json({
-        message: "Free orders cannot be refunded",
+    if (!order) {
+      return res.status(404).json({
+        message: "Order not found",
       });
     }
 
-    if (order.refundProcessed) {
-      return res.status(400).json({
-        message: "Refund already processed",
-      });
-    }
-
-    // 🔒 NEW: ensure order was actually charged
-    if (!order.isCharged) {
-      return res.status(400).json({
-        message: "This order was never charged",
-      });
-    }
-
-    let wallet = await Wallet.findOne({ user: order.userId._id });
-
-    if (!wallet) {
-      return res.status(400).json({
-        message: "Wallet not found for user",
-      });
-    }
-
-    // 🔒 NEW: prevent duplicate refund
-    const alreadyRefunded = wallet.transactions.find(
-      (t) =>
-        t.reference?.toString() === order._id.toString() &&
-        t.type === "Refund"
-    );
-
-    if (alreadyRefunded) {
-      return res.status(400).json({
-        message: "Refund already exists",
-      });
-    }
-
-    let refundAmount = 0;
-
-    if (type === "full") {
-      refundAmount = order.charge;
-    } else if (type === "partial") {
-      const remaining = order.quantity - order.quantityDelivered;
-
-      if (remaining <= 0) {
-        return res.status(400).json({
-          message: "Nothing left to refund",
-        });
-      }
-
-      refundAmount =
-        (remaining / order.quantity) * order.charge;
-    } else if (type === "custom") {
-      if (!customAmount || customAmount <= 0) {
-        return res.status(400).json({
-          message: "Invalid custom refund amount",
-        });
-      }
-
-      refundAmount = Number(customAmount);
-    } else {
-      return res.status(400).json({
-        message: "Invalid refund type",
-      });
-    }
-
-    refundAmount = Number(refundAmount.toFixed(4));
-
-    // ✅ FIXED: add reference + safe balance calc
-    wallet.transactions.push({
-      type: "Refund",
-      amount: refundAmount,
-      status: "Completed",
-      note: `Refund for Order ${order.orderId}`,
-      reference: order._id, // 🔥 important
-      createdAt: new Date(),
+    const refundData = await processRefund({
+      order,
+      refundType: type,
+      customAmount,
     });
 
-    // ✅ FIXED: always recalc balance (no += bugs)
-    wallet.balance = wallet.transactions.reduce(
-      (acc, t) => acc + (t.amount || 0),
-      0
-    );
-
-    await wallet.save();
+    if (!refundData) {
+      return res.status(400).json({
+        message: "Refund failed or already processed",
+      });
+    }
 
     order.status = "refunded";
-    order.refundProcessed = true;
 
     await order.save();
-
-    
-    // 💸 REVERSE RESELLER COMMISSION (CRITICAL FIX)
-    await reverseResellerCommission(order);
 
     const io = req.app.get("io");
 
@@ -385,19 +452,21 @@ export const refundOrder = async (req, res) => {
       });
 
       io.emit("wallet:update", {
-        userId: order.userId._id,
-        balance: wallet.balance,
+        userId: refundData.walletUserId,
+        balance: refundData.walletBalance,
       });
     }
 
     res.json({
       message: "Refund successful",
-      refundAmount,
+      refundAmount: refundData.refundAmount,
     });
-
   } catch (error) {
     console.error("Refund Error:", error);
-    res.status(500).json({ message: "Refund failed" });
+
+    res.status(500).json({
+      message: "Refund failed",
+    });
   }
 };
 
@@ -406,21 +475,29 @@ export const refundOrder = async (req, res) => {
 ===================================================== */
 export const getOrderStats = async (req, res) => {
   try {
-    const { search, status, fromDate, toDate } = req.query;
+    const {
+      search,
+      status,
+      fromDate,
+      toDate,
+    } = req.query;
 
     const match = {};
 
-    /* STATUS */
     if (status) match.status = status;
 
-    /* DATE */
     if (fromDate || toDate) {
       match.createdAt = {};
-      if (fromDate) match.createdAt.$gte = new Date(fromDate);
-      if (toDate) match.createdAt.$lte = new Date(toDate);
+
+      if (fromDate) {
+        match.createdAt.$gte = new Date(fromDate);
+      }
+
+      if (toDate) {
+        match.createdAt.$lte = new Date(toDate);
+      }
     }
 
-    /* SEARCH */
     if (search) {
       const regex = new RegExp(search, "i");
 
@@ -437,7 +514,9 @@ export const getOrderStats = async (req, res) => {
         { provider: regex },
         { link: regex },
         { userId: { $in: userIds } },
-        ...(!isNaN(search) ? [{ rate: Number(search) }] : []),
+        ...(!isNaN(search)
+          ? [{ rate: Number(search) }]
+          : []),
       ];
     }
 
@@ -447,11 +526,31 @@ export const getOrderStats = async (req, res) => {
       {
         $facet: {
           total: [{ $count: "count" }],
-          pending: [{ $match: { status: "pending" } }, { $count: "count" }],
-          processing: [{ $match: { status: "processing" } }, { $count: "count" }],
-          completed: [{ $match: { status: "completed" } }, { $count: "count" }],
-          partial: [{ $match: { status: "partial" } }, { $count: "count" }],
-          failed: [{ $match: { status: "failed" } }, { $count: "count" }],
+
+          pending: [
+            { $match: { status: "pending" } },
+            { $count: "count" },
+          ],
+
+          processing: [
+            { $match: { status: "processing" } },
+            { $count: "count" },
+          ],
+
+          completed: [
+            { $match: { status: "completed" } },
+            { $count: "count" },
+          ],
+
+          partial: [
+            { $match: { status: "partial" } },
+            { $count: "count" },
+          ],
+
+          failed: [
+            { $match: { status: "failed" } },
+            { $count: "count" },
+          ],
         },
       },
     ]);
@@ -468,6 +567,9 @@ export const getOrderStats = async (req, res) => {
     });
   } catch (err) {
     console.error("Stats error:", err);
-    res.status(500).json({ message: "Failed to fetch stats" });
+
+    res.status(500).json({
+      message: "Failed to fetch stats",
+    });
   }
 };

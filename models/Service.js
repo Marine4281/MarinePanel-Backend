@@ -123,6 +123,13 @@ const serviceSchema = new mongoose.Schema(
       default: "",
     },
 
+    serviceType: {
+      type: String,
+      default: "Default",
+      trim: true,
+       // e.g. "Default", "Custom Comments", "Custom Comments Package", etc.
+    },
+
     status: {
       type: Boolean,
       default: true,

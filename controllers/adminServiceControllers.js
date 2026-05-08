@@ -113,6 +113,7 @@ export const importService = async (req, res) => {
       category,
       platform: platform || "General",
       description: description || "",
+      serviceType: s.type || "Default",  // provider returns "type": "Custom Comments"
       rate: numericRate,
 
       // 🔥 sync tracking

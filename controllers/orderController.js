@@ -161,11 +161,15 @@ CREATE ORDER
 ========================================================= */
 export const createOrder = async (req, res) => {
   try {
-    const { category, service, link, quantity } = req.body;
+    const { category, service, link, quantity ,comments} = req.body;
 
     if (!category || !service || !link || !quantity) {
       return res.status(400).json({ message: "All fields are required" });
     }
+    // Custom Comments services require the comments field
+if (serviceData && serviceData.serviceType === "Custom Comments" && !comments?.trim()) {
+  return res.status(400).json({ message: "Comments are required for this service" });
+}
 
     const qty = Number(quantity);
     if (qty <= 0) {
@@ -385,6 +389,9 @@ export const createOrder = async (req, res) => {
       customOrderId,
       userId: user._id,
 
+      comments: comments || "",   // ← ADD THIS LINE
+   });
+
       // Reseller
       resellerOwner: user.resellerOwner || null,
       resellerCommission,
@@ -439,6 +446,12 @@ export const createOrder = async (req, res) => {
           link,
           quantity: qty,
         },
+
+        // Custom Comments — send comments instead of quantity
+        if (serviceData.serviceType === "Custom Comments" && comments?.trim()) {
+           providerPayload.comments = comments.trim();
+           delete providerPayload.quantity; // provider expects comments, not quantity
+          } 
         { timeout: 15000 }
       );
 

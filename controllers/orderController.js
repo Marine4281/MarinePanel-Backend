@@ -219,6 +219,17 @@ if (serviceData && serviceData.serviceType === "Custom Comments" && !comments?.t
       return res.status(400).json({ message: "Provider profile not found" });
     }
 
+        /* ================= FIXED: CUSTOM COMMENTS VALIDATION ================= */
+    if (
+      serviceData.serviceType === "Custom Comments" &&
+      !comments?.trim()
+    ) {
+      return res.status(400).json({
+        message: "Comments are required for this service",
+      });
+    }
+
+
     /* ================= RESOLVE CHILD PANEL OWNER =================
     If this user belongs to a child panel (via scope), we resolve
     the child panel owner so we can stamp it on the order and later
@@ -389,8 +400,7 @@ if (serviceData && serviceData.serviceType === "Custom Comments" && !comments?.t
       customOrderId,
       userId: user._id,
 
-      comments: comments || "",   // ← ADD THIS LINE
-   });
+      comments: comments || "",
 
       // Reseller
       resellerOwner: user.resellerOwner || null,
@@ -436,22 +446,26 @@ if (serviceData && serviceData.serviceType === "Custom Comments" && !comments?.t
 
     /* ================= PROVIDER CALL ================= */
 
+    const providerPayload = {
+      key: providerProfile.apiKey,
+      action: "add",
+      service: serviceData.providerServiceId,
+      link,
+      quantity: qty,
+    };
+
+    if (
+      serviceData.serviceType === "Custom Comments" &&
+      comments?.trim()
+    ) {
+      providerPayload.comments = comments.trim();
+      delete providerPayload.quantity;
+    }
+
     try {
       const response = await axios.post(
         providerProfile.apiUrl,
-        {
-          key: providerProfile.apiKey,
-          action: "add",
-          service: serviceData.providerServiceId,
-          link,
-          quantity: qty,
-        },
-
-        // Custom Comments — send comments instead of quantity
-        if (serviceData.serviceType === "Custom Comments" && comments?.trim()) {
-           providerPayload.comments = comments.trim();
-           delete providerPayload.quantity; // provider expects comments, not quantity
-          } 
+        providerPayload,
         { timeout: 15000 }
       );
 
@@ -464,6 +478,51 @@ if (serviceData && serviceData.serviceType === "Custom Comments" && !comments?.t
       order.providerResponse = response.data;
       await order.save();
     } catch (err) {
+      if (!isFreeOrder) {
+        wallet.transactions.push({
+          type: "Refund",
+          amount: Number(finalCharge),
+          status: "Completed",
+          note: `Refund - Provider failed #${customOrderId}`,
+          reference: order._id,
+          createdAt: new Date(),
+        });
+
+        wallet.balance = calculateBalance(wallet.transactions);
+        await wallet.save();
+      }
+
+      order.status = "failed";
+      order.providerStatus = "failed";
+      order.errorMessage = err.response?.data || err.message;
+      order.refundProcessed = true;
+
+      await order.save();
+
+      return res.status(500).json({
+        message: "Provider failed",
+        error: err.response?.data || err.message,
+      });
+    }
+
+    if (!isFreeOrder) {
+      const settings = await Settings.findOne();
+      if (settings) {
+        settings.totalRevenue += finalCharge - baseCharge;
+        await settings.save();
+      }
+    }
+
+    res.status(201).json({
+      order,
+      balance: wallet.balance,
+    });
+  } catch (error) {
+    console.error("CREATE ORDER ERROR:", error);
+    res.status(500).json({ message: "Order failed" });
+  }
+};
+🔥 WHAT WAS FIXED
       /* ================= SAFE REFUND ON PROVIDER FAILURE ================= */
 
       if (!isFreeOrder) {

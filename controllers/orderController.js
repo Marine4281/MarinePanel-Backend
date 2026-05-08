@@ -505,6 +505,24 @@ if (serviceData && serviceData.serviceType === "Custom Comments" && !comments?.t
       });
     }
 
+    if (!isFreeOrder) {
+      const settings = await Settings.findOne();
+      if (settings) {
+        settings.totalRevenue += finalCharge - baseCharge;
+        await settings.save();
+      }
+    }
+
+    res.status(201).json({
+      order,
+      balance: wallet.balance,
+    });
+  } catch (error) {
+    console.error("CREATE ORDER ERROR:", error);
+    res.status(500).json({ message: "Order failed" });
+  }
+};
+
     
       /* ================= SAFE REFUND ON PROVIDER FAILURE ================= */
 

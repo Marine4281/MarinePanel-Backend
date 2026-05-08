@@ -5,11 +5,13 @@ const resellerGuideSchema = new mongoose.Schema(
     title: {
       type: String,
       required: true,
+      trim: true,
     },
 
     content: {
       type: String,
       required: true,
+      trim: true,
     },
 
     order: {
@@ -20,6 +22,13 @@ const resellerGuideSchema = new mongoose.Schema(
     visible: {
       type: Boolean,
       default: true,
+    },
+
+    // Where this guide should appear
+    placement: {
+      type: String,
+      enum: ["activation", "dashboard", "both"],
+      default: "activation",
     },
   },
   {

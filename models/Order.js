@@ -84,6 +84,7 @@ const orderSchema = new mongoose.Schema(
     category: { type: String, required: true },
     service: { type: String, required: true },
     link: { type: String, required: true },
+    comments: { type: String, default: "",},
     quantity: { type: Number, required: true },
 
     charge: {

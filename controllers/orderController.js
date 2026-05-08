@@ -394,6 +394,8 @@ if (
       orderId: "ORD-" + uuidv4().slice(0, 8),
       customOrderId,
       userId: user._id,
+      
+      comments: comments || "",
 
       // Reseller
       resellerOwner: user.resellerOwner || null,

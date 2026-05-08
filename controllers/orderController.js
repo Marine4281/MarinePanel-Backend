@@ -161,15 +161,11 @@ CREATE ORDER
 ========================================================= */
 export const createOrder = async (req, res) => {
   try {
-    const { category, service, link, quantity ,comments} = req.body;
+    const { category, service, link, quantity, comments } = req.body;
 
     if (!category || !service || !link || !quantity) {
       return res.status(400).json({ message: "All fields are required" });
     }
-    // Custom Comments services require the comments field
-if (serviceData && serviceData.serviceType === "Custom Comments" && !comments?.trim()) {
-  return res.status(400).json({ message: "Comments are required for this service" });
-}
 
     const qty = Number(quantity);
     if (qty <= 0) {
@@ -201,6 +197,16 @@ if (serviceData && serviceData.serviceType === "Custom Comments" && !comments?.t
       status: true,
     });
 
+    // ================= CUSTOM COMMENTS VALIDATION =================
+if (
+  serviceData?.serviceType === "Custom Comments" &&
+  (!comments || !comments.trim())
+) {
+  return res.status(400).json({
+    message: "Comments are required for this service",
+  });
+}
+
     if (!serviceData) {
       return res.status(404).json({ message: "Service not found" });
     }
@@ -218,17 +224,6 @@ if (serviceData && serviceData.serviceType === "Custom Comments" && !comments?.t
     if (!providerProfile) {
       return res.status(400).json({ message: "Provider profile not found" });
     }
-
-        /* ================= FIXED: CUSTOM COMMENTS VALIDATION ================= */
-    if (
-      serviceData.serviceType === "Custom Comments" &&
-      !comments?.trim()
-    ) {
-      return res.status(400).json({
-        message: "Comments are required for this service",
-      });
-    }
-
 
     /* ================= RESOLVE CHILD PANEL OWNER =================
     If this user belongs to a child panel (via scope), we resolve
@@ -400,8 +395,6 @@ if (serviceData && serviceData.serviceType === "Custom Comments" && !comments?.t
       customOrderId,
       userId: user._id,
 
-      comments: comments || "",
-
       // Reseller
       resellerOwner: user.resellerOwner || null,
       resellerCommission,
@@ -446,84 +439,42 @@ if (serviceData && serviceData.serviceType === "Custom Comments" && !comments?.t
 
     /* ================= PROVIDER CALL ================= */
 
-    const providerPayload = {
-      key: providerProfile.apiKey,
-      action: "add",
-      service: serviceData.providerServiceId,
-      link,
-      quantity: qty,
-    };
-
-    if (
-      serviceData.serviceType === "Custom Comments" &&
-      comments?.trim()
-    ) {
-      providerPayload.comments = comments.trim();
-      delete providerPayload.quantity;
-    }
-
     try {
-      const response = await axios.post(
-        providerProfile.apiUrl,
-        providerPayload,
-        { timeout: 15000 }
-      );
+  const providerPayload = {
+    key: providerProfile.apiKey,
+    action: "add",
+    service: serviceData.providerServiceId,
+    link,
+  };
 
-      if (response?.data?.order) {
-        order.providerOrderId = response.data.order;
-        order.providerStatus = "processing";
-        order.status = "processing";
-      }
-
-      order.providerResponse = response.data;
-      await order.save();
-    } catch (err) {
-      if (!isFreeOrder) {
-        wallet.transactions.push({
-          type: "Refund",
-          amount: Number(finalCharge),
-          status: "Completed",
-          note: `Refund - Provider failed #${customOrderId}`,
-          reference: order._id,
-          createdAt: new Date(),
-        });
-
-        wallet.balance = calculateBalance(wallet.transactions);
-        await wallet.save();
-      }
-
-      order.status = "failed";
-      order.providerStatus = "failed";
-      order.errorMessage = err.response?.data || err.message;
-      order.refundProcessed = true;
-
-      await order.save();
-
-      return res.status(500).json({
-        message: "Provider failed",
-        error: err.response?.data || err.message,
-      });
-    }
-
-    if (!isFreeOrder) {
-      const settings = await Settings.findOne();
-      if (settings) {
-        settings.totalRevenue += finalCharge - baseCharge;
-        await settings.save();
-      }
-    }
-
-    res.status(201).json({
-      order,
-      balance: wallet.balance,
-    });
-  } catch (error) {
-    console.error("CREATE ORDER ERROR:", error);
-    res.status(500).json({ message: "Order failed" });
+  // Normal services
+  if (serviceData.serviceType !== "Custom Comments") {
+    providerPayload.quantity = qty;
   }
-};
 
-    
+  // Custom Comments services
+  if (
+    serviceData.serviceType === "Custom Comments" &&
+    comments?.trim()
+  ) {
+    providerPayload.comments = comments.trim();
+  }
+
+  const response = await axios.post(
+    providerProfile.apiUrl,
+    providerPayload,
+    { timeout: 15000 }
+  );
+
+  if (response?.data?.order) {
+    order.providerOrderId = response.data.order;
+    order.providerStatus = "processing";
+    order.status = "processing";
+  }
+
+  order.providerResponse = response.data;
+  await order.save();
+} catch (err) {
       /* ================= SAFE REFUND ON PROVIDER FAILURE ================= */
 
       if (!isFreeOrder) {

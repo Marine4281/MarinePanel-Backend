@@ -163,14 +163,35 @@ export const createOrder = async (req, res) => {
   try {
     const { category, service, link, quantity, comments } = req.body;
 
-    if (!category || !service || !link || !quantity) {
-      return res.status(400).json({ message: "All fields are required" });
-    }
+    
+if (!category || !service || !link) {
+  return res.status(400).json({ message: "All fields are required" });
+}
 
-    const qty = Number(quantity);
-    if (qty <= 0) {
-      return res.status(400).json({ message: "Invalid quantity" });
-    }
+const serviceData_pre = await Service.findOne({ name: service, status: true });
+const isCustomCommentsOrder =
+  serviceData_pre?.serviceType === "Custom Comments" ||
+  serviceData_pre?.serviceType === "Custom Comments Package";
+
+if (!isCustomCommentsOrder && !quantity) {
+  return res.status(400).json({ message: "Quantity is required" });
+}
+
+if (!isCustomCommentsOrder && !comments?.trim()) {
+  // normal service — comments not needed, this is fine
+}
+
+const qty = isCustomCommentsOrder
+  ? (comments?.trim().split("\n").filter((l) => l.trim()).length || 0)
+  : Number(quantity);
+
+if (!isCustomCommentsOrder && qty <= 0) {
+  return res.status(400).json({ message: "Invalid quantity" });
+}
+
+if (isCustomCommentsOrder && qty === 0) {
+  return res.status(400).json({ message: "Please enter at least one comment" });
+}
 
     const user = await User.findById(req.user._id);
     if (!user) return res.status(404).json({ message: "User not found" });
@@ -192,10 +213,7 @@ export const createOrder = async (req, res) => {
       });
     }
 
-    const serviceData = await Service.findOne({
-      name: service,
-      status: true,
-    });
+    const serviceData = serviceData_pre; // already fetched above
 
     // ================= CUSTOM COMMENTS VALIDATION =================
 if (

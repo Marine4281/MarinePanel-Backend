@@ -255,6 +255,7 @@ export const syncProviderOrders = async (io) => {
             status: order.status,
             delivered: order.quantityDelivered,
             total: order.quantity,
+            refundProcessed: order.refundProcessed,
           });
         }
       }

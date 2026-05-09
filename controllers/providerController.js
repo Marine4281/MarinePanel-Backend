@@ -4,6 +4,8 @@ import axios from "axios";
 import ProviderService from "../models/ProviderService.js";
 import Service from "../models/Service.js";
 import ProviderProfile from "../models/ProviderProfile.js";
+import { clearCache } from "../utils/cache.js";
+
 
 /*
 
@@ -394,6 +396,7 @@ export const importSelectedServices = async (req, res) => {
 
     for (const service of services) {
       const providerServiceId = Number(service.service);
+      clearCache("public_services");
 
       // 🔥 Normalize provider booleans (VERY IMPORTANT)
       const refillSupported =

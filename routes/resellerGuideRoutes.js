@@ -1,6 +1,8 @@
 import express from "express";
+
 import {
   getResellerGuides,
+  getAllGuidesAdmin,
   createGuide,
   updateGuide,
   deleteGuide,
@@ -28,8 +30,24 @@ router.get("/", getResellerGuides);
 Admin Routes
 --------------------------------
 */
-router.post("/", protect, adminOnly, createGuide);
 
+/* GET ALL GUIDES INCLUDING HIDDEN */
+router.get(
+  "/admin/all",
+  protect,
+  adminOnly,
+  getAllGuidesAdmin
+);
+
+/* CREATE GUIDE */
+router.post(
+  "/",
+  protect,
+  adminOnly,
+  createGuide
+);
+
+/* UPDATE GUIDE */
 router.put(
   "/:id",
   protect,
@@ -37,6 +55,7 @@ router.put(
   updateGuide
 );
 
+/* DELETE GUIDE */
 router.delete(
   "/:id",
   protect,

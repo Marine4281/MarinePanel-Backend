@@ -1,3 +1,5 @@
+//controllers/resellerGuideController.js
+
 import ResellerGuide from "../models/ResellerGuide.js";
 
 /*
@@ -33,12 +35,40 @@ export const getResellerGuides = async (req, res) => {
       ];
     }
 
-    const guides = await ResellerGuide.find(filter).sort({ order: 1 });
+    const guides = await ResellerGuide.find(filter)
+      .sort({ order: 1 });
 
     res.json(guides);
+
   } catch (error) {
     console.error("Get guides error:", error);
-    res.status(500).json({ message: "Failed to load guides" });
+
+    res.status(500).json({
+      message: "Failed to load guides",
+    });
+  }
+};
+
+/*
+--------------------------------
+Admin: Get All Guides
+(Including Hidden)
+--------------------------------
+*/
+export const getAllGuidesAdmin = async (req, res) => {
+  try {
+
+    const guides = await ResellerGuide.find({})
+      .sort({ order: 1 });
+
+    res.json(guides);
+
+  } catch (error) {
+    console.error("Admin get guides error:", error);
+
+    res.status(500).json({
+      message: "Failed to load guides",
+    });
   }
 };
 
@@ -64,9 +94,16 @@ export const createGuide = async (req, res) => {
     }
 
     // Validate placement
-    const validPlacements = ["activation", "dashboard", "both"];
+    const validPlacements = [
+      "activation",
+      "dashboard",
+      "both",
+    ];
 
-    if (placement && !validPlacements.includes(placement)) {
+    if (
+      placement &&
+      !validPlacements.includes(placement)
+    ) {
       return res.status(400).json({
         message: "Invalid placement value",
       });
@@ -81,9 +118,13 @@ export const createGuide = async (req, res) => {
     });
 
     res.json(guide);
+
   } catch (error) {
     console.error("Create guide error:", error);
-    res.status(500).json({ message: "Failed to create guide" });
+
+    res.status(500).json({
+      message: "Failed to create guide",
+    });
   }
 };
 
@@ -104,9 +145,16 @@ export const updateGuide = async (req, res) => {
 
     // Validate placement if provided
     if (placement) {
-      const validPlacements = ["activation", "dashboard", "both"];
 
-      if (!validPlacements.includes(placement)) {
+      const validPlacements = [
+        "activation",
+        "dashboard",
+        "both",
+      ];
+
+      if (
+        !validPlacements.includes(placement)
+      ) {
         return res.status(400).json({
           message: "Invalid placement value",
         });
@@ -115,20 +163,35 @@ export const updateGuide = async (req, res) => {
 
     const updatedData = {};
 
-    if (title !== undefined) updatedData.title = title;
-    if (content !== undefined) updatedData.content = content;
-    if (order !== undefined) updatedData.order = order;
-    if (visible !== undefined) updatedData.visible = visible;
-    if (placement !== undefined) updatedData.placement = placement;
+    if (title !== undefined) {
+      updatedData.title = title;
+    }
 
-    const guide = await ResellerGuide.findByIdAndUpdate(
-      req.params.id,
-      updatedData,
-      {
-        new: true,
-        runValidators: true,
-      }
-    );
+    if (content !== undefined) {
+      updatedData.content = content;
+    }
+
+    if (order !== undefined) {
+      updatedData.order = order;
+    }
+
+    if (visible !== undefined) {
+      updatedData.visible = visible;
+    }
+
+    if (placement !== undefined) {
+      updatedData.placement = placement;
+    }
+
+    const guide =
+      await ResellerGuide.findByIdAndUpdate(
+        req.params.id,
+        updatedData,
+        {
+          new: true,
+          runValidators: true,
+        }
+      );
 
     if (!guide) {
       return res.status(404).json({
@@ -137,9 +200,13 @@ export const updateGuide = async (req, res) => {
     }
 
     res.json(guide);
+
   } catch (error) {
     console.error("Update guide error:", error);
-    res.status(500).json({ message: "Failed to update guide" });
+
+    res.status(500).json({
+      message: "Failed to update guide",
+    });
   }
 };
 
@@ -150,7 +217,11 @@ Admin: Delete Guide
 */
 export const deleteGuide = async (req, res) => {
   try {
-    const guide = await ResellerGuide.findByIdAndDelete(req.params.id);
+
+    const guide =
+      await ResellerGuide.findByIdAndDelete(
+        req.params.id
+      );
 
     if (!guide) {
       return res.status(404).json({
@@ -161,8 +232,12 @@ export const deleteGuide = async (req, res) => {
     res.json({
       message: "Guide deleted",
     });
+
   } catch (error) {
     console.error("Delete guide error:", error);
-    res.status(500).json({ message: "Failed to delete guide" });
+
+    res.status(500).json({
+      message: "Failed to delete guide",
+    });
   }
 };

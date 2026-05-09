@@ -339,9 +339,24 @@ const generateServiceId = async () => {
 Extract platform from category
 
 */
-const extractPlatform = (category) => {
-  if (!category) return "Other";
-  return category.split("-")[0].trim();
+const extractPlatform = (category = "", platformHint = "") => {
+  // If frontend already sent a clean platform, use it
+  if (platformHint && platformHint !== "Other") return platformHint;
+
+  // Fallback: detect from category string
+  const c = category.toLowerCase();
+  if (c.includes("tiktok")) return "TikTok";
+  if (c.includes("instagram")) return "Instagram";
+  if (c.includes("facebook")) return "Facebook";
+  if (c.includes("youtube")) return "YouTube";
+  if (c.includes("whatsapp")) return "WhatsApp";
+  if (c.includes("telegram")) return "Telegram";
+  if (c.includes("twitter") || c.includes("x/twitter")) return "X/Twitter";
+  if (c.includes("spotify")) return "Spotify";
+  if (c.includes("linkedin")) return "LinkedIn";
+  if (c.includes("snapchat")) return "Snapchat";
+
+  return "Other";
 };
 
 /*
@@ -413,7 +428,7 @@ export const importSelectedServices = async (req, res) => {
       });
 
       const numericRate = Number(service.rate);
-      const platform = extractPlatform(service.category);
+      const platform = extractPlatform(service.category, service.platform);
 
       // ============================================
       // 🆕 CREATE NEW SERVICE
@@ -443,6 +458,7 @@ export const importSelectedServices = async (req, res) => {
           freeQuantity: 0,
           cooldownHours: 0,
           description: service.description || "",
+          serviceType: service.type || "Default",
 
           status: true,
 
@@ -468,6 +484,8 @@ export const importSelectedServices = async (req, res) => {
       else {
         existingService.name = service.name;
         existingService.category = service.category;
+        existingService.platform = platform; 
+        existingService.serviceType = service.type || "Default";
         existingService.rate = numericRate;
         existingService.lastSyncedRate = numericRate;
 

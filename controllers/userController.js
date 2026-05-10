@@ -48,7 +48,7 @@ export const getProfile = async (req, res) => {
 // =======================
 export const updateProfile = async (req, res) => {
   try {
-    const { phone, country, password } = req.body;
+    const { phone, country, currentPassword, newPassword, confirmPassword } = req.body;
 
     const user = await User.findById(req.user.id);
     if (!user) {
@@ -58,9 +58,25 @@ export const updateProfile = async (req, res) => {
     if (phone) user.phone = phone;
     if (country) user.country = country;
 
-    if (password) {
+    // Only attempt password change if any password field is provided
+    if (currentPassword || newPassword || confirmPassword) {
+      if (!currentPassword) {
+        return res.status(400).json({ message: "Current password is required" });
+      }
+      if (!newPassword) {
+        return res.status(400).json({ message: "New password is required" });
+      }
+      if (newPassword !== confirmPassword) {
+        return res.status(400).json({ message: "New passwords do not match" });
+      }
+
+      const isMatch = await bcrypt.compare(currentPassword, user.password);
+      if (!isMatch) {
+        return res.status(400).json({ message: "Current password is incorrect" });
+      }
+
       const salt = await bcrypt.genSalt(10);
-      user.password = await bcrypt.hash(password, salt);
+      user.password = await bcrypt.hash(newPassword, salt);
     }
 
     await user.save();
@@ -69,7 +85,6 @@ export const updateProfile = async (req, res) => {
     const balance =
       wallet?.transactions.reduce((acc, t) => acc + t.amount, 0) || 0;
 
-    // 🔥 Log if admin updates profile
     if (req.user?.isAdmin && req.user?._id) {
       await logAdminAction({
         adminId: req.user._id,

@@ -1,24 +1,10 @@
-import nodemailer from "nodemailer";
+import { Resend } from "resend";
 
-// sendEmail({ to, subject, text, resetLink })
+const resend = new Resend(process.env.RESEND_API_KEY);
+
 const sendEmail = async ({ to, subject, text, resetLink }) => {
   try {
-    const transporter = nodemailer.createTransport({
-      service: "gmail",
-      auth: {
-        user: "marinepanel6@gmail.com",
-        pass: "pzae gqke djjz vxeo",
-      },
-      connectionTimeout: 30000,
-      greetingTimeout: 30000,
-      socketTimeout: 30000,
-    });
-
-    await transporter.verify();
-
-    console.log("SMTP server is ready");
-
-    const emailMessage =
+    const message =
       text ||
       `
 Hello,
@@ -29,21 +15,20 @@ Click the link below to reset your password:
 
 ${resetLink}
 
-If you did not request this reset, please ignore this email.
+If you did not request this, ignore this email.
 
 - Marine Panel Team
 `;
 
-    const info = await transporter.sendMail({
-      from: `"Marine Panel" <marinepanel6@gmail.com>`,
+    const data = await resend.emails.send({
+      from: "Marine Panel <noreply@marinepanel.online>",
       to,
-      subject: subject || "Marine Panel Password Reset",
-      text: emailMessage,
+      subject: subject || "Password Reset",
+      text: message,
     });
 
-    console.log("Email sent:", info.messageId);
-
-    return info;
+    console.log("Email sent:", data);
+    return data;
   } catch (error) {
     console.error("Email error:", error);
     throw new Error("Email could not be sent");

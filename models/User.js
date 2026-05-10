@@ -50,6 +50,16 @@ const userSchema = new mongoose.Schema(
       required: true,
     },
 
+    resetPasswordToken: {
+      type: String,
+      default: undefined,
+    },
+
+   resetPasswordExpire: {
+     type: Date,
+     default: undefined,
+   },
+
     isAdmin: {
       type: Boolean,
       default: false,

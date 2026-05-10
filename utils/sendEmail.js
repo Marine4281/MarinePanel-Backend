@@ -1,58 +1,27 @@
-// utils/sendEmail.js
-
-import dotenv from "dotenv";
-import nodemailer from "nodemailer";
-
-dotenv.config();
-
-const sendEmail = async (options) => {
-  if (!options.to) {
-    throw new Error("Recipient email is required");
-  }
-
+// sendEmail({ to, subject, text })
+const sendEmail = async ({ to, subject, text }) => {
   try {
     const transporter = nodemailer.createTransport({
-      host: "smtp.gmail.com",
+      host: "smtp.gmail.com",       // Gmail SMTP
       port: 587,
-      secure: false, // true only for port 465
-
+      secure: false,                // false for 587
       auth: {
-        user: process.env.EMAIL_USER,
-        pass: process.env.EMAIL_PASS, // Gmail App Password
-      },
-
-      // Prevent Render timeout hanging
-      connectionTimeout: 15000,
-      greetingTimeout: 15000,
-      socketTimeout: 20000,
-
-      tls: {
-        rejectUnauthorized: false,
+        user: "marinepanel6@gmail.com",  // EMAIL_USER
+        pass: "pzae gqke djjz vxeo",        // EMAIL_PASS (App password)
       },
     });
 
-    // Verify SMTP connection
-    await transporter.verify();
+    const info = await transporter.sendMail({
+      from: `"Marine Panel" <marinepanel6@gmail.com>`, // EMAIL_FROM
+      to,
+      subject,
+      text,
+    });
 
-    const mailOptions = {
-      from: process.env.EMAIL_FROM || process.env.EMAIL_USER,
-      to: options.to,
-      subject: options.subject,
-      text: options.text || "",
-      html: options.html || null,
-    };
-
-    const info = await transporter.sendMail(mailOptions);
-
-    console.log(`Email sent to ${options.to}: ${info.messageId}`);
-
-    return info;
+    console.log("Email sent: %s", info.messageId);
   } catch (error) {
-    console.error("EMAIL ERROR:", error);
-
-    throw new Error(
-      error?.message || "Email could not be sent"
-    );
+    console.error("Email error:", error);
+    throw new Error("Email could not be sent");
   }
 };
 

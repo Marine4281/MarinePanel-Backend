@@ -108,7 +108,6 @@ const loadChildDomains = async () => {
   }
 };
 
-app.use("/api", paymentGatewayRoutes);
 
 // Call after DB connects — safe even if it fails,
 // domains will just be rechecked on next server start
@@ -251,5 +250,6 @@ app.use("/api/admin-logs", adminLogRoutes);
 app.use("/provider", providerProfileRoutes);
 app.use("/api/category-meta", categoryMetaRoutes);
 app.use("/api/admin/financial", authMiddleware, adminOnly, financialRoutes);
+app.use("/api", paymentGatewayRoutes);
 
 export default app;

@@ -1,30 +1,38 @@
-import nodemailer from "nodemailer";
+// utils/sendEmail.js
+require("dotenv").config();
+const nodemailer = require("nodemailer");
 
-// sendEmail({ to, subject, text })
-const sendEmail = async ({ to, subject, text }) => {
+const sendEmail = async (options) => {
+  if (!options.email) throw new Error("Recipient email is required");
+
   try {
+    // Configure Gmail SMTP
     const transporter = nodemailer.createTransport({
-      host: "smtp.gmail.com",       // Gmail SMTP
-      port: 587,
-      secure: false,                // false for 587
+      host: "smtp.gmail.com",
+      port: 587,       // TLS port
+      secure: false,   // false for 587
       auth: {
-        user: "marinecash643@gmail.com",  // EMAIL_USER
-        pass: "rwatbwjqncbjmfky",        // EMAIL_PASS (App password)
+        user: process.env.EMAIL_USER,
+        pass: process.env.EMAIL_PASS, // Gmail App Password
       },
     });
 
-    const info = await transporter.sendMail({
-      from: `"MarineCash" <marinecash643@gmail.com>`, // EMAIL_FROM
-      to,
-      subject,
-      text,
-    });
+    // Email content
+    const mailOptions = {
+      from: process.env.EMAIL_FROM,
+      to: options.email,
+      subject: options.subject,
+      text: options.message,        // plain text fallback
+      html: options.html || null,   // optional HTML content
+    };
 
-    console.log("Email sent: %s", info.messageId);
+    const info = await transporter.sendMail(mailOptions);
+    console.log(`Email sent to ${options.email}`);
+    return info;
   } catch (error) {
-    console.error("Email error:", error);
+    console.error(`Email sending failed to ${options.email}:`, error.message);
     throw new Error("Email could not be sent");
   }
 };
 
-export default sendEmail;
+module.exports = sendEmail;

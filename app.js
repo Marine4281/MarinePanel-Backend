@@ -41,6 +41,7 @@ import adminLogRoutes from "./routes/adminLogRoutes.js";
 import providerProfileRoutes from "./routes/providerProfileRoutes.js";
 import categoryMetaRoutes from "./routes/categoryMetaRoutes.js";
 import financialRoutes from "./routes/financialRoutes.js";
+import paymentGatewayRoutes from "./routes/paymentGatewayRoutes.js";
 
 // Child Panel Routes
 import childPanelRoutes from "./routes/childPanelRoutes.js";
@@ -106,6 +107,8 @@ const loadChildDomains = async () => {
     console.error("❌ Failed to load child panel domains:", err.message);
   }
 };
+
+app.use("/api", paymentGatewayRoutes);
 
 // Call after DB connects — safe even if it fails,
 // domains will just be rechecked on next server start

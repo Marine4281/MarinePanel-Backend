@@ -1,22 +1,23 @@
-// utils/sendEmail.js
-
 import nodemailer from "nodemailer";
 
 // sendEmail({ to, subject, text, resetLink })
 const sendEmail = async ({ to, subject, text, resetLink }) => {
   try {
-    // Create transporter
     const transporter = nodemailer.createTransport({
-      host: "smtp.gmail.com",
-      port: 587,
-      secure: false, // false for 587
+      service: "gmail",
       auth: {
         user: "marinepanel6@gmail.com",
         pass: "pzae gqke djjz vxeo",
       },
+      connectionTimeout: 30000,
+      greetingTimeout: 30000,
+      socketTimeout: 30000,
     });
 
-    // Default message
+    await transporter.verify();
+
+    console.log("SMTP server is ready");
+
     const emailMessage =
       text ||
       `
@@ -33,7 +34,6 @@ If you did not request this reset, please ignore this email.
 - Marine Panel Team
 `;
 
-    // Send email
     const info = await transporter.sendMail({
       from: `"Marine Panel" <marinepanel6@gmail.com>`,
       to,

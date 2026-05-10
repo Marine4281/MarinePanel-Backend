@@ -11,6 +11,12 @@ const transactionSchema = new mongoose.Schema(
     details: { type: Object },
     note: { type: String },
 
+
+    gateway:       { type: mongoose.Schema.Types.ObjectId, ref: "PaymentGateway", default: null },
+   provider:      { type: String, default: "" },
+   localAmount:   { type: Number, default: 0 },   // what provider charged in local currency
+   localCurrency: { type: String, default: "USD" },
+
     /*
     ================================================================
     CHILD PANEL SYSTEM

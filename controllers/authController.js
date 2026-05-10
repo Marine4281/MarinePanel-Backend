@@ -253,7 +253,7 @@ export const forgotPassword = async (req, res) => {
       await sendEmail({
         to: user.email,
         subject: "Password Reset",
-        text: `Click here to reset your password: ${resetUrl}`,
+        resetLink: resetUrl,
       });
 
       if (req.user && req.user.isAdmin) {

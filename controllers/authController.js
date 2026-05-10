@@ -212,50 +212,117 @@ export const forgotPassword = async (req, res) => {
   try {
     const { email } = req.body;
 
+    if (!email) {
+      return res.status(400).json({
+        message: "Email is required",
+      });
+    }
+
     /*
     SCOPE ISOLATION
     Password reset only works within the same panel scope.
-    A reset link triggered from Child Panel A will not reset
-    an account that exists on Child Panel B or the main platform.
     */
     const scope = req.scope || "platform";
 
+    const normalizedEmail = email.trim().toLowerCase();
+
     const user = await User.findOne({
-      email: email?.trim().toLowerCase(),
+      email: normalizedEmail,
       scope,
     });
 
-    // Always return the same message whether user exists or not
-    // to avoid revealing which panels an email is registered on
+    /*
+    Always return same response
+    to prevent email enumeration across panels
+    */
     if (!user) {
-      return res.json({ message: "Password reset link sent to email" });
+      return res.json({
+        message: "Password reset link sent to email",
+      });
     }
 
+    /*
+    Generate secure reset token
+    */
     const resetToken = crypto.randomBytes(32).toString("hex");
 
-    user.resetPasswordToken = resetToken;
-    user.resetPasswordExpire = Date.now() + 3600000;
+    /*
+    Hash token before saving to DB
+    */
+    const hashedToken = crypto
+      .createHash("sha256")
+      .update(resetToken)
+      .digest("hex");
+
+    user.resetPasswordToken = hashedToken;
+    user.resetPasswordExpire = Date.now() + 60 * 60 * 1000; // 1 hour
 
     await user.save();
 
     /*
-    Build reset URL using the current panel's domain so the
-    reset link takes the user back to the correct panel.
+    Build reset URL using correct panel domain
     */
-    const panelDomain =
-      req.childPanel
-        ? req.brand?.domain
-        : process.env.FRONTEND_URL;
+    const panelDomain = req.childPanel
+      ? req.brand?.domain
+      : process.env.FRONTEND_URL;
 
     const resetUrl = `${panelDomain}/reset-password/${resetToken}`;
 
     try {
+      /*
+      Send email
+      */
       await sendEmail({
         to: user.email,
-        subject: "Password Reset",
-        text: `Click here to reset your password: ${resetUrl}`,
+        subject: "Password Reset Request",
+        text: `Click the link below to reset your password:\n\n${resetUrl}\n\nThis link expires in 1 hour.`,
+        html: `
+          <div style="font-family: Arial, sans-serif; line-height: 1.6;">
+            <h2>Password Reset</h2>
+
+            <p>Hello,</p>
+
+            <p>You requested a password reset.</p>
+
+            <p>
+              Click the button below to reset your password:
+            </p>
+
+            <a
+              href="${resetUrl}"
+              style="
+                display:inline-block;
+                padding:12px 20px;
+                background:#f97316;
+                color:#ffffff;
+                text-decoration:none;
+                border-radius:8px;
+                font-weight:bold;
+              "
+            >
+              Reset Password
+            </a>
+
+            <p style="margin-top:20px;">
+              Or copy and paste this link into your browser:
+            </p>
+
+            <p>${resetUrl}</p>
+
+            <p>
+              This link will expire in 1 hour.
+            </p>
+
+            <p>
+              If you did not request this, you can safely ignore this email.
+            </p>
+          </div>
+        `,
       });
 
+      /*
+      Admin audit logging
+      */
       if (req.user && req.user.isAdmin) {
         await logAdminAction({
           adminId: req.user._id,
@@ -268,16 +335,30 @@ export const forgotPassword = async (req, res) => {
         });
       }
 
-      res.json({ message: "Password reset link sent to email" });
+      return res.json({
+        message: "Password reset link sent to email",
+      });
     } catch (err) {
+      console.error("SEND EMAIL ERROR:", err);
+
+      /*
+      Cleanup token if email fails
+      */
       user.resetPasswordToken = undefined;
       user.resetPasswordExpire = undefined;
+
       await user.save();
-      res.status(500).json({ message: "Failed to send email" });
+
+      return res.status(500).json({
+        message: "Failed to send email",
+      });
     }
   } catch (error) {
     console.error("FORGOT PASSWORD ERROR:", error);
-    res.status(500).json({ message: "Server error" });
+
+    return res.status(500).json({
+      message: "Server error",
+    });
   }
 };
 

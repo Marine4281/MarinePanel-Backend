@@ -6,25 +6,23 @@ import nodemailer from "nodemailer";
 const sendEmail = async ({ to, subject, text }) => {
   try {
     const transporter = nodemailer.createTransport({
-      host: "smtp.gmail.com",
+      host: "smtp.gmail.com",       // Gmail SMTP
       port: 587,
-      secure: false, // false for port 587
+      secure: false,                // false for 587
       auth: {
-        user: process.env.EMAIL_USER,
-        pass: process.env.EMAIL_PASS,
+        user: "marinepanel6@gmail.com",  // EMAIL_USER
+        pass: "pzae gqke djjz vxeo",        // EMAIL_PASS (App password)
       },
     });
 
     const info = await transporter.sendMail({
-      from: `"Marine Panel" <${process.env.EMAIL_USER}>`,
+      from: `"Marine Panel" <marinepanel6@gmail.com>`, // EMAIL_FROM
       to,
       subject,
       text,
     });
 
-    console.log("Email sent:", info.messageId);
-
-    return info;
+    console.log("Email sent: %s", info.messageId);
   } catch (error) {
     console.error("Email error:", error);
     throw new Error("Email could not be sent");

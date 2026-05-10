@@ -157,8 +157,7 @@ export const syncProviderOrders = async (io) => {
         if (
           !order.isFreeOrder &&
           order.isCharged &&
-          !order.refundProcessed &&
-          !order.cancelProcessed
+          !order.refundProcessed 
         ) {
           let wallet = await Wallet.findOne({ user: order.userId });
 

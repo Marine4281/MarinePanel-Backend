@@ -92,6 +92,11 @@ const orderSchema = new mongoose.Schema(
       required: true,
       default: 0,
     },
+    
+    adminProfit: {
+      type: Number,
+      default: 0,
+    },
 
     serviceId: {
       type: String,

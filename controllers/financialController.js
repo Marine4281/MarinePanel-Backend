@@ -106,14 +106,15 @@ export const getFinancialSummary = async (req, res) => {
 // ─── GET /api/admin/financial/profit ──────────────────────────────
 // Query: range=today|thisWeek|last7|thisMonth|thisYear|all|custom
 //        customStart=ISO  customEnd=ISO  country=All|KE|US...
-export const getProfit = async (req, res) => {
+
+      export const getProfit = async (req, res) => {
   try {
     const { range = "thisMonth", customStart, customEnd, country = "All" } = req.query;
 
     const settings = await Settings.findOne().lean();
-    const commission = settings?.commission ?? 50;
+    const currentCommission = settings?.commission ?? 50;
 
-    let matchStage = { status: "completed" };
+    let matchStage = { status: "completed", isFreeOrder: { $ne: true } };
 
     const gte = buildDateGte(range, customStart);
     if (gte) {
@@ -121,79 +122,78 @@ export const getProfit = async (req, res) => {
       if (range === "custom" && customEnd) matchStage.createdAt.$lte = new Date(customEnd);
     }
 
-    // Country filter via lookup
-    let pipeline = [
-      { $match: matchStage },
-      {
-        $lookup: {
-          from: "users",
-          localField: "userId",
-          foreignField: "_id",
-          as: "user",
-        },
-      },
-      { $unwind: { path: "$user", preserveNullAndEmptyArrays: true } },
-    ];
-
-    if (country !== "All") {
-      pipeline.push({ $match: { "user.country": country } });
-    }
-
-    pipeline.push(
-      {
-        $group: {
-          _id: null,
-          totalCharge: { $sum: "$charge" },
-          totalOrders: { $sum: 1 },
-        },
-      }
-    );
-
-    // Chart breakdown by day
-    let chartPipeline = [
-      { $match: matchStage },
-      {
-        $lookup: {
-          from: "users",
-          localField: "userId",
-          foreignField: "_id",
-          as: "user",
-        },
-      },
-      { $unwind: { path: "$user", preserveNullAndEmptyArrays: true } },
-    ];
-    if (country !== "All") {
-      chartPipeline.push({ $match: { "user.country": country } });
-    }
-    chartPipeline.push(
-      {
-        $group: {
-          _id: {
-            $dateToString: { format: "%Y-%m-%d", date: "$createdAt" },
+    // Base pipeline — country filter via lookup
+    const basePipeline = (extra = []) => {
+      const p = [
+        { $match: matchStage },
+        {
+          $lookup: {
+            from: "users",
+            localField: "userId",
+            foreignField: "_id",
+            as: "user",
           },
-          dailyCharge: { $sum: "$charge" },
-          count: { $sum: 1 },
         },
-      },
-      { $sort: { _id: 1 } }
-    );
+        { $unwind: { path: "$user", preserveNullAndEmptyArrays: true } },
+        ...(country !== "All" ? [{ $match: { "user.country": country } }] : []),
+        ...extra,
+      ];
+      return p;
+    };
 
     const [summary, chart] = await Promise.all([
-      Order.aggregate(pipeline),
-      Order.aggregate(chartPipeline),
+      Order.aggregate(basePipeline([
+        {
+          $group: {
+            _id: null,
+            totalCharge:  { $sum: "$charge" },
+            // Use saved adminProfit if available, fall back to charge * commission for old orders
+            totalProfit: {
+              $sum: {
+                $cond: [
+                  { $gt: ["$adminProfit", 0] },
+                  "$adminProfit",
+                  { $multiply: ["$charge", { $divide: [currentCommission, 100] }] },
+                ],
+              },
+            },
+            totalOrders:  { $sum: 1 },
+          },
+        },
+      ])),
+
+      Order.aggregate(basePipeline([
+        {
+          $group: {
+            _id: { $dateToString: { format: "%Y-%m-%d", date: "$createdAt" } },
+            dailyCharge: { $sum: "$charge" },
+            dailyProfit: {
+              $sum: {
+                $cond: [
+                  { $gt: ["$adminProfit", 0] },
+                  "$adminProfit",
+                  { $multiply: ["$charge", { $divide: [currentCommission, 100] }] },
+                ],
+              },
+            },
+            count: { $sum: 1 },
+          },
+        },
+        { $sort: { _id: 1 } },
+      ])),
     ]);
 
+    const totalProfit = summary[0]?.totalProfit ?? 0;
     const totalCharge = summary[0]?.totalCharge ?? 0;
-    const profit = (totalCharge * commission) / 100;
 
     res.json({
-      profit: Number(profit.toFixed(4)),
+      profit:       Number(totalProfit.toFixed(4)),
       grossRevenue: Number(totalCharge.toFixed(4)),
-      totalOrders: summary[0]?.totalOrders ?? 0,
-      commission,
+      totalOrders:  summary[0]?.totalOrders ?? 0,
+      commission:   currentCommission,
       chart: chart.map((d) => ({
-        date: d._id,
-        profit: Number(((d.dailyCharge * commission) / 100).toFixed(4)),
+        date:   d._id,
+        profit: Number((d.dailyProfit ?? 0).toFixed(4)),
         orders: d.count,
       })),
     });

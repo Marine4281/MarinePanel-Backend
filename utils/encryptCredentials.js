@@ -2,11 +2,8 @@
 import crypto from "crypto";
 
 const ALGO      = "aes-256-gcm";
-const KEY       = Buffer.from(process.env.CREDENTIALS_ENCRYPTION_KEY, "hex"); // 32 bytes = 64 hex chars
-const IV_LENGTH = 12; // GCM standard
-
-// Add CREDENTIALS_ENCRYPTION_KEY to your .env:
-// node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+const KEY       = Buffer.from(process.env.CREDENTIALS_ENCRYPTION_KEY, "hex");
+const IV_LENGTH = 12;
 
 export const encrypt = (text) => {
   if (!text) return "";
@@ -14,7 +11,6 @@ export const encrypt = (text) => {
   const cipher    = crypto.createCipheriv(ALGO, KEY, iv);
   const encrypted = Buffer.concat([cipher.update(String(text), "utf8"), cipher.final()]);
   const tag       = cipher.getAuthTag();
-  // Store as: iv:tag:encrypted (all hex)
   return `${iv.toString("hex")}:${tag.toString("hex")}:${encrypted.toString("hex")}`;
 };
 
@@ -33,26 +29,42 @@ export const decrypt = (stored) => {
   }
 };
 
-// Encrypt all credential fields before saving to DB
 export const encryptCredentials = (raw = {}) => ({
+  // Paystack / Flutterwave / Kora
   secretKey:      encrypt(raw.secretKey),
   publicKey:      encrypt(raw.publicKey),
   encryptionKey:  encrypt(raw.encryptionKey),
   webhookSecret:  encrypt(raw.webhookSecret),
+
+  // M-Pesa Daraja
   consumerKey:    encrypt(raw.consumerKey),
   consumerSecret: encrypt(raw.consumerSecret),
   shortcode:      encrypt(raw.shortcode),
   passkey:        encrypt(raw.passkey),
+
+  // Binance Pay
+  apiKey:         encrypt(raw.apiKey),
+
+  // Cryptomus
+  merchantId:     encrypt(raw.merchantId),
 });
 
-// Decrypt all credential fields for use at payment time
 export const decryptCredentials = (stored = {}) => ({
+  // Paystack / Flutterwave / Kora
   secretKey:      decrypt(stored.secretKey),
   publicKey:      decrypt(stored.publicKey),
   encryptionKey:  decrypt(stored.encryptionKey),
   webhookSecret:  decrypt(stored.webhookSecret),
+
+  // M-Pesa Daraja
   consumerKey:    decrypt(stored.consumerKey),
   consumerSecret: decrypt(stored.consumerSecret),
   shortcode:      decrypt(stored.shortcode),
   passkey:        decrypt(stored.passkey),
+
+  // Binance Pay
+  apiKey:         decrypt(stored.apiKey),
+
+  // Cryptomus
+  merchantId:     decrypt(stored.merchantId),
 });

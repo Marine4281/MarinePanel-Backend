@@ -433,6 +433,7 @@ if (
       link,
       quantity: qty,
       charge: finalCharge,
+      adminProfit: isFreeOrder ? 0 : Number((finalCharge - baseCharge).toFixed(4)),
       status: "pending",
       isFreeOrder,
       earningsCredited: false,

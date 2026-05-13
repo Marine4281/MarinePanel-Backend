@@ -25,7 +25,7 @@ const log = async (cpUser, action, description, targetId, ip) => {
 };
 
 // ── GET USERS (paginated, searchable) ─────────────────────────
-export const getChildPanelUsers = async (req, res) => {
+export const getCPUsers = async (req, res) => {
   try {
     const page = Number(req.query.page) || 1;
     const limit = Number(req.query.limit) || 20;

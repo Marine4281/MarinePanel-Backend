@@ -8,25 +8,31 @@ import formatLastSeen from "../utils/formatLastSeen.js";
 
 // ======================= HELPERS =======================
 
-// ✅ Single source of truth for balance
 const calculateBalance = (transactions = []) =>
   transactions
     .filter((t) => t.status === "Completed")
     .reduce((acc, t) => acc + (Number(t.amount) || 0), 0);
 
-// ✅ Normalize country code (MATCHES SYSTEM → ALWAYS UPPERCASE)
 const normalizeCountryCode = (value) => {
   if (!value || typeof value !== "string") return "US";
-
   const map = {
     "united states": "US",
-    "usa": "US",
-    "us": "US",
-    "kenya": "KE",
+    usa: "US",
+    us: "US",
+    kenya: "KE",
   };
-
   const cleaned = value.trim().toLowerCase();
   return map[cleaned] || cleaned.toUpperCase();
+};
+
+// Derive user type tags from user document
+const getUserTypes = (user) => {
+  const types = [];
+  if (user.isChildPanel) types.push("Child Panel");
+  if (user.isReseller) types.push("Reseller");
+  if (user.apiAccessEnabled) types.push("API");
+  if (types.length === 0) types.push("User");
+  return types;
 };
 
 // ======================= GET ALL USERS =======================
@@ -52,14 +58,11 @@ export const getAllUsers = async (req, res) => {
 
         if (wallet) {
           const computed = calculateBalance(wallet.transactions);
-
           if (wallet.balance !== computed) {
             wallet.balance = computed;
             await wallet.save();
           }
-
           balance = computed;
-
           if (user.balance !== balance) {
             await User.findByIdAndUpdate(user._id, { balance });
           }
@@ -73,6 +76,7 @@ export const getAllUsers = async (req, res) => {
           balance,
           name,
           lastSeen: formatLastSeen(user.lastSeen),
+          userTypes: getUserTypes(user),
         };
       })
     );
@@ -97,26 +101,40 @@ export const getAllUsers = async (req, res) => {
 // ======================= GET USER BY ID =======================
 export const getUserById = async (req, res) => {
   try {
-    const { page = 1, limit = 10 } = req.query;
+    const { page = 1, limit = 10, txPage = 1, txLimit = 10 } = req.query;
 
-    const user = await User.findById(req.params.id).select("-password");
+    const user = await User.findById(req.params.id)
+      .select("-password")
+      .populate("resellerOwner", "email brandName brandSlug")
+      .populate("childPanelOwner", "email childPanelBrandName");
+
     if (!user) return res.status(404).json({ message: "User not found" });
 
     const wallet = await Wallet.findOne({ user: user._id });
-    const transactions = wallet?.transactions || [];
-    const balance = calculateBalance(transactions);
+    const allTransactions = (wallet?.transactions || []).sort(
+      (a, b) =>
+        new Date(b.createdAt || b.date) - new Date(a.createdAt || a.date)
+    );
+    const balance = calculateBalance(allTransactions);
 
+    // Paginate orders
     const skip = (Number(page) - 1) * Number(limit);
-
     const [orders, totalOrders] = await Promise.all([
       Order.find({ userId: user._id })
         .sort({ createdAt: -1 })
         .skip(skip)
         .limit(Number(limit))
         .select("service serviceLink charge quantity status createdAt"),
-
       Order.countDocuments({ userId: user._id }),
     ]);
+
+    // Paginate transactions
+    const txSkip = (Number(txPage) - 1) * Number(txLimit);
+    const paginatedTransactions = allTransactions.slice(
+      txSkip,
+      txSkip + Number(txLimit)
+    );
+    const totalTransactions = allTransactions.length;
 
     if (req.user) {
       await logAdminAction({
@@ -137,12 +155,15 @@ export const getUserById = async (req, res) => {
         balance,
         name: user.email.split("@")[0],
         lastSeen: formatLastSeen(user.lastSeen),
+        userTypes: getUserTypes(user),
+        totalOrders,
       },
-      transactions: transactions.sort(
-        (a, b) =>
-          new Date(b.createdAt || b.date) -
-          new Date(a.createdAt || a.date)
-      ),
+      transactions: paginatedTransactions,
+      transactionPagination: {
+        total: totalTransactions,
+        page: Number(txPage),
+        pages: Math.ceil(totalTransactions / Number(txLimit)),
+      },
       orders,
       pagination: {
         total: totalOrders,
@@ -160,7 +181,6 @@ export const getUserById = async (req, res) => {
 export const updateUserBalance = async (req, res) => {
   try {
     const newBalance = Number(req.body.balance);
-
     if (Number.isNaN(newBalance)) {
       return res.status(400).json({ message: "Invalid balance" });
     }
@@ -186,7 +206,6 @@ export const updateUserBalance = async (req, res) => {
     } else {
       const current = calculateBalance(wallet.transactions);
       const diff = newBalance - current;
-
       if (diff !== 0) {
         wallet.transactions.push({
           type: "Admin Adjustment",
@@ -200,7 +219,6 @@ export const updateUserBalance = async (req, res) => {
 
     wallet.balance = calculateBalance(wallet.transactions);
     await wallet.save();
-
     await User.findByIdAndUpdate(user._id, { balance: wallet.balance });
 
     if (req.user) {
@@ -231,21 +249,55 @@ export const updateUserBalance = async (req, res) => {
   }
 };
 
+// ======================= UPDATE USER COMMISSION =======================
+export const updateUserCommission = async (req, res) => {
+  try {
+    const { commissionRate } = req.body;
+    const rate = Number(commissionRate);
+
+    if (Number.isNaN(rate) || rate < 0 || rate > 100) {
+      return res
+        .status(400)
+        .json({ message: "Commission must be between 0 and 100" });
+    }
+
+    const user = await User.findById(req.params.id);
+    if (!user) return res.status(404).json({ message: "User not found" });
+
+    // Store on resellerCommissionRate field (exists on model)
+    user.resellerCommissionRate = rate;
+    await user.save();
+
+    if (req.user) {
+      await logAdminAction({
+        adminId: req.user._id,
+        adminEmail: req.user.email,
+        action: "UPDATE_COMMISSION",
+        description: `Set commission for ${user.email} to ${rate}%`,
+        targetType: "user",
+        targetId: user._id,
+        ipAddress: req.ip,
+      });
+    }
+
+    res.json({ message: "Commission updated", commissionRate: rate });
+  } catch (err) {
+    console.error("UPDATE USER COMMISSION ERROR:", err);
+    res.status(500).json({ message: "Commission update failed" });
+  }
+};
+
 // ======================= PROMOTE =======================
 export const promoteToAdmin = async (req, res) => {
   try {
     const { id } = req.params;
-
     if (req.user._id.toString() === id) {
       return res.status(400).json({ message: "Cannot promote yourself" });
     }
-
     const user = await User.findById(id);
     if (!user) return res.status(404).json({ message: "User not found" });
-
-    if (user.isAdmin) {
+    if (user.isAdmin)
       return res.status(400).json({ message: "User is already admin" });
-    }
 
     user.isAdmin = true;
     await user.save();
@@ -277,17 +329,13 @@ export const promoteToAdmin = async (req, res) => {
 export const demoteFromAdmin = async (req, res) => {
   try {
     const { id } = req.params;
-
     if (req.user._id.toString() === id) {
       return res.status(400).json({ message: "Cannot demote yourself" });
     }
-
     const user = await User.findById(id);
     if (!user) return res.status(404).json({ message: "User not found" });
-
-    if (!user.isAdmin) {
+    if (!user.isAdmin)
       return res.status(400).json({ message: "User is not admin" });
-    }
 
     user.isAdmin = false;
     await user.save();
@@ -319,7 +367,6 @@ export const demoteFromAdmin = async (req, res) => {
 export const getUserOrders = async (req, res) => {
   try {
     const { page = 1, limit = 10 } = req.query;
-
     const skip = (Number(page) - 1) * Number(limit);
 
     const [orders, total] = await Promise.all([
@@ -327,7 +374,6 @@ export const getUserOrders = async (req, res) => {
         .sort({ createdAt: -1 })
         .skip(skip)
         .limit(Number(limit)),
-
       Order.countDocuments({ userId: req.params.id }),
     ]);
 
@@ -335,6 +381,7 @@ export const getUserOrders = async (req, res) => {
       orders,
       page: Number(page),
       pages: Math.ceil(total / Number(limit)),
+      total,
     });
   } catch (err) {
     console.error("GET USER ORDERS ERROR:", err);
@@ -350,7 +397,6 @@ export const blockUser = async (req, res) => {
       { isBlocked: true },
       { new: true }
     );
-
     if (!user) return res.status(404).json({ message: "User not found" });
 
     if (req.user) {
@@ -385,7 +431,6 @@ export const unblockUser = async (req, res) => {
       { isBlocked: false },
       { new: true }
     );
-
     if (!user) return res.status(404).json({ message: "User not found" });
 
     if (req.user) {
@@ -420,7 +465,6 @@ export const freezeUser = async (req, res) => {
       { isFrozen: true },
       { new: true }
     );
-
     if (!user) return res.status(404).json({ message: "User not found" });
 
     if (req.user && user) {
@@ -455,7 +499,6 @@ export const unfreezeUser = async (req, res) => {
       { isFrozen: false },
       { new: true }
     );
-
     if (!user) return res.status(404).json({ message: "User not found" });
 
     if (req.user && user) {
@@ -486,7 +529,6 @@ export const unfreezeUser = async (req, res) => {
 export const deleteUser = async (req, res) => {
   try {
     const user = await User.findById(req.params.id);
-
     if (!user) return res.status(404).json({ message: "User not found" });
 
     await User.findByIdAndDelete(req.params.id);
@@ -515,13 +557,27 @@ export const deleteUser = async (req, res) => {
 // ======================= TRANSACTIONS =======================
 export const getUserTransactions = async (req, res) => {
   try {
+    const { page = 1, limit = 10 } = req.query;
     const wallet = await Wallet.findOne({ user: req.params.id });
 
     if (!wallet) {
       return res.status(404).json({ message: "Wallet not found" });
     }
 
-    res.json(wallet.transactions || []);
+    const all = (wallet.transactions || []).sort(
+      (a, b) =>
+        new Date(b.createdAt || b.date) - new Date(a.createdAt || a.date)
+    );
+
+    const skip = (Number(page) - 1) * Number(limit);
+    const paginated = all.slice(skip, skip + Number(limit));
+
+    res.json({
+      transactions: paginated,
+      total: all.length,
+      page: Number(page),
+      pages: Math.ceil(all.length / Number(limit)),
+    });
   } catch (err) {
     console.error("GET USER TRANSACTIONS ERROR:", err);
     res.status(500).json({ message: "Failed to fetch transactions" });

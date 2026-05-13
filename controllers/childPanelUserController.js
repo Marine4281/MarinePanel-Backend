@@ -27,32 +27,42 @@ const log = async (cpUser, action, description, targetId, ip) => {
 // ── GET USERS (paginated, searchable) ─────────────────────────
 export const getCPUsers = async (req, res) => {
   try {
-    const page = Number(req.query.page) || 1;
-    const limit = Number(req.query.limit) || 20;
-    const skip = (page - 1) * limit;
+    const { search = "", page = 1, limit = 20 } = req.query;
+    const cpId = req.user._id;
+    const skip = (Number(page) - 1) * Number(limit);
+
+    // Base: all users belonging to this child panel (including resellers)
+    const baseQuery = { childPanelOwner: cpId };
+
+    // Only add search filter when there's actually a search term
+    if (search && search.trim()) {
+      baseQuery.$or = [
+        { email:  { $regex: search.trim(), $options: "i" } },
+        { phone:  { $regex: search.trim(), $options: "i" } },
+      ];
+    }
 
     const [users, total] = await Promise.all([
-      User.find({ childPanelOwner: req.user._id, isReseller: false })
+      User.find(baseQuery)
         .select("-password")
         .sort({ createdAt: -1 })
         .skip(skip)
-        .limit(limit)
+        .limit(Number(limit))
         .lean(),
-
-      User.countDocuments({ childPanelOwner: req.user._id, isReseller: false }),
+      User.countDocuments(baseQuery),
     ]);
 
     res.json({
-      success: true,
       data: users,
       pagination: {
-        page,
-        limit,
+        page:  Number(page),
+        limit: Number(limit),
         total,
-        pages: Math.ceil(total / limit),
+        pages: Math.ceil(total / Number(limit)),
       },
     });
-  } catch (error) {
+  } catch (err) {
+    console.error("getCPUsers:", err);
     res.status(500).json({ message: "Failed to fetch users" });
   }
 };

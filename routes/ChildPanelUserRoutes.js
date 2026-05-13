@@ -13,7 +13,7 @@ import {
   updateCPUserCommission,
   getCPUserOrders,
   getCPUserTransactions,
-} from "../controllers/cpOwnerUserController.js";
+} from "../controllers/ChildUserController.js";
 
 const router = express.Router();
 

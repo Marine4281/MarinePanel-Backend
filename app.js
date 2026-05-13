@@ -229,11 +229,10 @@ app.use("/api/cp/resellers", authMiddleware, cpOwnerOnly, updateLastSeen, cpOwne
 app.use("/api/cp/providers", authMiddleware, cpOwnerOnly, updateLastSeen, cpOwnerProviderRoutes);
 app.use("/api/cp/settings", authMiddleware, cpOwnerOnly, updateLastSeen, cpOwnerSettingsRoutes);
 app.use("/api/cp/services",authMiddleware, cpOwnerOnly, updateLastSeen, cpOwnerServiceRoutes);
-// Child panel withdrawal
 app.use("/api/cp/child-panel", authMiddleware, childPanelOnly, updateLastSeen, cpOwnerWithdrawalRoutes);
+app.use("/api/cp/users", authMiddleware, childPanelOnly, updateLastSeen, cpOwnerWithdrawalRoutes);
 
-// Admin withdrawal management
-app.use("/api/admin/withdrawals", authMiddleware, adminOnly, adminWithdrawalRoutes);
+
 
 /* =================================================
    ADMIN ROUTES
@@ -250,6 +249,7 @@ app.use("/api/admin-logs", adminLogRoutes);
 app.use("/provider", providerProfileRoutes);
 app.use("/api/category-meta", categoryMetaRoutes);
 app.use("/api/admin/financial", authMiddleware, adminOnly, financialRoutes);
+app.use("/api/admin/withdrawals", authMiddleware, adminOnly, adminWithdrawalRoutes);
 app.use("/api", paymentGatewayRoutes);
 
 export default app;

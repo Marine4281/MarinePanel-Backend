@@ -58,7 +58,7 @@ export const getChildPanelUsers = async (req, res) => {
 };
 
 // ── GET SINGLE USER DETAIL ─────────────────────────────────────
-export const getCPUserById = async (req, res) => {
+export const getCPUsers = async (req, res) => {
   try {
     const cpId = req.user._id;
     const { txPage = 1, txLimit = 10, orderPage = 1, orderLimit = 10 } = req.query;

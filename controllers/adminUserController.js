@@ -263,7 +263,7 @@ export const updateUserCommission = async (req, res) => {
     ) {
       return res
         .status(400)
-        .json({ message: "Commission must be between 0 and 100, or null to use global" });
+        .json({ message: "Commission must be between 0 and 1000, or null to use global" });
     }
 
     const user = await User.findById(req.params.id);

@@ -258,8 +258,7 @@ export const updateUserCommission = async (req, res) => {
     if (
       commissionOverride !== null &&
       (isNaN(Number(commissionOverride)) ||
-        Number(commissionOverride) < 0 ||
-        Number(commissionOverride) > 100)
+        Number(commissionOverride) < 0 
     ) {
       return res
         .status(400)

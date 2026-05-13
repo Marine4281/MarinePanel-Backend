@@ -116,6 +116,11 @@ const userSchema = new mongoose.Schema(
       default: null,
     },
 
+    //Commission Per User
+    commissionOverride: {
+      type: Number,
+      default: null,
+    },
     /*
     --------------------------------
     RESELLER SYSTEM

@@ -342,10 +342,14 @@ if (
         }
       } else {
         // ── MAIN PLATFORM SERVICE ──
-        // Apply admin commission on top of provider rate
-        const adminRate = Number(settings?.commission || 0);
+        // Use per-user commission override if set, otherwise fall back to global
+        const globalRate = Number(settings?.commission || 0);
+        const adminRate =
+          user.commissionOverride != null
+            ? Number(user.commissionOverride)
+            : globalRate;
         const systemRate = providerRate + (providerRate * adminRate) / 100;
-
+        
         finalRate = systemRate;
 
         if (user.resellerOwner) {

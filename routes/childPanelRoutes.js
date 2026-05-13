@@ -6,51 +6,73 @@ import {
   activateChildPanel,
   getChildPanelDashboard,
   getChildPanelResellers,
-  getChildPanelUsers,
   getChildPanelOrders,
   updateChildPanelResellerCommission,
   toggleChildPanelResellerStatus,
   updateChildPanelBranding,
   updateChildPanelDomain,
   updateChildPanelSettings,
-  getChildPanelBranding,           // ← was missing
+  getChildPanelBranding,
 } from "../controllers/childPanelController.js";
+
+import {
+  getCPUsers,
+  getCPUserById,
+  cpBlockUser,
+  cpUnblockUser,
+  cpFreezeUser,
+  cpUnfreezeUser,
+  cpDeleteUser,
+  cpUpdateUserBalance,
+  cpUpdateUserCommission,
+  cpGetUserTransactions,
+  cpGetUserOrders,
+} from "../controllers/childPanelUserController.js";
 
 import { protect } from "../middlewares/authMiddleware.js";
 import { childPanelOnly } from "../middlewares/adminMiddleware.js";
 
 const router = express.Router();
 
-// Public — show activation fee before login
+// ── Public ─────────────────────────────────────────────────────
 router.get("/activation-fee", getChildPanelActivationFee);
-
-// Public — child panel domain branding (used by ChildPanelContext on frontend)
 router.get("/branding", getChildPanelBranding);
 
-// Activate
+// ── Activate ───────────────────────────────────────────────────
 router.post("/activate", protect, activateChildPanel);
 
-// Dashboard
+// ── Dashboard ──────────────────────────────────────────────────
 router.get("/dashboard", protect, childPanelOnly, getChildPanelDashboard);
 
-// Resellers
+// ── Resellers ──────────────────────────────────────────────────
 router.get("/resellers", protect, childPanelOnly, getChildPanelResellers);
 router.put("/resellers/:id/toggle-status", protect, childPanelOnly, toggleChildPanelResellerStatus);
 router.put("/resellers/:id/commission", protect, childPanelOnly, updateChildPanelResellerCommission);
 
-// Users
-router.get("/users", protect, childPanelOnly, getChildPanelUsers);
+// ── Users ──────────────────────────────────────────────────────
+// IMPORTANT: specific sub-routes before /:id to avoid conflicts
+router.get("/users", protect, childPanelOnly, getCPUsers);
+router.get("/users/:id/orders", protect, childPanelOnly, cpGetUserOrders);
+router.get("/users/:id/transactions", protect, childPanelOnly, cpGetUserTransactions);
+router.get("/users/:id", protect, childPanelOnly, getCPUserById);
+router.patch("/users/:id/block", protect, childPanelOnly, cpBlockUser);
+router.patch("/users/:id/unblock", protect, childPanelOnly, cpUnblockUser);
+router.patch("/users/:id/freeze", protect, childPanelOnly, cpFreezeUser);
+router.patch("/users/:id/unfreeze", protect, childPanelOnly, cpUnfreezeUser);
+router.put("/users/:id/balance", protect, childPanelOnly, cpUpdateUserBalance);
+router.patch("/users/:id/commission", protect, childPanelOnly, cpUpdateUserCommission);
+router.delete("/users/:id", protect, childPanelOnly, cpDeleteUser);
 
-// Orders
+// ── Orders ─────────────────────────────────────────────────────
 router.get("/orders", protect, childPanelOnly, getChildPanelOrders);
 
-// Branding (owner update)
+// ── Branding ───────────────────────────────────────────────────
 router.put("/branding", protect, childPanelOnly, updateChildPanelBranding);
 
-// Domain
+// ── Domain ─────────────────────────────────────────────────────
 router.put("/domain", protect, childPanelOnly, updateChildPanelDomain);
 
-// Settings
+// ── Settings ───────────────────────────────────────────────────
 router.put("/settings", protect, childPanelOnly, updateChildPanelSettings);
 
 export default router;

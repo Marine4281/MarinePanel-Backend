@@ -12,8 +12,7 @@ const calculateBalance = (transactions = []) =>
   transactions
     .filter((t) => t.status === "Completed")
     .reduce((acc, t) => acc + (Number(t.amount) || 0), 0)
-    .toFixed(4)
-  );
+    .toFixed(4);
 
 const normalizeCountryCode = (value) => {
   if (!value || typeof value !== "string") return "US";

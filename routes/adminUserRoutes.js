@@ -7,6 +7,7 @@ import {
   unblockUser,
   deleteUser,
   updateUserBalance,
+  updateUserCommission,
   getUserOrders,
   getUserTransactions,
   promoteToAdmin,
@@ -43,6 +44,9 @@ router.patch("/:id/unfreeze", unfreezeUser);
 
 // ✅ UPDATE balance
 router.put("/:id/balance", updateUserBalance);
+
+// ✅ UPDATE commission
+router.patch("/:id/commission", updateUserCommission);
 
 // ✅ PROMOTE / DEMOTE
 router.patch("/:id/promote", promoteToAdmin);

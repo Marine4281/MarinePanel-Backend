@@ -252,35 +252,49 @@ export const updateUserBalance = async (req, res) => {
 // ======================= UPDATE USER COMMISSION =======================
 export const updateUserCommission = async (req, res) => {
   try {
-    const { commissionRate } = req.body;
-    const rate = Number(commissionRate);
+    const { commissionOverride } = req.body;
 
-    if (Number.isNaN(rate) || rate < 0 || rate > 100) {
+    // Allow null to clear the override (revert to global)
+    if (
+      commissionOverride !== null &&
+      (isNaN(Number(commissionOverride)) ||
+        Number(commissionOverride) < 0 ||
+        Number(commissionOverride) > 100)
+    ) {
       return res
         .status(400)
-        .json({ message: "Commission must be between 0 and 100" });
+        .json({ message: "Commission must be between 0 and 100, or null to use global" });
     }
 
     const user = await User.findById(req.params.id);
     if (!user) return res.status(404).json({ message: "User not found" });
 
-    // Store on resellerCommissionRate field (exists on model)
-    user.resellerCommissionRate = rate;
+    user.commissionOverride =
+      commissionOverride === null || commissionOverride === ""
+        ? null
+        : Number(commissionOverride);
+
     await user.save();
 
     if (req.user) {
       await logAdminAction({
         adminId: req.user._id,
         adminEmail: req.user.email,
-        action: "UPDATE_COMMISSION",
-        description: `Set commission for ${user.email} to ${rate}%`,
+        action: "UPDATE_USER_COMMISSION",
+        description:
+          commissionOverride === null || commissionOverride === ""
+            ? `Cleared commission override for ${user.email} (reverted to global)`
+            : `Set commission override for ${user.email} to ${commissionOverride}%`,
         targetType: "user",
         targetId: user._id,
         ipAddress: req.ip,
       });
     }
 
-    res.json({ message: "Commission updated", commissionRate: rate });
+    res.json({
+      message: "Commission updated",
+      commissionOverride: user.commissionOverride,
+    });
   } catch (err) {
     console.error("UPDATE USER COMMISSION ERROR:", err);
     res.status(500).json({ message: "Commission update failed" });

@@ -42,6 +42,7 @@ import providerProfileRoutes from "./routes/providerProfileRoutes.js";
 import categoryMetaRoutes from "./routes/categoryMetaRoutes.js";
 import financialRoutes from "./routes/financialRoutes.js";
 import paymentGatewayRoutes from "./routes/paymentGatewayRoutes.js";
+import adminWithdrawalRoutes from "./routes/adminWithdrawalRoutes.js";
 
 // Child Panel Routes
 import childPanelRoutes from "./routes/childPanelRoutes.js";
@@ -54,7 +55,6 @@ import cpOwnerResellerRoutes from "./routes/cpOwnerResellerRoutes.js";
 import cpOwnerProviderRoutes from "./routes/cpOwnerProviderRoutes.js";
 import cpOwnerSettingsRoutes from "./routes/cpOwnerSettingsRoutes.js";
 import cpOwnerWithdrawalRoutes from "./routes/cpOwnerWithdrawalRoutes.js";
-import adminWithdrawalRoutes from "./routes/adminWithdrawalRoutes.js";
 import cpOwnerServiceRoutes from "./routes/cpOwnerServiceRoutes.js";
 
 
@@ -230,8 +230,6 @@ app.use("/api/cp/providers", authMiddleware, cpOwnerOnly, updateLastSeen, cpOwne
 app.use("/api/cp/settings", authMiddleware, cpOwnerOnly, updateLastSeen, cpOwnerSettingsRoutes);
 app.use("/api/cp/services",authMiddleware, cpOwnerOnly, updateLastSeen, cpOwnerServiceRoutes);
 app.use("/api/cp/child-panel", authMiddleware, childPanelOnly, updateLastSeen, cpOwnerWithdrawalRoutes);
-app.use("/api/cp/users", authMiddleware, childPanelOnly, updateLastSeen, cpOwnerWithdrawalRoutes);
-
 
 
 /* =================================================

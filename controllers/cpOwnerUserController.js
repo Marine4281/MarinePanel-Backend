@@ -3,7 +3,6 @@
 // Child panel owner managing users within their panel.
 // Every query is scoped to childPanelOwner: req.user._id
 // so it is impossible to read or modify users from another panel.
-// Mirrors adminUserController.js — same operations, different scope.
 
 import User from "../models/User.js";
 import Order from "../models/Order.js";
@@ -18,64 +17,64 @@ const calculateBalance = (transactions = []) =>
     .reduce((acc, t) => acc + (Number(t.amount) || 0), 0);
 
 const normalizeCountryCode = (value) => {
-  if (!value || typeof value !== "string") return "US";
+  if (!value || typeof value !== "string") return null;
   const map = { "united states": "US", usa: "US", us: "US", kenya: "KE" };
   const cleaned = value.trim().toLowerCase();
   return map[cleaned] || cleaned.toUpperCase();
 };
 
+const getUserTypes = (user) => {
+  const types = [];
+  if (user.isReseller)       types.push("Reseller");
+  if (user.apiAccessEnabled) types.push("API");
+  if (types.length === 0)    types.push("User");
+  return types;
+};
+
 // ======================= GET ALL USERS =======================
-// Returns all non-reseller users that belong to this child panel
 
 export const getCPUsers = async (req, res) => {
   try {
-    const { search } = req.query;
+    const { search = "", page = 1, limit = 20 } = req.query;
+    const skip = (Number(page) - 1) * Number(limit);
 
-    const query = {
-      childPanelOwner: req.user._id,
-      isReseller: false,
-    };
+    // Scope: all users belonging to this child panel (including resellers)
+    const query = { childPanelOwner: req.user._id };
 
-    if (search) {
+    if (search && search.trim()) {
       query.$or = [
-        { email: { $regex: search, $options: "i" } },
-        { phone: { $regex: search, $options: "i" } },
+        { email: { $regex: search.trim(), $options: "i" } },
+        { phone: { $regex: search.trim(), $options: "i" } },
       ];
     }
 
-    const usersRaw = await User.find(query).sort({ createdAt: -1 });
+    const [usersRaw, total] = await Promise.all([
+      User.find(query)
+        .select("-password")
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(Number(limit))
+        .lean(),
+      User.countDocuments(query),
+    ]);
 
-    const users = await Promise.all(
-      usersRaw.map(async (user) => {
-        let wallet = await Wallet.findOne({ user: user._id });
-        let balance = 0;
+    const users = usersRaw.map((user) => ({
+      ...user,
+      countryCode: normalizeCountryCode(user.countryCode),
+      name: user.email.split("@")[0],
+      lastSeen: formatLastSeen(user.lastSeen),
+      userTypes: getUserTypes(user),
+    }));
 
-        if (wallet) {
-          const computed = calculateBalance(wallet.transactions);
-
-          if (wallet.balance !== computed) {
-            wallet.balance = computed;
-            await wallet.save();
-          }
-
-          balance = computed;
-
-          if (user.balance !== balance) {
-            await User.findByIdAndUpdate(user._id, { balance });
-          }
-        }
-
-        return {
-          ...user.toObject(),
-          countryCode: normalizeCountryCode(user.countryCode),
-          balance,
-          name: user.email.split("@")[0],
-          lastSeen: formatLastSeen(user.lastSeen),
-        };
-      })
-    );
-
-    res.json(users);
+    res.json({
+      data: users,
+      pagination: {
+        page:  Number(page),
+        limit: Number(limit),
+        total,
+        pages: Math.ceil(total / Number(limit)),
+      },
+    });
   } catch (err) {
     console.error("CP GET ALL USERS ERROR:", err);
     res.status(500).json({ message: "Failed to fetch users" });
@@ -83,11 +82,10 @@ export const getCPUsers = async (req, res) => {
 };
 
 // ======================= GET USER BY ID =======================
-// Only returns the user if they belong to this child panel
 
 export const getCPUserById = async (req, res) => {
   try {
-    const { page = 1, limit = 10 } = req.query;
+    const { txPage = 1, txLimit = 10, page = 1, limit = 10 } = req.query;
 
     const user = await User.findOne({
       _id: req.params.id,
@@ -97,18 +95,23 @@ export const getCPUserById = async (req, res) => {
     if (!user) return res.status(404).json({ message: "User not found" });
 
     const wallet = await Wallet.findOne({ user: user._id });
-    const transactions = wallet?.transactions || [];
-    const balance = calculateBalance(transactions);
+    const allTx = (wallet?.transactions || []).sort(
+      (a, b) => new Date(b.createdAt || b.date) - new Date(a.createdAt || a.date)
+    );
+    const balance = calculateBalance(allTx);
 
-    const skip = (Number(page) - 1) * Number(limit);
+    // Paginate transactions
+    const txSkip = (Number(txPage) - 1) * Number(txLimit);
+    const paginatedTx = allTx.slice(txSkip, txSkip + Number(txLimit));
 
+    // Paginate orders
+    const oSkip = (Number(page) - 1) * Number(limit);
     const [orders, totalOrders] = await Promise.all([
       Order.find({ userId: user._id })
         .sort({ createdAt: -1 })
-        .skip(skip)
+        .skip(oSkip)
         .limit(Number(limit))
-        .select("service link charge quantity status createdAt"),
-
+        .select("service link serviceLink charge quantity status createdAt"),
       Order.countDocuments({ userId: user._id }),
     ]);
 
@@ -119,15 +122,19 @@ export const getCPUserById = async (req, res) => {
         balance,
         name: user.email.split("@")[0],
         lastSeen: formatLastSeen(user.lastSeen),
+        userTypes: getUserTypes(user),
+        totalOrders,
       },
-      transactions: transactions.sort(
-        (a, b) =>
-          new Date(b.createdAt || b.date) - new Date(a.createdAt || a.date)
-      ),
+      transactions: paginatedTx,
+      transactionPagination: {
+        total: allTx.length,
+        page:  Number(txPage),
+        pages: Math.ceil(allTx.length / Number(txLimit)),
+      },
       orders,
-      pagination: {
+      orderPagination: {
         total: totalOrders,
-        page: Number(page),
+        page:  Number(page),
         pages: Math.ceil(totalOrders / Number(limit)),
       },
     });
@@ -142,17 +149,13 @@ export const getCPUserById = async (req, res) => {
 export const updateCPUserBalance = async (req, res) => {
   try {
     const newBalance = Number(req.body.balance);
-
-    if (Number.isNaN(newBalance)) {
+    if (Number.isNaN(newBalance))
       return res.status(400).json({ message: "Invalid balance" });
-    }
 
-    // Scope check — user must belong to this child panel
     const user = await User.findOne({
       _id: req.params.id,
       childPanelOwner: req.user._id,
     });
-
     if (!user) return res.status(404).json({ message: "User not found" });
 
     let wallet = await Wallet.findOne({ user: user._id });
@@ -160,20 +163,17 @@ export const updateCPUserBalance = async (req, res) => {
     if (!wallet) {
       wallet = await Wallet.create({
         user: user._id,
-        transactions: [
-          {
-            type: "CP Admin Adjustment",
-            amount: newBalance,
-            status: "Completed",
-            note: "Initial balance set by child panel admin",
-            createdAt: new Date(),
-          },
-        ],
+        transactions: [{
+          type: "CP Admin Adjustment",
+          amount: newBalance,
+          status: "Completed",
+          note: "Initial balance set by child panel admin",
+          createdAt: new Date(),
+        }],
       });
     } else {
       const current = calculateBalance(wallet.transactions);
       const diff = newBalance - current;
-
       if (diff !== 0) {
         wallet.transactions.push({
           type: "CP Admin Adjustment",
@@ -187,22 +187,39 @@ export const updateCPUserBalance = async (req, res) => {
 
     wallet.balance = calculateBalance(wallet.transactions);
     await wallet.save();
-
     await User.findByIdAndUpdate(user._id, { balance: wallet.balance });
 
-    res.json({
-      user: {
-        ...user.toObject(),
-        countryCode: normalizeCountryCode(user.countryCode),
-        balance: wallet.balance,
-        name: user.email.split("@")[0],
-        lastSeen: formatLastSeen(user.lastSeen),
-      },
-      wallet,
-    });
+    res.json({ balance: wallet.balance });
   } catch (err) {
     console.error("CP UPDATE USER BALANCE ERROR:", err);
     res.status(500).json({ message: "Balance update failed" });
+  }
+};
+
+// ======================= UPDATE COMMISSION =======================
+
+export const updateCPUserCommission = async (req, res) => {
+  try {
+    const { commissionOverride } = req.body;
+    const isEmpty = commissionOverride === null || commissionOverride === "";
+    const rate = isEmpty ? null : Number(commissionOverride);
+
+    if (!isEmpty && (isNaN(rate) || rate < 0 || rate > 100))
+      return res.status(400).json({ message: "Commission must be 0–100 or blank" });
+
+    const user = await User.findOne({
+      _id: req.params.id,
+      childPanelOwner: req.user._id,
+    });
+    if (!user) return res.status(404).json({ message: "User not found" });
+
+    user.commissionOverride = rate;
+    await user.save();
+
+    res.json({ commissionOverride: rate });
+  } catch (err) {
+    console.error("CP UPDATE COMMISSION ERROR:", err);
+    res.status(500).json({ message: "Commission update failed" });
   }
 };
 
@@ -215,14 +232,13 @@ export const blockCPUser = async (req, res) => {
       { isBlocked: true },
       { new: true }
     );
-
     if (!user) return res.status(404).json({ message: "User not found" });
-
     res.json({
       ...user.toObject(),
       countryCode: normalizeCountryCode(user.countryCode),
       name: user.email.split("@")[0],
       lastSeen: formatLastSeen(user.lastSeen),
+      userTypes: getUserTypes(user),
     });
   } catch (err) {
     console.error("CP BLOCK USER ERROR:", err);
@@ -239,14 +255,13 @@ export const unblockCPUser = async (req, res) => {
       { isBlocked: false },
       { new: true }
     );
-
     if (!user) return res.status(404).json({ message: "User not found" });
-
     res.json({
       ...user.toObject(),
       countryCode: normalizeCountryCode(user.countryCode),
       name: user.email.split("@")[0],
       lastSeen: formatLastSeen(user.lastSeen),
+      userTypes: getUserTypes(user),
     });
   } catch (err) {
     console.error("CP UNBLOCK USER ERROR:", err);
@@ -263,14 +278,13 @@ export const freezeCPUser = async (req, res) => {
       { isFrozen: true },
       { new: true }
     );
-
     if (!user) return res.status(404).json({ message: "User not found" });
-
     res.json({
       ...user.toObject(),
       countryCode: normalizeCountryCode(user.countryCode),
       name: user.email.split("@")[0],
       lastSeen: formatLastSeen(user.lastSeen),
+      userTypes: getUserTypes(user),
     });
   } catch (err) {
     console.error("CP FREEZE USER ERROR:", err);
@@ -287,14 +301,13 @@ export const unfreezeCPUser = async (req, res) => {
       { isFrozen: false },
       { new: true }
     );
-
     if (!user) return res.status(404).json({ message: "User not found" });
-
     res.json({
       ...user.toObject(),
       countryCode: normalizeCountryCode(user.countryCode),
       name: user.email.split("@")[0],
       lastSeen: formatLastSeen(user.lastSeen),
+      userTypes: getUserTypes(user),
     });
   } catch (err) {
     console.error("CP UNFREEZE USER ERROR:", err);
@@ -310,12 +323,13 @@ export const deleteCPUser = async (req, res) => {
       _id: req.params.id,
       childPanelOwner: req.user._id,
     });
-
     if (!user) return res.status(404).json({ message: "User not found" });
 
-    await User.findByIdAndDelete(user._id);
-    await Order.deleteMany({ userId: user._id });
-    await Wallet.deleteOne({ user: user._id });
+    await Promise.all([
+      User.findByIdAndDelete(user._id),
+      Order.deleteMany({ userId: user._id }),
+      Wallet.deleteOne({ user: user._id }),
+    ]);
 
     res.json({ message: "User deleted" });
   } catch (err) {
@@ -328,16 +342,13 @@ export const deleteCPUser = async (req, res) => {
 
 export const getCPUserOrders = async (req, res) => {
   try {
-    const { page = 1, limit = 10 } = req.query;
-
-    // Verify user belongs to this child panel first
     const user = await User.findOne({
       _id: req.params.id,
       childPanelOwner: req.user._id,
     });
-
     if (!user) return res.status(404).json({ message: "User not found" });
 
+    const { page = 1, limit = 10 } = req.query;
     const skip = (Number(page) - 1) * Number(limit);
 
     const [orders, total] = await Promise.all([
@@ -345,13 +356,13 @@ export const getCPUserOrders = async (req, res) => {
         .sort({ createdAt: -1 })
         .skip(skip)
         .limit(Number(limit)),
-
       Order.countDocuments({ userId: user._id }),
     ]);
 
     res.json({
       orders,
-      page: Number(page),
+      total,
+      page:  Number(page),
       pages: Math.ceil(total / Number(limit)),
     });
   } catch (err) {
@@ -364,21 +375,27 @@ export const getCPUserOrders = async (req, res) => {
 
 export const getCPUserTransactions = async (req, res) => {
   try {
-    // Verify user belongs to this child panel first
     const user = await User.findOne({
       _id: req.params.id,
       childPanelOwner: req.user._id,
     });
-
     if (!user) return res.status(404).json({ message: "User not found" });
 
+    const { page = 1, limit = 10 } = req.query;
     const wallet = await Wallet.findOne({ user: user._id });
 
-    if (!wallet) {
-      return res.status(404).json({ message: "Wallet not found" });
-    }
+    const all = (wallet?.transactions || []).sort(
+      (a, b) => new Date(b.createdAt || b.date) - new Date(a.createdAt || a.date)
+    );
 
-    res.json(wallet.transactions || []);
+    const skip = (Number(page) - 1) * Number(limit);
+
+    res.json({
+      transactions: all.slice(skip, skip + Number(limit)),
+      total: all.length,
+      page:  Number(page),
+      pages: Math.ceil(all.length / Number(limit)),
+    });
   } catch (err) {
     console.error("CP GET USER TRANSACTIONS ERROR:", err);
     res.status(500).json({ message: "Failed to fetch transactions" });

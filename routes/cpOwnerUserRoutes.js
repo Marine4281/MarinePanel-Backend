@@ -10,17 +10,18 @@ import {
   unfreezeCPUser,
   deleteCPUser,
   updateCPUserBalance,
+  updateCPUserCommission,
   getCPUserOrders,
   getCPUserTransactions,
 } from "../controllers/cpOwnerUserController.js";
 
 const router = express.Router();
 
-// Auth + childPanelOnly are applied in app.js for this route group
+// Auth + cpOwnerOnly applied in app.js
 
 router.get("/", getCPUsers);
 
-// Specific routes before /:id
+// Specific sub-routes BEFORE /:id
 router.get("/:id/orders", getCPUserOrders);
 router.get("/:id/transactions", getCPUserTransactions);
 
@@ -32,6 +33,7 @@ router.patch("/:id/freeze", freezeCPUser);
 router.patch("/:id/unfreeze", unfreezeCPUser);
 
 router.put("/:id/balance", updateCPUserBalance);
+router.patch("/:id/commission", updateCPUserCommission);
 
 router.delete("/:id", deleteCPUser);
 

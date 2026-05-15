@@ -223,6 +223,52 @@ export const updateCPUserCommission = async (req, res) => {
   }
 };
 
+// ======================= PROMOTE TO ADMIN =======================
+
+export const promoteCPUser = async (req, res) => {
+  try {
+    const user = await User.findOneAndUpdate(
+      { _id: req.params.id, childPanelOwner: req.user._id },
+      { isAdmin: true },
+      { new: true }
+    );
+    if (!user) return res.status(404).json({ message: "User not found" });
+    res.json({
+      ...user.toObject(),
+      countryCode: normalizeCountryCode(user.countryCode),
+      name: user.email.split("@")[0],
+      lastSeen: formatLastSeen(user.lastSeen),
+      userTypes: getUserTypes(user),
+    });
+  } catch (err) {
+    console.error("CP PROMOTE USER ERROR:", err);
+    res.status(500).json({ message: "Promote failed" });
+  }
+};
+
+// ======================= DEMOTE FROM ADMIN =======================
+
+export const demoteCPUser = async (req, res) => {
+  try {
+    const user = await User.findOneAndUpdate(
+      { _id: req.params.id, childPanelOwner: req.user._id },
+      { isAdmin: false },
+      { new: true }
+    );
+    if (!user) return res.status(404).json({ message: "User not found" });
+    res.json({
+      ...user.toObject(),
+      countryCode: normalizeCountryCode(user.countryCode),
+      name: user.email.split("@")[0],
+      lastSeen: formatLastSeen(user.lastSeen),
+      userTypes: getUserTypes(user),
+    });
+  } catch (err) {
+    console.error("CP DEMOTE USER ERROR:", err);
+    res.status(500).json({ message: "Demote failed" });
+  }
+};
+
 // ======================= BLOCK =======================
 
 export const blockCPUser = async (req, res) => {

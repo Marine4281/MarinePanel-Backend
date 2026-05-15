@@ -229,7 +229,7 @@ app.use("/api/cp/resellers", authMiddleware, cpOwnerOnly, updateLastSeen, cpOwne
 app.use("/api/cp/providers", authMiddleware, cpOwnerOnly, updateLastSeen, cpOwnerProviderRoutes);
 app.use("/api/cp/settings", authMiddleware, cpOwnerOnly, updateLastSeen, cpOwnerSettingsRoutes);
 app.use("/api/cp/services",authMiddleware, cpOwnerOnly, updateLastSeen, cpOwnerServiceRoutes);
-app.use("/api/cp/child-panel", authMiddleware, childPanelOnly, updateLastSeen, cpOwnerWithdrawalRoutes);
+app.use("/api/cp/withdrawals", authMiddleware, childPanelOnly, updateLastSeen, cpOwnerWithdrawalRoutes);
 
 
 /* =================================================

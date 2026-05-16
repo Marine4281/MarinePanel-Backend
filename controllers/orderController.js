@@ -167,8 +167,19 @@ export const createOrder = async (req, res) => {
 if (!category || !service || !link) {
   return res.status(400).json({ message: "All fields are required" });
 }
+// Scope service lookup to the correct owner to avoid name collisions
+// between CP services and main platform services
+const serviceQuery = { name: service, status: true };
 
-const serviceData_pre = await Service.findOne({ name: service, status: true });
+if (req.childPanel) {
+  // End user on a CP domain — only match that CP's own services
+  serviceQuery.cpOwner = req.childPanel._id;
+} else if (!req.childPanel && !req.reseller) {
+  // Main platform user — only match services with no cpOwner
+  serviceQuery.cpOwner = { $exists: false };
+}
+
+const serviceData_pre = await Service.findOne(serviceQuery);
 const isCustomCommentsOrder =
   serviceData_pre?.serviceType === "Custom Comments" ||
   serviceData_pre?.serviceType === "Custom Comments Package";
@@ -281,6 +292,8 @@ if (
 
     if (serviceData.isFree) {
       isFreeOrder = true;
+      finalCharge = 0;
+      baseCharge = 0;
 
       const maxPerClaim = Number(serviceData.freeQuantity || 0);
       const cooldown = Number(serviceData.cooldownHours || 0);

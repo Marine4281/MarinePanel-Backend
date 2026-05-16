@@ -29,8 +29,8 @@ router.get("/:id", getCPUserById);
 
 router.patch("/:id/block", blockCPUser);
 router.patch("/:id/unblock", unblockCPUser);
-router.patch("/cp/users/:id/promote", cpMiddleware, promoteCPUser);
-router.patch("/cp/users/:id/demote",  cpMiddleware, demoteCPUser);
+router.patch("/cp/users/:id/promote", promoteCPUser);
+router.patch("/cp/users/:id/demote",   demoteCPUser);
 router.patch("/:id/freeze", freezeCPUser);
 router.patch("/:id/unfreeze", unfreezeCPUser);
 

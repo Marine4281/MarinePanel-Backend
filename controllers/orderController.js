@@ -646,10 +646,15 @@ export const previewOrder = async (req, res) => {
 
     const qty = Number(quantity);
 
-    const serviceData = await Service.findOne({
-      name: service,
-      status: true,
-    });
+    const serviceQuery = { name: service, status: true };
+
+    if (req.childPanel) {
+      serviceQuery.cpOwner = req.childPanel._id;
+    } else if (!req.childPanel && !req.reseller) {
+      serviceQuery.cpOwner = { $exists: false };
+    }
+
+    const serviceData = await Service.findOne(serviceQuery);
 
     if (!serviceData) {
       return res.status(404).json({ message: "Service not found" });
@@ -672,7 +677,6 @@ export const previewOrder = async (req, res) => {
         const cpOwner = await User.findById(user.childPanelOwner);
         cpCommissionRate = Number(cpOwner?.childPanelCommissionRate || 0);
       } else if (serviceData.cpOwner) {
-        // The ordering user IS on a CP — find the CP owner by cpOwner field
         const cpOwner = await User.findById(serviceData.cpOwner);
         cpCommissionRate = Number(cpOwner?.childPanelCommissionRate || 0);
       }

@@ -13,6 +13,8 @@ import {
   updateCPUserCommission,
   getCPUserOrders,
   getCPUserTransactions,
+  promoteCPUser,
+  demoteCPUser,
 } from "../controllers/cpOwnerUserController.js";
 
 const router = express.Router();
@@ -29,8 +31,10 @@ router.get("/:id", getCPUserById);
 
 router.patch("/:id/block", blockCPUser);
 router.patch("/:id/unblock", unblockCPUser);
-router.patch("/cp/users/:id/promote", promoteCPUser);
-router.patch("/cp/users/:id/demote",   demoteCPUser);
+
+router.patch("/:id/promote", promoteCPUser);
+router.patch("/:id/demote", demoteCPUser);
+
 router.patch("/:id/freeze", freezeCPUser);
 router.patch("/:id/unfreeze", unfreezeCPUser);
 

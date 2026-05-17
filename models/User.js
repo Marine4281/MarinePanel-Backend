@@ -404,10 +404,43 @@ const userSchema = new mongoose.Schema(
     },
 
     // Last time main admin successfully billed this child panel
-    childPanelLastBilledAt: {
-      type: Date,
-      default: null,
-    },
+childPanelLastBilledAt: {
+  type: Date,
+  default: null,
+},
+
+/*
+The exact datetime when the NEXT billing is due.
+Set on activation to: activatedAt + billingIntervalDays.
+Extended by billingIntervalDays each time a cycle completes.
+When Date.now() > childPanelNextBilledAt the panel is expired
+and the owner is locked out of their dashboard.
+*/
+childPanelNextBilledAt: {
+  type: Date,
+  default: null,
+},
+
+/*
+true  = admin has set a custom fee for this specific panel.
+false = panel inherits the global default from Settings.
+Flipped to true when admin edits this panel's billing individually.
+Reset to false when admin clicks "Reset to Default".
+*/
+childPanelFeeIsCustom: {
+  type: Boolean,
+  default: false,
+},
+
+/*
+Billing interval in days for THIS panel.
+null = inherit global default from Settings.childPanelBillingIntervalDays.
+Examples: 1, 7, 14, 30, 45, 60, 90
+*/
+childPanelBillingIntervalDays: {
+  type: Number,
+  default: null,
+},
 
     // Earnings wallet — credited from reseller order commissions
     childPanelWallet: {

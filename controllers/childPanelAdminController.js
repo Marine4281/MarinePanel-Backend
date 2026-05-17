@@ -415,35 +415,3 @@ export const deactivateChildPanel = async (req, res) => {
   }
 };
 
-/* ================================================
-   GET GLOBAL CHILD PANEL SETTINGS
-   Used by admin settings panel (fees + tiers)
-================================================ */
-
-export const getChildPanelSettings = async (req, res) => {
-  try {
-    const settings = await Settings.findOne().lean();
-    if (!settings) return res.status(404).json({ message: "Settings not found" });
-
-    res.json({
-      success: true,
-      data: {
-        activationFee:      settings.childPanelActivationFee      ?? 100,
-        billingMode:        settings.childPanelBillingMode         ?? "monthly",
-        monthlyFee:         settings.childPanelMonthlyFee          ?? 20,
-        perOrderFee:        settings.childPanelPerOrderFee         ?? 0,
-        withdrawMin:        settings.childPanelWithdrawMin         ?? 10,
-        minDeposit:         settings.childPanelMinDeposit          ?? 5,
-        monthlyTiers:       settings.childPanelMonthlyTiers        ?? [],
-        offerActive:        settings.childPanelOfferActive         ?? false,
-        offerLabel:         settings.childPanelOfferLabel          ?? "Special Offer",
-        offerActivationFee: settings.childPanelOfferActivationFee  ?? 0,
-        offerMonthlyFee:    settings.childPanelOfferMonthlyFee     ?? 0,
-        offerExpiresAt:     settings.childPanelOfferExpiresAt      ?? null,
-      },
-    });
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ success: false, message: "Failed to fetch settings" });
-  }
-};

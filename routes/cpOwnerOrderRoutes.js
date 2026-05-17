@@ -1,22 +1,21 @@
 // routes/cpOwnerOrderRoutes.js
-
 import express from "express";
 import {
   getCPOrders,
-  completeCPOrder,
+  getCPOrderStats,
+  updateCPOrderStatus,
+  updateCPOrderProgress,
   refundCPOrder,
   getCPWalletStats,
-  partialCPOrder,
-  manualEditCPOrder,
 } from "../controllers/cpOwnerOrderController.js";
 
 const router = express.Router();
 
 router.get("/", getCPOrders);
-router.post("/:id/complete", completeCPOrder);
-router.post("/:id/refund", refundCPOrder);
-router.post("/:id/partial", partialCPOrder);
-router.patch("/:id/edit", manualEditCPOrder);
+router.get("/stats", getCPOrderStats);
 router.get("/wallets/stats", getCPWalletStats);
+router.post("/:id/status", updateCPOrderStatus);
+router.patch("/:id/progress", updateCPOrderProgress);
+router.post("/:id/refund", refundCPOrder);
 
 export default router;

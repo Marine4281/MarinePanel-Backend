@@ -130,16 +130,26 @@ const settingsSchema = new mongoose.Schema(
     },
 
     childPanelMonthlyTiers: {
-      type: [
-        {
-          minOrders: { type: Number, required: true, min: 0 },
-          maxOrders: { type: Number, default: null },  // null = unlimited
-          fee:       { type: Number, required: true, min: 0 },
-        },
-      ],
-      default: [],
+  type: [
+    {
+      minOrders: { type: Number, required: true, min: 0 },
+      maxOrders: { type: Number, default: null }, // null = unlimited
+      fee:       { type: Number, required: true, min: 0 },
     },
+  ],
+  default: [],
+},
 
+/*
+How many days between each billing cycle (global default).
+Admin can override per individual child panel.
+Examples: 1, 7, 14, 30, 45, 60, 90
+*/
+childPanelBillingIntervalDays: {
+  type: Number,
+  default: 30,
+  min: 1,
+},
     /*
     --------------------------------
     CHILD PANEL OFFER / PROMO SYSTEM

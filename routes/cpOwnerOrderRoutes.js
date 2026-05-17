@@ -6,15 +6,17 @@ import {
   completeCPOrder,
   refundCPOrder,
   getCPWalletStats,
+  partialCPOrder,
+  manualEditCPOrder,
 } from "../controllers/cpOwnerOrderController.js";
 
 const router = express.Router();
 
-// Auth + childPanelOnly applied in app.js for this route group
-
 router.get("/", getCPOrders);
 router.post("/:id/complete", completeCPOrder);
 router.post("/:id/refund", refundCPOrder);
+router.post("/:id/partial", partialCPOrder);
+router.patch("/:id/edit", manualEditCPOrder);
 router.get("/wallets/stats", getCPWalletStats);
 
 export default router;

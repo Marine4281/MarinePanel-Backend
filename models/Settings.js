@@ -129,6 +129,17 @@ const settingsSchema = new mongoose.Schema(
       default: 5,
     },
 
+    childPanelMonthlyTiers: {
+      type: [
+        {
+          minOrders: { type: Number, required: true, min: 0 },
+          maxOrders: { type: Number, default: null },  // null = unlimited
+          fee:       { type: Number, required: true, min: 0 },
+        },
+      ],
+      default: [],
+    },
+
     /*
     --------------------------------
     CHILD PANEL OFFER / PROMO SYSTEM

@@ -43,6 +43,7 @@ import categoryMetaRoutes from "./routes/categoryMetaRoutes.js";
 import financialRoutes from "./routes/financialRoutes.js";
 import paymentGatewayRoutes from "./routes/paymentGatewayRoutes.js";
 import adminWithdrawalRoutes from "./routes/adminWithdrawalRoutes.js";
+import childPanelGuideRoutes, { adminGuideRouter as cpAdminGuideRouter } from "./routes/childPanelGuideRoutes.js";
 
 // Child Panel Routes
 import childPanelRoutes from "./routes/childPanelRoutes.js";
@@ -56,7 +57,6 @@ import cpOwnerProviderRoutes from "./routes/cpOwnerProviderRoutes.js";
 import cpOwnerSettingsRoutes from "./routes/cpOwnerSettingsRoutes.js";
 import cpOwnerWithdrawalRoutes from "./routes/cpOwnerWithdrawalRoutes.js";
 import cpOwnerServiceRoutes from "./routes/cpOwnerServiceRoutes.js";
-import childPanelGuideRoutes, { adminGuideRouter as cpAdminGuideRouter } from "./routes/childPanelGuideRoutes.js";
 import cpOwnerFinancialRoutes from "./routes/cpOwnerFinancialRoutes.js";
 import cpOwnerResellerGuidesRoutes from "./routes/cpOwnerResellerGuidesRoutes.js";
 
@@ -253,5 +253,7 @@ app.use("/api/category-meta", categoryMetaRoutes);
 app.use("/api/admin/financial", authMiddleware, adminOnly, financialRoutes);
 app.use("/api/admin/withdrawals", authMiddleware, adminOnly, adminWithdrawalRoutes);
 app.use("/api", paymentGatewayRoutes);
+app.use("/api/child-panel",             childPanelGuideRoutes);   // → /api/child-panel/guides
+app.use("/api/admin/child-panel-guides", cpGuideAdminRoutes); 
 
 export default app;

@@ -260,3 +260,83 @@ export const getCPWalletStats = async (req, res) => {
     res.status(500).json({ message: "Failed to fetch wallet stats" });
   }
 };
+
+// ======================= PARTIAL ORDER =======================
+// Child panel owner marks an order as partial with a delivered count.
+
+export const partialCPOrder = async (req, res) => {
+  try {
+    const { quantityDelivered } = req.body;
+
+    if (
+      quantityDelivered === undefined ||
+      isNaN(Number(quantityDelivered)) ||
+      Number(quantityDelivered) < 0
+    ) {
+      return res.status(400).json({ message: "Invalid quantityDelivered value" });
+    }
+
+    const order = await Order.findOne({
+      _id: req.params.id,
+      childPanelOwner: req.user._id,
+    }).populate("userId", "email balance");
+
+    if (!order) return res.status(404).json({ message: "Order not found" });
+    if (order.status === "completed" || order.status === "refunded") {
+      return res.status(400).json({ message: "Cannot partial a completed or refunded order" });
+    }
+
+    order.status = "partial";
+    order.quantityDelivered = Number(quantityDelivered);
+    await order.save();
+
+    const io = req.app.get("io");
+    if (io) io.emit("order:update", formatOrder(order));
+
+    res.json({ message: "Order marked as partial", order: formatOrder(order) });
+  } catch (err) {
+    console.error("CP PARTIAL ORDER ERROR:", err);
+    res.status(500).json({ message: "Failed to mark order as partial" });
+  }
+};
+
+// ======================= MANUAL EDIT ORDER =======================
+// Child panel owner manually edits an order's progress, status, or link.
+
+export const manualEditCPOrder = async (req, res) => {
+  try {
+    const { status, quantityDelivered, link } = req.body;
+
+    const ALLOWED_STATUSES = ["pending", "processing", "completed", "partial", "failed", "refunded"];
+
+    const order = await Order.findOne({
+      _id: req.params.id,
+      childPanelOwner: req.user._id,
+    }).populate("userId", "email balance");
+
+    if (!order) return res.status(404).json({ message: "Order not found" });
+
+    if (status && !ALLOWED_STATUSES.includes(status)) {
+      return res.status(400).json({ message: "Invalid status" });
+    }
+
+    if (status) order.status = status;
+    if (quantityDelivered !== undefined && !isNaN(Number(quantityDelivered))) {
+      order.quantityDelivered = Math.max(0, Math.min(Number(quantityDelivered), order.quantity));
+    }
+    if (link !== undefined) order.link = link;
+
+    // If manually set to completed, fill delivery
+    if (status === "completed") order.quantityDelivered = order.quantity;
+
+    await order.save();
+
+    const io = req.app.get("io");
+    if (io) io.emit("order:update", formatOrder(order));
+
+    res.json({ message: "Order updated", order: formatOrder(order) });
+  } catch (err) {
+    console.error("CP MANUAL EDIT ORDER ERROR:", err);
+    res.status(500).json({ message: "Failed to update order" });
+  }
+};

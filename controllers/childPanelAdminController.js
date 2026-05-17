@@ -118,47 +118,6 @@ export const getAllChildPanels = async (req, res) => {
   }
 };
 
-/* ================================================
-   GET CHILD PANEL DETAILS  (resellers + users + orders)
-================================================ */
-export const toggleChildPanelStatus = async (req, res) => {
-  try {
-    const { id }     = req.params;
-    const { reason } = req.body || {};
-
-    if (!isValidId(id)) {
-      return res.status(400).json({ success: false, message: "Invalid ID" });
-    }
-
-    const cp = await User.findById(id);
-    if (!cp || !cp.isChildPanel) {
-      return res.status(404).json({ success: false, message: "Child panel not found" });
-    }
-
-    cp.childPanelIsActive = !cp.childPanelIsActive;
-
-    if (!cp.childPanelIsActive) {
-      // Suspending — store the reason (shown to CP owner on their dashboard)
-      cp.childPanelSuspendReason =
-        (reason && reason.trim()) || "Your panel has been suspended. Please contact support.";
-    } else {
-      // Reactivating — clear reason
-      cp.childPanelSuspendReason = null;
-    }
-
-    await cp.save();
-
-    res.json({
-      success: true,
-      message: `Child panel ${cp.childPanelIsActive ? "activated" : "suspended"}`,
-      isActive: cp.childPanelIsActive,
-    });
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ success: false, message: "Failed to update status" });
-  }
-};
-    
 
 /* ================================================
    TOGGLE CHILD PANEL STATUS  (suspend / activate)

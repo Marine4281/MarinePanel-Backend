@@ -374,3 +374,100 @@ export const deactivateChildPanel = async (req, res) => {
   }
 };
 
+//CHILD PANEL DETAILS
+export const getChildPanelDetails = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const resellerPage = Number(req.query.resellerPage) || 1;
+    const userPage     = Number(req.query.userPage)     || 1;
+    const orderPage    = Number(req.query.orderPage)    || 1;
+    const limit        = Number(req.query.limit)        || 15;
+
+    if (!isValidId(id)) {
+      return res.status(400).json({ success: false, message: "Invalid ID" });
+    }
+
+    const cp = await User.findById(id).lean();
+    if (!cp || !cp.isChildPanel) {
+      return res.status(404).json({ success: false, message: "Child panel not found" });
+    }
+
+    const [resellers, users, orders, totalResellers, totalUsers, totalOrders] =
+      await Promise.all([
+        User.find({ isReseller: true, childPanelOwner: id })
+          .select("email phone brandName resellerDomain isSuspended createdAt")
+          .sort({ createdAt: -1 })
+          .skip((resellerPage - 1) * limit)
+          .limit(limit)
+          .lean(),
+
+        User.find({
+          childPanelOwner: id,
+          isReseller:   { $ne: true },
+          isAdmin:      { $ne: true },
+          isChildPanel: { $ne: true },
+        })
+          .select("email phone balance isBlocked isFrozen lastSeen createdAt")
+          .sort({ createdAt: -1 })
+          .skip((userPage - 1) * limit)
+          .limit(limit)
+          .lean(),
+
+        Order.find({ childPanelOwner: id })
+          .sort({ createdAt: -1 })
+          .skip((orderPage - 1) * limit)
+          .limit(limit)
+          .lean(),
+
+        User.countDocuments({ isReseller: true, childPanelOwner: id }),
+        User.countDocuments({
+          childPanelOwner: id,
+          isReseller:   { $ne: true },
+          isAdmin:      { $ne: true },
+          isChildPanel: { $ne: true },
+        }),
+        Order.countDocuments({ childPanelOwner: id }),
+      ]);
+
+    const allOrders = await Order.find({ childPanelOwner: id }).lean();
+    let totalRevenue = 0;
+    let totalEarnings = 0;
+    for (const o of allOrders) {
+      if (o.status !== "failed" && o.status !== "refunded") {
+        totalRevenue += Number(o.charge || 0);
+      }
+      if (o.childPanelEarningsCredited) {
+        totalEarnings += Number(o.childPanelCommission || 0);
+      }
+    }
+
+    res.json({
+      success: true,
+      data: {
+        childPanel: cp,
+        stats: {
+          childPanelWallet: formatNumber(cp.childPanelWallet),
+          totalOrders:      allOrders.length,
+          totalRevenue:     formatNumber(totalRevenue),
+          totalEarnings:    formatNumber(totalEarnings),
+          totalResellers,
+          totalUsers,
+        },
+        resellers,
+        users,
+        orders,
+        pagination: {
+          limit,
+          resellerPage, totalResellers, resellerPages: Math.ceil(totalResellers / limit),
+          userPage,     totalUsers,     userPages:     Math.ceil(totalUsers     / limit),
+          orderPage,    totalOrders,    orderPages:    Math.ceil(totalOrders    / limit),
+        },
+      },
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ success: false, message: "Failed to fetch details" });
+  }
+};
+

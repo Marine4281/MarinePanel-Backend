@@ -220,37 +220,6 @@ export const getCPFinancialUsers = async (req, res) => {
   }
 };
 
-// ─── GET /api/cp/financial/withdrawals ────────────────────────────
-// CP owner sees their OWN withdrawal history (not resellers').
-// Resellers cannot withdraw — only the CP owner can.
-export const getCPWithdrawals = async (req, res) => {
-  try {
-    const cpOwner = req.user;
-    const { status, page = 1, limit = 20 } = req.query;
-    const skip = (Number(page) - 1) * Number(limit);
-
-    const wallet = await Wallet.findOne({ user: cpOwner._id }).lean();
-    if (!wallet) return res.json({ data: [], total: 0 });
-
-    let txns = wallet.transactions.filter((t) => t.type === "Withdrawal");
-    if (status) txns = txns.filter((t) => t.status === status);
-    txns.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-
-    const total = txns.length;
-    const paginated = txns.slice(skip, skip + Number(limit)).map((t) => ({
-      txId:      t._id,
-      amount:    Math.abs(t.amount),
-      status:    t.status,
-      note:      t.note ?? "",
-      createdAt: t.createdAt,
-    }));
-
-    res.json({ data: paginated, total, page: Number(page), pages: Math.ceil(total / Number(limit)) });
-  } catch (err) {
-    console.error("CP WITHDRAWALS ERROR:", err);
-    res.status(500).json({ message: "Server error" });
-  }
-};
 
 // ─── GET /api/cp/financial/reseller-earnings ──────────────────────
 export const getCPResellerEarnings = async (req, res) => {

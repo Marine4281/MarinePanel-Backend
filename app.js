@@ -43,7 +43,8 @@ import categoryMetaRoutes from "./routes/categoryMetaRoutes.js";
 import financialRoutes from "./routes/financialRoutes.js";
 import paymentGatewayRoutes from "./routes/paymentGatewayRoutes.js";
 import adminWithdrawalRoutes from "./routes/adminWithdrawalRoutes.js";
-import childPanelGuideRoutes, { adminGuideRouter as cpAdminGuideRouter } from "./routes/childPanelGuideRoutes.js";
+import childPanelGuideRoutes, { adminGuideRouter as cpGuideAdminRoutes }
+  from "./routes/childPanelGuideRoutes.js";
 
 // Child Panel Routes
 import childPanelRoutes from "./routes/childPanelRoutes.js";

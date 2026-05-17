@@ -7,6 +7,7 @@ import {
   getChildPanelSettings,
   toggleChildPanelStatus,
   updateChildPanelBilling,
+  resetChildPanelBilling, 
   updateChildPanelCommission,
   updateChildPanelOffer,
   updateChildPanelDefaultFees,
@@ -27,6 +28,8 @@ router.put("/settings/fees",      protect, adminOnly, updateChildPanelDefaultFee
 
 // Global offer/promo
 router.put("/settings/offer",     protect, adminOnly, updateChildPanelOffer);
+//RESET
+router.put("/:id/billing/reset", protect, adminOnly, resetChildPanelBilling);
 
 // Per-panel operations
 router.get("/:id",                protect, adminOnly, getChildPanelDetails);

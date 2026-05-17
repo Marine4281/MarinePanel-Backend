@@ -367,6 +367,12 @@ const userSchema = new mongoose.Schema(
       index: true,
     },
 
+    childPanelSuspendReason: {
+      type: String,
+      default: null,
+      trim: true,
+    },
+
     /*
     Billing mode assigned by main admin to this child panel.
     monthly   = flat fee charged every month

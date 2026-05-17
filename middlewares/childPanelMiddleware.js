@@ -125,12 +125,22 @@ export const cpOwnerOnly = (req, res, next) => {
   }
 
   if (!user.childPanelIsActive) {
-    return res.status(403).json({ message: "Your panel has been suspended. Contact support." });
+    return res.status(403).json({
+      code: "PANEL_SUSPENDED",
+      message: user.childPanelSuspendReason || "Your panel has been suspended. Contact support.",
+    });
   }
 
-  // Attach owner as req.childPanel so controllers that read
-  // req.childPanel._id continue to work without any changes
-  req.childPanel = user;
+  // Subscription expiry check
+  if (user.childPanelNextBilledAt && new Date() > new Date(user.childPanelNextBilledAt)) {
+    return res.status(403).json({
+      code: "SUBSCRIPTION_EXPIRED",
+      message:
+        "Your subscription has expired. Please contact the platform admin to renew your plan.",
+      expiredAt: user.childPanelNextBilledAt,
+    });
+  }
 
+  req.childPanel = user;
   next();
 };

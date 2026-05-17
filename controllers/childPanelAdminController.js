@@ -168,7 +168,7 @@ export const toggleChildPanelStatus = async (req, res) => {
 export const updateChildPanelBilling = async (req, res) => {
   try {
     const { id } = req.params;
-    const { billingMode, monthlyFee, perOrderFee } = req.body;
+    const { billingMode, monthlyFee, perOrderFee, billingIntervalDays } = req.body;
 
     if (!isValidId(id)) {
       return res.status(400).json({ success: false, message: "Invalid ID" });
@@ -179,9 +179,25 @@ export const updateChildPanelBilling = async (req, res) => {
       return res.status(404).json({ success: false, message: "Child panel not found" });
     }
 
-    if (billingMode)           cp.childPanelBillingMode  = billingMode;
-    if (monthlyFee  !== undefined) cp.childPanelMonthlyFee  = Number(monthlyFee);
-    if (perOrderFee !== undefined) cp.childPanelPerOrderFee = Number(perOrderFee);
+    if (billingMode)               cp.childPanelBillingMode         = billingMode;
+    if (monthlyFee  !== undefined) cp.childPanelMonthlyFee          = Number(monthlyFee);
+    if (perOrderFee !== undefined) cp.childPanelPerOrderFee         = Number(perOrderFee);
+
+    // billingIntervalDays: null means "use global", a number means custom
+    if (billingIntervalDays !== undefined) {
+      cp.childPanelBillingIntervalDays = billingIntervalDays === null
+        ? null
+        : Math.max(1, Number(billingIntervalDays));
+    }
+
+    // Recalculate next bill date from today using the new interval
+    const settings = await Settings.findOne().lean();
+    const effectiveInterval = cp.childPanelBillingIntervalDays
+      ?? Number(settings?.childPanelBillingIntervalDays ?? 30);
+    const now = new Date();
+    cp.childPanelLastBilledAt  = now;
+    cp.childPanelNextBilledAt  = new Date(now.getTime() + effectiveInterval * 24 * 60 * 60 * 1000);
+    cp.childPanelFeeIsCustom   = true;
 
     await cp.save();
     res.json({ success: true, message: "Billing updated" });
@@ -190,7 +206,6 @@ export const updateChildPanelBilling = async (req, res) => {
     res.status(500).json({ success: false, message: "Failed to update billing" });
   }
 };
-
 /* ================================================
    UPDATE CHILD PANEL COMMISSION RATE
 ================================================ */
@@ -246,6 +261,7 @@ export const getChildPanelSettings = async (req, res) => {
         withdrawMin:        settings.childPanelWithdrawMin         ?? 10,
         minDeposit:         settings.childPanelMinDeposit          ?? 5,
         monthlyTiers:       settings.childPanelMonthlyTiers        ?? [],
+        billingIntervalDays:  settings.childPanelBillingIntervalDays    ?? 30,
         offerActive:        settings.childPanelOfferActive         ?? false,
         offerLabel:         settings.childPanelOfferLabel          ?? "Special Offer",
         offerActivationFee: settings.childPanelOfferActivationFee  ?? 2,
@@ -302,6 +318,7 @@ export const updateChildPanelDefaultFees = async (req, res) => {
       withdrawMin,
       minDeposit,
       monthlyTiers,   // array of { minOrders, maxOrders, fee }
+      billingIntervalDays,
     } = req.body;
 
     const settings = await Settings.findOne();
@@ -313,6 +330,9 @@ export const updateChildPanelDefaultFees = async (req, res) => {
     if (perOrderFee   !== undefined) settings.childPanelPerOrderFee   = Number(perOrderFee);
     if (withdrawMin   !== undefined) settings.childPanelWithdrawMin   = Number(withdrawMin);
     if (minDeposit    !== undefined) settings.childPanelMinDeposit    = Number(minDeposit);
+    if (billingIntervalDays !== undefined) {
+  settings.childPanelBillingIntervalDays = Math.max(1, Number(billingIntervalDays));
+     }
 
     // Validate and save tiered billing
     if (Array.isArray(monthlyTiers)) {
@@ -393,6 +413,22 @@ export const getChildPanelDetails = async (req, res) => {
       return res.status(404).json({ success: false, message: "Child panel not found" });
     }
 
+    // Resolve effective billing interval (panel override → global default)
+    const settings = await Settings.findOne().lean();
+    const effectiveIntervalDays =
+      cp.childPanelBillingIntervalDays ??
+      Number(settings?.childPanelBillingIntervalDays ?? 30);
+
+    // Subscription status derived fields
+    const now = new Date();
+    const nextBilledAt = cp.childPanelNextBilledAt
+      ? new Date(cp.childPanelNextBilledAt)
+      : null;
+    const subscriptionExpired = nextBilledAt ? now > nextBilledAt : false;
+    const daysUntilExpiry = nextBilledAt
+      ? Math.ceil((nextBilledAt - now) / (1000 * 60 * 60 * 24))
+      : null;
+
     const [resellers, users, orders, totalResellers, totalUsers, totalOrders] =
       await Promise.all([
         User.find({ isReseller: true, childPanelOwner: id })
@@ -430,27 +466,54 @@ export const getChildPanelDetails = async (req, res) => {
         Order.countDocuments({ childPanelOwner: id }),
       ]);
 
-    const allOrders = await Order.find({ childPanelOwner: id }).lean();
-    let totalRevenue = 0;
-    let totalEarnings = 0;
-    for (const o of allOrders) {
-      if (o.status !== "failed" && o.status !== "refunded") {
-        totalRevenue += Number(o.charge || 0);
-      }
-      if (o.childPanelEarningsCredited) {
-        totalEarnings += Number(o.childPanelCommission || 0);
-      }
-    }
+    // Use aggregation for revenue/earnings so we never load all orders into memory
+    const [revenueAgg] = await Order.aggregate([
+      { $match: { childPanelOwner: new mongoose.Types.ObjectId(id) } },
+      {
+        $group: {
+          _id: null,
+          totalOrders: { $sum: 1 },
+          totalRevenue: {
+            $sum: {
+              $cond: [
+                { $not: [{ $in: ["$status", ["failed", "refunded"]] }] },
+                { $toDouble: { $ifNull: ["$charge", 0] } },
+                0,
+              ],
+            },
+          },
+          totalEarnings: {
+            $sum: {
+              $cond: [
+                { $eq: ["$childPanelEarningsCredited", true] },
+                { $toDouble: { $ifNull: ["$childPanelCommission", 0] } },
+                0,
+              ],
+            },
+          },
+        },
+      },
+    ]);
+
+    const totalOrderCount = revenueAgg?.totalOrders   ?? 0;
+    const totalRevenue    = revenueAgg?.totalRevenue   ?? 0;
+    const totalEarnings   = revenueAgg?.totalEarnings  ?? 0;
 
     res.json({
       success: true,
       data: {
-        childPanel: cp,
+        childPanel: {
+          ...cp,
+          // Attach derived billing fields so the frontend never has to recompute
+          effectiveIntervalDays,
+          subscriptionExpired,
+          daysUntilExpiry,
+        },
         stats: {
-          childPanelWallet: formatNumber(cp.childPanelWallet),
-          totalOrders:      allOrders.length,
-          totalRevenue:     formatNumber(totalRevenue),
-          totalEarnings:    formatNumber(totalEarnings),
+          childPanelWallet:  formatNumber(cp.childPanelWallet),
+          totalOrders:       totalOrderCount,
+          totalRevenue:      formatNumber(totalRevenue),
+          totalEarnings:     formatNumber(totalEarnings),
           totalResellers,
           totalUsers,
         },
@@ -468,6 +531,45 @@ export const getChildPanelDetails = async (req, res) => {
   } catch (error) {
     console.error(error);
     res.status(500).json({ success: false, message: "Failed to fetch details" });
+  }
+};
+
+//RESET CHILDPANEL BILLING
+export const resetChildPanelBilling = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    if (!isValidId(id)) {
+      return res.status(400).json({ success: false, message: "Invalid ID" });
+    }
+
+    const [cp, settings] = await Promise.all([
+      User.findById(id),
+      Settings.findOne().lean(),
+    ]);
+
+    if (!cp || !cp.isChildPanel) {
+      return res.status(404).json({ success: false, message: "Child panel not found" });
+    }
+
+    // Copy global defaults onto this panel
+    cp.childPanelBillingMode         = settings?.childPanelBillingMode   ?? "monthly";
+    cp.childPanelMonthlyFee          = Number(settings?.childPanelMonthlyFee  ?? 20);
+    cp.childPanelPerOrderFee         = Number(settings?.childPanelPerOrderFee ?? 0);
+    cp.childPanelBillingIntervalDays = null; // null = follow global
+    cp.childPanelFeeIsCustom         = false;
+
+    // Reset the billing clock from today
+    const intervalDays = Number(settings?.childPanelBillingIntervalDays ?? 30);
+    const now = new Date();
+    cp.childPanelLastBilledAt = now;
+    cp.childPanelNextBilledAt = new Date(now.getTime() + intervalDays * 24 * 60 * 60 * 1000);
+
+    await cp.save();
+    res.json({ success: true, message: "Billing reset to global default" });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ success: false, message: "Failed to reset billing" });
   }
 };
 

@@ -24,11 +24,18 @@ const resellerGuideSchema = new mongoose.Schema(
       default: true,
     },
 
-    // Where this guide should appear
     placement: {
       type: String,
       enum: ["activation", "dashboard", "both"],
       default: "activation",
+    },
+
+    // null = admin-created (shown to all resellers on main platform)
+    // ObjectId = CP owner-created (shown only to their resellers)
+    cpOwner: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      default: null,
     },
   },
   {

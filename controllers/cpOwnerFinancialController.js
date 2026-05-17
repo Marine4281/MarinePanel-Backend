@@ -310,3 +310,171 @@ export const getCPResellerEarnings = async (req, res) => {
     res.status(500).json({ message: "Server error" });
   }
 };
+
+// ─── GET /api/cp/financial/withdrawals ────────────────────────────
+// CP owner sees withdrawal requests from THEIR resellers, just like
+// admin sees CP owner withdrawal requests.
+export const getCPWithdrawals = async (req, res) => {
+  try {
+    const cpOwner = req.user;
+    const { status, page = 1, limit = 20 } = req.query;
+    const skip = (Number(page) - 1) * Number(limit);
+
+    // Get all resellers under this CP owner
+    const resellers = await User.find({
+      childPanelOwner: cpOwner._id,
+      isReseller: true,
+    }).select("_id email").lean();
+
+    const resellerIds = resellers.map((r) => r._id);
+    const resellerMap = {};
+    resellers.forEach((r) => { resellerMap[r._id.toString()] = r; });
+
+    const wallets = await Wallet.find({ user: { $in: resellerIds } }).lean();
+
+    const all = [];
+    wallets.forEach((wallet) => {
+      wallet.transactions?.forEach((tx) => {
+        if (tx.type !== "Withdrawal") return;
+        if (status && tx.status !== status) return;
+        const reseller = resellerMap[wallet.user.toString()];
+        all.push({
+          walletId:  wallet._id,
+          txId:      tx._id,
+          userId:    wallet.user,
+          email:     reseller?.email ?? "—",
+          amount:    Math.abs(tx.amount),
+          status:    tx.status,
+          note:      tx.note ?? "",
+          createdAt: tx.createdAt,
+        });
+      });
+    });
+
+    all.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+
+    const total = all.length;
+    const paginated = all.slice(skip, skip + Number(limit));
+
+    res.json({ data: paginated, total, page: Number(page), pages: Math.ceil(total / Number(limit)) });
+  } catch (err) {
+    console.error("CP WITHDRAWALS ERROR:", err);
+    res.status(500).json({ message: "Server error" });
+  }
+};
+// ─── POST /api/cp/financial/withdrawals/:userId/:txId/approve ─────
+export const cpApproveWithdrawal = async (req, res) => {
+  try {
+    const cpOwner = req.user;
+    const { userId, txId } = req.params;
+
+    // Verify this reseller belongs to this CP owner
+    const reseller = await User.findOne({ _id: userId, childPanelOwner: cpOwner._id, isReseller: true });
+    if (!reseller) return res.status(403).json({ message: "Not authorized" });
+
+    const wallet = await Wallet.findOne({ user: userId });
+    if (!wallet) return res.status(404).json({ message: "Wallet not found" });
+
+    const tx = wallet.transactions.id(txId);
+    if (!tx || tx.type !== "Withdrawal") return res.status(404).json({ message: "Withdrawal not found" });
+    if (tx.status !== "Pending") return res.status(400).json({ message: "Withdrawal is not pending" });
+
+    tx.status = "Completed";
+    wallet.balance = wallet.transactions
+      .filter((t) => t.status === "Completed")
+      .reduce((s, t) => s + (Number(t.amount) || 0), 0);
+
+    await wallet.save();
+
+    const io = req.app.get("io");
+    if (io) io.emit("wallet:update", { userId, balance: wallet.balance });
+
+    res.json({ success: true, message: "Withdrawal approved" });
+  } catch (err) {
+    console.error("CP APPROVE WITHDRAWAL ERROR:", err);
+    res.status(500).json({ message: "Server error" });
+  }
+};
+
+// ─── POST /api/cp/financial/withdrawals/:userId/:txId/reject ──────
+export const cpRejectWithdrawal = async (req, res) => {
+  try {
+    const cpOwner = req.user;
+    const { userId, txId } = req.params;
+    const { reason } = req.body;
+
+    const reseller = await User.findOne({ _id: userId, childPanelOwner: cpOwner._id, isReseller: true });
+    if (!reseller) return res.status(403).json({ message: "Not authorized" });
+
+    const wallet = await Wallet.findOne({ user: userId });
+    if (!wallet) return res.status(404).json({ message: "Wallet not found" });
+
+    const tx = wallet.transactions.id(txId);
+    if (!tx || tx.type !== "Withdrawal") return res.status(404).json({ message: "Withdrawal not found" });
+    if (tx.status !== "Pending") return res.status(400).json({ message: "Withdrawal is not pending" });
+
+    // Refund: reverse the deduction by adding a positive Completed transaction
+    tx.status = "Failed";
+    wallet.transactions.push({
+      type:      "Withdrawal Refund",
+      amount:    Math.abs(tx.amount),
+      status:    "Completed",
+      note:      reason ? `Rejected: ${reason}` : "Withdrawal rejected",
+      createdAt: new Date(),
+    });
+
+    wallet.balance = wallet.transactions
+      .filter((t) => t.status === "Completed")
+      .reduce((s, t) => s + (Number(t.amount) || 0), 0);
+
+    await wallet.save();
+
+    const io = req.app.get("io");
+    if (io) io.emit("wallet:update", { userId, balance: wallet.balance });
+
+    res.json({ success: true, message: "Withdrawal rejected and amount refunded" });
+  } catch (err) {
+    console.error("CP REJECT WITHDRAWAL ERROR:", err);
+    res.status(500).json({ message: "Server error" });
+  }
+};
+
+// ─── PATCH /api/cp/financial/withdrawals/:userId/:txId/status ─────
+export const cpSetWithdrawalStatus = async (req, res) => {
+  try {
+    const cpOwner = req.user;
+    const { userId, txId } = req.params;
+    const { status } = req.body;
+
+    const allowed = ["Completed", "Failed", "Processing"];
+    if (!allowed.includes(status)) {
+      return res.status(400).json({ message: "Invalid status. Use: Completed, Failed, Processing" });
+    }
+
+    const reseller = await User.findOne({ _id: userId, childPanelOwner: cpOwner._id, isReseller: true });
+    if (!reseller) return res.status(403).json({ message: "Not authorized" });
+
+    const wallet = await Wallet.findOne({ user: userId });
+    if (!wallet) return res.status(404).json({ message: "Wallet not found" });
+
+    const tx = wallet.transactions.id(txId);
+    if (!tx || tx.type !== "Withdrawal") return res.status(404).json({ message: "Withdrawal not found" });
+
+    const previous = tx.status;
+    tx.status = status;
+
+    wallet.balance = wallet.transactions
+      .filter((t) => t.status === "Completed")
+      .reduce((s, t) => s + (Number(t.amount) || 0), 0);
+
+    await wallet.save();
+
+    const io = req.app.get("io");
+    if (io) io.emit("wallet:update", { userId, balance: wallet.balance });
+
+    res.json({ success: true, message: `Status changed from ${previous} → ${status}` });
+  } catch (err) {
+    console.error("CP SET WITHDRAWAL STATUS ERROR:", err);
+    res.status(500).json({ message: "Server error" });
+  }
+};

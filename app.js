@@ -56,7 +56,7 @@ import cpOwnerProviderRoutes from "./routes/cpOwnerProviderRoutes.js";
 import cpOwnerSettingsRoutes from "./routes/cpOwnerSettingsRoutes.js";
 import cpOwnerWithdrawalRoutes from "./routes/cpOwnerWithdrawalRoutes.js";
 import cpOwnerServiceRoutes from "./routes/cpOwnerServiceRoutes.js";
-
+import childPanelGuideRoutes, { adminGuideRouter as cpAdminGuideRouter } from "./routes/childPanelGuideRoutes.js";
 
 // Middleware
 import { protect as authMiddleware } from "./middlewares/authMiddleware.js";
@@ -230,7 +230,7 @@ app.use("/api/cp/providers", authMiddleware, cpOwnerOnly, updateLastSeen, cpOwne
 app.use("/api/cp/settings", authMiddleware, cpOwnerOnly, updateLastSeen, cpOwnerSettingsRoutes);
 app.use("/api/cp/services",authMiddleware, cpOwnerOnly, updateLastSeen, cpOwnerServiceRoutes);
 app.use("/api/cp/withdrawals", authMiddleware, childPanelOnly, updateLastSeen, cpOwnerWithdrawalRoutes);
-
+app.use("/api/child-panel/guides", childPanelGuideRoutes);
 
 /* =================================================
    ADMIN ROUTES

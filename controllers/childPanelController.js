@@ -228,12 +228,20 @@ export const activateChildPanel = async (req, res) => {
     user.childPanelSlug = finalSlug;
     user.childPanelDomain = cleanDomain;    // null if no custom domain given
 
-    // Billing — inherited from admin settings at time of activation
-    user.childPanelBillingMode = billingMode;
-    user.childPanelMonthlyFee = monthlyFee;
-    user.childPanelPerOrderFee = perOrderFee;
-    user.childPanelLastBilledAt = new Date();
 
+     // Billing — inherited from admin settings at time of activation
+     const intervalDays = Number(settings?.childPanelBillingIntervalDays ?? 30);
+     const now = new Date();
+     const nextBill = new Date(now.getTime() + intervalDays * 24 * 60 * 60 * 1000);
+
+      user.childPanelBillingMode          = billingMode;
+      user.childPanelMonthlyFee           = monthlyFee;
+      user.childPanelPerOrderFee          = perOrderFee;
+      user.childPanelLastBilledAt         = now;
+      user.childPanelNextBilledAt         = nextBill;
+      user.childPanelBillingIntervalDays  = null; // null = use global default
+      user.childPanelFeeIsCustom          = false;
+     
     // Defaults the CP owner can change later from their settings page
     user.childPanelWithdrawMin = withdrawMin;
     user.childPanelResellerActivationFee = 25;

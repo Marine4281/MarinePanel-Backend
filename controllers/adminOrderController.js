@@ -75,32 +75,42 @@ export const getAllOrders = async (req, res) => {
     const totalPages = Math.ceil(totalOrders / limitNum);
 
     const ordersRaw = await Order.find(orderQuery)
-      .populate({ path: "userId", select: "email balance", options: { lean: true } })
-      .sort({ createdAt: -1 })
-      .skip((pageNum - 1) * limitNum)
-      .limit(limitNum)
-      .lean();
+     .populate({ path: "userId", select: "email balance" })
+     .populate({ path: "childPanelOwner", select: "email balance" })
+     .sort({ createdAt: -1 })
+     .skip((pageNum - 1) * limitNum)
+     .limit(limitNum)
+     .lean();
 
-    const orders = ordersRaw.map((order) => ({
-      _id: order._id,
-      orderId: order.orderId,
-      service: order.service,
-      link: order.link,
-      quantity: order.quantity,
-      quantityDelivered: order.quantityDelivered || 0,
-      charge: order.charge,
-      status: order.status,
-      providerStatus: order.providerStatus,
-      createdAt: order.createdAt,
-      user: order.userId
-        ? {
-            _id: order.userId._id,
-            email: order.userId.email,
-            username: order.userId.email?.split("@")[0] || "",
-            balance: order.userId.balance || 0,
-          }
-        : { _id: null, email: "Unknown", username: "", balance: 0 },
-    }));
+    const orders = ordersRaw.map((order) => {
+      // If this order belongs to a child panel, show the CP owner as the user
+     // Admin should not deal with CP end-users directly
+     const displayUser = order.childPanelOwner
+       ? order.childPanelOwner  // already populated below
+       : order.userId;
+
+   return {
+    _id: order._id,
+    orderId: order.orderId,
+    service: order.service,
+    link: order.link,
+    quantity: order.quantity,
+    quantityDelivered: order.quantityDelivered || 0,
+    charge: order.charge,
+    status: order.status,
+    providerStatus: order.providerStatus,
+    createdAt: order.createdAt,
+    isChildPanelOrder: !!order.childPanelOwner,
+    user: displayUser
+      ? {
+          _id: displayUser._id,
+          email: displayUser.email,
+          username: displayUser.email?.split("@")[0] || "",
+          balance: displayUser.balance || 0,
+        }
+      : { _id: null, email: "Unknown", username: "", balance: 0 },
+  };
+});
 
     if (req.user?._id) {
       await logAdminAction({

@@ -54,14 +54,7 @@ export const protect = async (req, res, next) => {
       });
     }
 
-    // 7️⃣ Child panel suspension check
-    // If this user IS a child panel owner and their panel
-    // has been suspended by admin, block all requests
-    if (user.isChildPanel && !user.childPanelIsActive) {
-      return res.status(403).json({
-        message: "Your panel has been suspended. Contact support.",
-      });
-    }
+    
 
     // 8️⃣ Attach user
     req.user = user;

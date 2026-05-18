@@ -56,7 +56,7 @@ export const detectChildPanelDomain = async (req, res, next) => {
     childPanel = await User.findOne({
       isChildPanel: true,
       childPanelDomain: host,
-      childPanelIsActive: true,
+      
     });
 
     /*
@@ -69,7 +69,7 @@ export const detectChildPanelDomain = async (req, res, next) => {
       childPanel = await User.findOne({
         isChildPanel: true,
         childPanelSlug: slug,
-        childPanelIsActive: true,
+        
       });
     }
 

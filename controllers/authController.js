@@ -168,13 +168,7 @@ export const login = async (req, res) => {
       });
     }
 
-    // If this user is a child panel owner and their panel is suspended
-    if (user.isChildPanel && !user.childPanelIsActive) {
-      return res.status(403).json({
-        message: "Your panel has been suspended. Contact support.",
-      });
-    }
-
+    
     const token = generateToken(user);
     res.cookie("token", token, getCookieOptions());
 

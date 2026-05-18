@@ -169,17 +169,29 @@ if (!category || !service || !link) {
 }
 // Scope service lookup to the correct owner to avoid name collisions
 // between CP services and main platform services
-const serviceQuery = { name: service, status: true };
+    const serviceQuery = { name: service, status: true };
+
+let serviceData_pre = null;
 
 if (req.childPanel) {
-  // End user on a CP domain — only match that CP's own services
-  serviceQuery.cpOwner = req.childPanel._id;
-} else if (!req.childPanel && !req.reseller) {
-  // Main platform user — only match services with no cpOwner
-  serviceQuery.cpOwner = { $exists: false };
-}
+  // 1. Try to find a service owned by this CP (imported from their own provider)
+  serviceData_pre = await Service.findOne({ ...serviceQuery, cpOwner: req.childPanel._id });
 
-const serviceData_pre = await Service.findOne(serviceQuery);
+  // 2. If not found, fall back to main platform services re-sold by this CP
+  //    (services the CP owner enabled via availableToChildPanels)
+  if (!serviceData_pre) {
+    serviceData_pre = await Service.findOne({
+      ...serviceQuery,
+      cpOwner: null,
+      availableToChildPanels: true,
+    });
+  }
+} else if (!req.reseller) {
+  // Main platform user — only main platform services
+  serviceData_pre = await Service.findOne({ ...serviceQuery, cpOwner: { $exists: false } });
+} else {
+  serviceData_pre = await Service.findOne(serviceQuery);
+}
 const isCustomCommentsOrder =
   serviceData_pre?.serviceType === "Custom Comments" ||
   serviceData_pre?.serviceType === "Custom Comments Package";
@@ -647,15 +659,18 @@ export const previewOrder = async (req, res) => {
     const qty = Number(quantity);
 
     const serviceQuery = { name: service, status: true };
+let serviceData = null;
 
-    if (req.childPanel) {
-      serviceQuery.cpOwner = req.childPanel._id;
-    } else if (!req.childPanel && !req.reseller) {
-      serviceQuery.cpOwner = { $exists: false };
-    }
-
-    const serviceData = await Service.findOne(serviceQuery);
-
+if (req.childPanel) {
+  serviceData = await Service.findOne({ ...serviceQuery, cpOwner: req.childPanel._id });
+  if (!serviceData) {
+    serviceData = await Service.findOne({ ...serviceQuery, cpOwner: null, availableToChildPanels: true });
+  }
+} else if (!req.reseller) {
+  serviceData = await Service.findOne({ ...serviceQuery, cpOwner: { $exists: false } });
+} else {
+  serviceData = await Service.findOne(serviceQuery);
+}
     if (!serviceData) {
       return res.status(404).json({ message: "Service not found" });
     }

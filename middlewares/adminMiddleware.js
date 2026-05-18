@@ -31,15 +31,12 @@ export const childPanelOnly = async (req, res, next) => {
       });
     }
 
-    if (!user.childPanelIsActive) {
-      return res.status(403).json({
-        message: "Your panel has been suspended. Contact support.",
-      });
-    }
+    // ← remove the childPanelIsActive block that was here
 
+    req.user = user;
     next();
-  } catch (error) {
-    console.error(error);
+  } catch (err) {
+    console.error("childPanelOnly error:", err);
     res.status(500).json({ message: "Server error" });
   }
 };

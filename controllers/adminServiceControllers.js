@@ -35,7 +35,7 @@ GET ALL SERVICES (ADMIN)
 ========================================================= */
 export const getAllServices = async (req, res) => {
   try {
-    const services = await Service.find()
+    const services = await Service.find({ cpOwner: { $exists: false } })
       .populate("providerProfileId", "name apiUrl")
       .sort({ createdAt: -1 })
       .lean();

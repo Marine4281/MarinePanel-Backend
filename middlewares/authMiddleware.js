@@ -54,6 +54,17 @@ export const protect = async (req, res, next) => {
       });
     }
 
+    // 7️⃣ Child panel suspension check
+// Only block requests coming FROM the child panel domain (end users).
+// The CP owner on the main platform must stay unblocked so they
+// can still access their wallet, orders, and profile.
+if (req.childPanel && !req.childPanel.childPanelIsActive) {
+  return res.status(403).json({
+    code: "PANEL_SUSPENDED",
+    message: "We are currently unavailable. Please contact support.",
+  });
+}
+
     
 
     // 8️⃣ Attach user

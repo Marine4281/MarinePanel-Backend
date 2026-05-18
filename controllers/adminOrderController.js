@@ -43,26 +43,32 @@ const formatOrder = (order) => ({
 export const getAllOrders = async (req, res) => {
   try {
     const { search = "", page = 1, limit = 10 } = req.query;
-
     const pageNum = Number(page);
     const limitNum = Number(limit);
 
-    let orderQuery = {};
+    // ✅ FIXED: base query excludes orders belonging to child panel end users.
+    // CP orders are the CP owner's responsibility — admin should not see
+    // individual CP users' orders. Only show main-platform orders.
+    let orderQuery = { childPanelOwner: { $exists: false } };
 
     if (search) {
       const users = await User.find({
         email: { $regex: search, $options: "i" },
+        // only search main-platform users
+        childPanelOwner: { $exists: false },
       }).select("_id");
 
       const userIds = users.map((u) => u._id);
-
       const orQueries = [];
 
       if (userIds.length > 0) orQueries.push({ userId: { $in: userIds } });
       if (mongoose.Types.ObjectId.isValid(search)) orQueries.push({ _id: search });
       orQueries.push({ orderId: { $regex: search, $options: "i" } });
 
-      orderQuery = { $or: orQueries };
+      orderQuery = {
+        childPanelOwner: { $exists: false },
+        $or: orQueries,
+      };
     }
 
     const totalOrders = await Order.countDocuments(orderQuery);
@@ -93,12 +99,7 @@ export const getAllOrders = async (req, res) => {
             username: order.userId.email?.split("@")[0] || "",
             balance: order.userId.balance || 0,
           }
-        : {
-            _id: null,
-            email: "Unknown",
-            username: "",
-            balance: 0,
-          },
+        : { _id: null, email: "Unknown", username: "", balance: 0 },
     }));
 
     if (req.user?._id) {

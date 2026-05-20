@@ -41,14 +41,19 @@ export const getAllUsers = async (req, res) => {
   try {
     const { search } = req.query;
 
+    const baseFilter = {
+      childPanelOwner: { $exists: false },
+    };
+
     const query = search
       ? {
+          ...baseFilter,
           $or: [
             { email: { $regex: search, $options: "i" } },
             { phone: { $regex: search, $options: "i" } },
           ],
         }
-      : {};
+      : baseFilter;
 
     const usersRaw = await User.find(query).sort({ createdAt: -1 });
 

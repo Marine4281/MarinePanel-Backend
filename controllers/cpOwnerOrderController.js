@@ -33,7 +33,7 @@ const formatOrder = (order) => ({
   providerStatus: order.providerStatus,
   createdAt: order.createdAt,
   refundProcessed: order.refundProcessed || false,
-  user: order.userId
+  user: order.userId,
 
   // ADD to formatOrder return object:
 placedViaChildPanel: order.placedViaChildPanel || false,

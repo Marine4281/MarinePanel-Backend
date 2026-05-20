@@ -488,7 +488,7 @@ if (req.childPanel && !serviceData.cpOwner) {
       isCharged: !isFreeOrder,
 
       provider: serviceData.provider,
-      providerApiUrl: effectiveProviderProfile.apiUrl,
+      providerApiUcpOwner.childProviderProfile.apiUrl,
       providerServiceId: serviceData.providerServiceId,
       providerProfileId: effectiveProviderProfile._id,
 
@@ -510,7 +510,7 @@ if (req.childPanel && !serviceData.cpOwner) {
 
     try {
   const providerPayload = {
-    key: effectiveproviderProfile.apiKey,
+    key: effectiveProviderProfile.apiKey,
     action: "add",
     service: serviceData.providerServiceId,
     link,
@@ -530,7 +530,7 @@ if (req.childPanel && !serviceData.cpOwner) {
   }
 
   const response = await axios.post(
-    effectiveproviderProfile.apiUrl,
+    effectiveProviderProfile.apiUrl,
     providerPayload,
     { timeout: 15000 }
   );

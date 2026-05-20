@@ -100,88 +100,134 @@ const processRefund = async ({
   };
 };
 
-/* ======================================================
-   GET ALL USER ORDERS (Search + Pagination)
-====================================================== */
-export const getUserOrders = async (req, res) => {
+// ----------------------
+// GET /api/admin/orders
+export const getAllOrders = async (req, res) => {
   try {
-    const {
-      search = "",
-      status,
-      fromDate,
-      toDate,
-      page = 1,
-      limit = 10,
-    } = req.query;
+    const { search = "", page = 1, limit = 10 } = req.query;
+    const pageNum = Number(page);
+    const limitNum = Number(limit);
 
-    const pageNum = Math.max(1, Number(page));
-    const limitNum = Math.max(1, Number(limit));
+    // Base query:
+    // Show orders that are either:
+    //   (a) plain main-platform orders (no childPanelOwner field), OR
+    //   (b) orders that have a childPanelOwner stamped (CP end-user orders)
+    //       — these get collapsed to show the CP owner, not the end-user.
+    // We exclude nothing here; instead we collapse in the map below.
+    // The only orders we truly exclude are those placed by CP owners
+    // acting as regular users on the main platform — those are included normally.
+    let orderQuery = {
+      // Exclude orders placed by users who belong to a child panel
+      // but where the childPanelOwner was NOT stamped (legacy/broken orders).
+      // We do this by excluding users whose userId has a childPanelOwner set.
+      // We handle this via the search path below.
+    };
 
-    let query = {};
+    // Correct approach: show all orders EXCEPT those where userId itself
+    // is a CP end-user (has childPanelOwner on their User doc) AND
+    // childPanelOwner is not stamped on the order (un-stamped legacy orders).
+    // For properly stamped orders (childPanelOwner exists), include them
+    // and show CP owner as the display user.
 
-    /* ===============================
-       STATUS FILTER
-    =============================== */
-    if (status) {
-      query.status = status;
-    }
+    // Step 1: get all CP end-user IDs so we can exclude un-stamped orders
+    const cpEndUserIds = await User.find({
+      childPanelOwner: { $exists: true, $ne: null },
+    }).distinct("_id");
 
-    /* ===============================
-       DATE FILTER
-    =============================== */
-    if (fromDate || toDate) {
-      query.createdAt = {};
-
-      if (fromDate) {
-        query.createdAt.$gte = new Date(fromDate);
-      }
-
-      if (toDate) {
-        const end = new Date(toDate);
-        end.setHours(23, 59, 59, 999);
-
-        query.createdAt.$lte = end;
-      }
-    }
-
-    /* ===============================
-       SEARCH (SAFE)
-    =============================== */
-    if (search && search.trim() !== "") {
-      const cleanSearch = search.replace("#", "").trim();
-
-      const users = await User.find({
-        email: { $regex: cleanSearch, $options: "i" },
+    if (search) {
+      const matchedUsers = await User.find({
+        email: { $regex: search, $options: "i" },
+        childPanelOwner: { $exists: false },
       }).select("_id");
 
-      const userIds = users.map((u) => u._id);
+      const userIds = matchedUsers.map((u) => u._id);
+      const orQueries = [];
 
-      const orConditions = [
-        { orderId: { $regex: cleanSearch, $options: "i" } },
-        { service: { $regex: cleanSearch, $options: "i" } },
-        { provider: { $regex: cleanSearch, $options: "i" } },
-        { link: { $regex: cleanSearch, $options: "i" } },
-      ];
+      if (userIds.length > 0) orQueries.push({ userId: { $in: userIds } });
+      if (mongoose.Types.ObjectId.isValid(search)) orQueries.push({ _id: search });
+      orQueries.push({ orderId: { $regex: search, $options: "i" } });
 
-      if (!isNaN(cleanSearch)) {
-        orConditions.push({
-          customOrderId: Number(cleanSearch),
-        });
-
-        orConditions.push({
-          rate: Number(cleanSearch),
-        });
-      }
-
-      if (userIds.length > 0) {
-        orConditions.push({
-          userId: { $in: userIds },
-        });
-      }
-
-      query.$or = orConditions;
+      orderQuery = {
+        // Exclude un-stamped CP end-user orders
+        $nor: [
+          {
+            userId: { $in: cpEndUserIds },
+            childPanelOwner: { $exists: false },
+          },
+        ],
+        $or: orQueries,
+      };
+    } else {
+      orderQuery = {
+        // Exclude un-stamped CP end-user orders
+        $nor: [
+          {
+            userId: { $in: cpEndUserIds },
+            childPanelOwner: { $exists: false },
+          },
+        ],
+      };
     }
 
+    const totalOrders = await Order.countDocuments(orderQuery);
+    const totalPages = Math.ceil(totalOrders / limitNum);
+
+    const ordersRaw = await Order.find(orderQuery)
+      .populate({ path: "userId", select: "email balance" })
+      .populate({ path: "childPanelOwner", select: "email balance" })
+      .sort({ createdAt: -1 })
+      .skip((pageNum - 1) * limitNum)
+      .limit(limitNum)
+      .lean();
+
+    const orders = ordersRaw.map((order) => {
+      // If this order has childPanelOwner stamped, show the CP owner
+      // Admin should not deal with CP end-users directly
+      const displayUser = order.childPanelOwner
+        ? order.childPanelOwner
+        : order.userId;
+
+      return {
+        _id: order._id,
+        orderId: order.orderId,
+        customOrderId: order.customOrderId,
+        service: order.service,
+        link: order.link,
+        quantity: order.quantity,
+        quantityDelivered: order.quantityDelivered || 0,
+        charge: order.charge,
+        status: order.status,
+        providerStatus: order.providerStatus,
+        createdAt: order.createdAt,
+        isChildPanelOrder: !!order.childPanelOwner,
+        user: displayUser
+          ? {
+              _id: displayUser._id,
+              email: displayUser.email,
+              username: displayUser.email?.split("@")[0] || "",
+              balance: displayUser.balance || 0,
+            }
+          : { _id: null, email: "Unknown", username: "", balance: 0 },
+      };
+    });
+
+    if (req.user?._id) {
+      await logAdminAction({
+        adminId: req.user._id,
+        adminEmail: req.user.email,
+        action: "VIEW_ORDERS",
+        description: "Viewed all orders",
+        targetType: "order",
+        ipAddress: req.ip,
+      });
+    }
+
+    res.json({ orders, totalPages });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Failed to fetch orders" });
+  }
+};
     /* ===============================
        FETCH
     =============================== */

@@ -3,8 +3,9 @@ import Service from "../models/Service.js";
 import Order from "../models/Order.js";
 import Wallet from "../models/Wallet.js";
 import Settings from "../models/Settings.js";
-import ProviderProfile from "../models/ProviderProfile.js"; // add at top of file
-import axios from "axios"; 
+import ProviderProfile from "../models/ProviderProfile.js";
+import axios from "axios";
+import { getNextOrderId } from "../utils/orderId.js";
 
 const calculateBalance = (transactions = []) =>
   transactions.reduce((acc, t) => acc + (t.amount || 0), 0);
@@ -206,22 +207,31 @@ export const apiV2 = async (req, res) => {
           return res.json({ error: "Insufficient balance" });
         }
 
+        // ✅ FIX: Generate customOrderId to match web order flow
+        const customOrderId = await getNextOrderId();
+
         // Deduct balance
         wallet.transactions.push({
           type: "Order",
           amount: -finalCharge,
           status: "Completed",
-          note: `API Order - ${selectedService.name}`,
+          note: `API Order - #${customOrderId}`,
           createdAt: new Date(),
         });
 
         wallet.balance = calculateBalance(wallet.transactions);
         await wallet.save();
 
+        // Fetch provider profile before creating order so we can stamp providerApiUrl
+        const providerProfile = await ProviderProfile.findById(
+          selectedService.providerProfileId
+        );
+
         // ✅ FIX: Stamp resellerOwner + childPanelOwner so commission
         // tracking, dashboards, and billing all work correctly
         const order = await Order.create({
           userId: user._id,
+          customOrderId,
           category: selectedService.category,
           service: selectedService.name,
           serviceId: selectedService.serviceId,
@@ -245,6 +255,8 @@ export const apiV2 = async (req, res) => {
           providerProfileId: selectedService.providerProfileId,
           provider: selectedService.provider,
           providerServiceId: selectedService.providerServiceId,
+          // ✅ FIX: Stamp providerApiUrl so sync jobs and status checks work
+          providerApiUrl: providerProfile?.apiUrl || "",
 
           cancelAllowed: selectedService.cancelAllowed,
           refillAllowed: selectedService.refillAllowed,
@@ -252,56 +264,59 @@ export const apiV2 = async (req, res) => {
           customRefillDays: selectedService.customRefillDays,
         });
 
-        
+        if (providerProfile?.apiUrl && providerProfile?.apiKey) {
+          try {
+            const payload = {
+              key: providerProfile.apiKey,
+              action: "add",
+              service: selectedService.providerServiceId,
+              link,
+              quantity: qty,
+            };
 
-const providerProfile = await ProviderProfile.findById(
-  selectedService.providerProfileId
-);
+            const providerRes = await axios.post(providerProfile.apiUrl, payload, {
+              timeout: 15000,
+            });
 
-if (providerProfile?.apiUrl && providerProfile?.apiKey) {
-  try {
-    const payload = {
-      key: providerProfile.apiKey,
-      action: "add",
-      service: selectedService.providerServiceId,
-      link,
-      quantity: qty,
-    };
+            if (providerRes?.data?.order) {
+              order.providerOrderId = providerRes.data.order;
+              order.providerStatus = "processing";
+              order.status = "processing";
+            } else {
+              // Provider responded but returned no order ID — still mark processing
+              order.providerStatus = "processing";
+              order.status = "processing";
+            }
 
-    const providerRes = await axios.post(providerProfile.apiUrl, payload, {
-      timeout: 15000,
-    });
+            order.providerResponse = providerRes.data;
+            // ✅ FIX: Always save after provider call, not only when order ID returned
+            await order.save();
 
-    if (providerRes?.data?.order) {
-      order.providerOrderId = providerRes.data.order;
-      order.providerStatus = "processing";
-      order.status = "processing";
-      await order.save();
-    }
-  } catch (providerErr) {
-    // Refund on provider failure
-    wallet.transactions.push({
-      type: "Refund",
-      amount: finalCharge,
-      status: "Completed",
-      note: `Refund - Provider failed for API order`,
-      reference: order._id,
-      createdAt: new Date(),
-    });
-    wallet.balance = calculateBalance(wallet.transactions);
-    await wallet.save();
+          } catch (providerErr) {
+            // Refund on provider failure
+            wallet.transactions.push({
+              type: "Refund",
+              amount: finalCharge,
+              status: "Completed",
+              note: `Refund - Provider failed #${customOrderId}`,
+              reference: order._id,
+              createdAt: new Date(),
+            });
+            wallet.balance = calculateBalance(wallet.transactions);
+            await wallet.save();
 
-    order.status = "failed";
-    order.providerStatus = "failed";
-    order.refundProcessed = true;
-    await order.save();
+            order.status = "failed";
+            order.providerStatus = "failed";
+            order.refundProcessed = true;
+            await order.save();
 
-    return res.json({ error: "Provider failed. Your balance has been refunded." });
-  }
+            return res.json({ error: "Provider failed. Your balance has been refunded." });
+          }
         }
 
+        // ✅ FIX: Return customOrderId so status checks work correctly
         return res.json({
-          order: order.customOrderId || order.orderId,
+          order: order.customOrderId,
         });
       }
 

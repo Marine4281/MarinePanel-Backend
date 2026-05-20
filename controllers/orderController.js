@@ -266,6 +266,24 @@ if (
       return res.status(400).json({ message: "Provider profile not found" });
     }
 
+    // If this is a platform service being re-sold through a CP,
+// route the provider call through the CP owner's own provider profile
+// instead of the main platform's provider profile.
+let effectiveProviderProfile = providerProfile;
+
+if (req.childPanel && !serviceData.cpOwner) {
+  // Find the CP owner's provider profile that matches the same provider name
+  const cpProviderProfile = await ProviderProfile.findOne({
+    name: serviceData.provider,
+    cpOwner: req.childPanel._id,
+  });
+  if (cpProviderProfile) {
+    effectiveProviderProfile = cpProviderProfile;
+  }
+  // If the CP owner has no matching provider profile, the order falls back
+  // to the main platform's provider profile (current behavior).
+      }
+
     /* ================= RESOLVE CHILD PANEL OWNER =================
     If this user belongs to a child panel (via scope), we resolve
     the child panel owner so we can stamp it on the order and later
@@ -451,6 +469,7 @@ if (
       // Child panel — stamped here so dashboard, billing,
       // and commission tracking all work correctly
       childPanelOwner: childPanelOwnerId,
+      placedViaChildPanel: !!req.childPanel, 
       childPanelCommission,
       childPanelEarningsCredited: false,
       childPanelPerOrderFee,
@@ -469,9 +488,9 @@ if (
       isCharged: !isFreeOrder,
 
       provider: serviceData.provider,
-      providerApiUrl: serviceData.providerApiUrl,
+      providerApiUrl: effectiveProviderProfile.apiUrl,
       providerServiceId: serviceData.providerServiceId,
-      providerProfileId: serviceData.providerProfileId,
+      providerProfileId: effectiveProviderProfile._id,
 
       cancelAllowed: serviceData.cancelAllowed,
       refillAllowed: serviceData.refillAllowed,
@@ -491,7 +510,7 @@ if (
 
     try {
   const providerPayload = {
-    key: providerProfile.apiKey,
+    key: effectiveproviderProfile.apiKey,
     action: "add",
     service: serviceData.providerServiceId,
     link,
@@ -511,7 +530,7 @@ if (
   }
 
   const response = await axios.post(
-    providerProfile.apiUrl,
+    effectiveproviderProfile.apiUrl,
     providerPayload,
     { timeout: 15000 }
   );

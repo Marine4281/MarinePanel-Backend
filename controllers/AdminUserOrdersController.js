@@ -100,8 +100,9 @@ const processRefund = async ({
   };
 };
 
-// ----------------------
-// GET /api/admin/orders
+/* ======================================================
+   GET ALL USER ORDERS (Search + Pagination)
+====================================================== */
 export const getAllOrders = async (req, res) => {
   try {
     const { search = "", page = 1, limit = 10 } = req.query;
@@ -226,32 +227,6 @@ export const getAllOrders = async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ message: "Failed to fetch orders" });
-  }
-};
-    /* ===============================
-       FETCH
-    =============================== */
-    const [orders, total] = await Promise.all([
-      Order.find(query)
-        .populate("userId", "email balance")
-        .sort({ createdAt: -1 })
-        .skip((pageNum - 1) * limitNum)
-        .limit(limitNum)
-        .lean(),
-
-      Order.countDocuments(query),
-    ]);
-
-    res.json({
-      orders,
-      totalPages: Math.ceil(total / limitNum),
-    });
-  } catch (error) {
-    console.error("Get Orders Error:", error);
-
-    res.status(500).json({
-      message: "Failed to fetch orders",
-    });
   }
 };
 

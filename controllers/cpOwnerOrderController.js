@@ -36,9 +36,9 @@ const formatOrder = (order) => ({
   user: order.userId,
 
   // ADD to formatOrder return object:
-placedViaChildPanel: order.placedViaChildPanel || false,
-// Optionally override displayed user to show "CP Panel" label:
-displayedAs: order.placedViaChildPanel ? "Child Panel User" : "Direct User",
+  placedViaChildPanel: order.placedViaChildPanel || false,
+  // Optionally override displayed user to show "CP Panel" label:
+  displayedAs: order.placedViaChildPanel ? "Child Panel User" : "Direct User"
     ? {
         _id: order.userId._id,
         email: order.userId.email,

@@ -15,38 +15,39 @@ const calculateBalance = (transactions = []) =>
     .filter((t) => t.status === "Completed")
     .reduce((acc, t) => acc + (Number(t.amount) || 0), 0);
 
-const formatOrder = (order) => ({
-  _id: order._id,
-  orderId: order.orderId,
-  customOrderId: order.customOrderId,
-  service: order.service,
-  serviceId: order.serviceId,
-  category: order.category,
-  provider: order.provider,
-  rate: order.rate,
-  link: order.link,
-  quantity: order.quantity,
-  quantityDelivered: order.quantityDelivered || 0,
-  charge: order.charge,
-  childPanelCommission: order.childPanelCommission || 0,
-  status: order.status,
-  providerStatus: order.providerStatus,
-  createdAt: order.createdAt,
-  refundProcessed: order.refundProcessed || false,
-  user: order.userId,
+const formatOrder = (order) => {
+  const u = order.userId;
+  const isPopulated = u && typeof u === "object" && u.email;
 
-  // ADD to formatOrder return object:
-  placedViaChildPanel: order.placedViaChildPanel || false,
-  // Optionally override displayed user to show "CP Panel" label:
-  displayedAs: order.placedViaChildPanel ? "Child Panel User" : "Direct User"
-    ? {
-        _id: order.userId._id,
-        email: order.userId.email,
-        username: order.userId.email?.split("@")[0] || "",
-        balance: order.userId.balance || 0,
-      }
-    : { _id: null, email: "Unknown", username: "", balance: 0 },
-});
+  return {
+    _id: order._id,
+    orderId: order.orderId,
+    customOrderId: order.customOrderId,
+    service: order.service,
+    serviceId: order.serviceId,
+    category: order.category,
+    provider: order.provider,
+    rate: order.rate,
+    link: order.link,
+    quantity: order.quantity,
+    quantityDelivered: order.quantityDelivered || 0,
+    charge: order.charge,
+    childPanelCommission: order.childPanelCommission || 0,
+    status: order.status,
+    providerStatus: order.providerStatus,
+    createdAt: order.createdAt,
+    refundProcessed: order.refundProcessed || false,
+    placedViaChildPanel: order.placedViaChildPanel || false,
+    user: isPopulated
+      ? {
+          _id: u._id,
+          email: u.email,
+          username: u.email?.split("@")[0] || "",
+          balance: u.balance || 0,
+        }
+      : { _id: u?._id || null, email: "Unknown", username: "", balance: 0 },
+  };
+};
 
 // ======================= PROCESS REFUND =======================
 

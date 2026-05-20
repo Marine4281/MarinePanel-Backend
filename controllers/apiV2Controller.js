@@ -3,6 +3,8 @@ import Service from "../models/Service.js";
 import Order from "../models/Order.js";
 import Wallet from "../models/Wallet.js";
 import Settings from "../models/Settings.js";
+import ProviderProfile from "../models/ProviderProfile.js"; // add at top of file
+import axios from "axios"; 
 
 const calculateBalance = (transactions = []) =>
   transactions.reduce((acc, t) => acc + (t.amount || 0), 0);
@@ -254,6 +256,52 @@ export const apiV2 = async (req, res) => {
           order: order.customOrderId || order.orderId,
         });
       }
+
+const providerProfile = await ProviderProfile.findById(
+  selectedService.providerProfileId
+);
+
+if (providerProfile?.apiUrl && providerProfile?.apiKey) {
+  try {
+    const payload = {
+      key: providerProfile.apiKey,
+      action: "add",
+      service: selectedService.providerServiceId,
+      link,
+      quantity: qty,
+    };
+
+    const providerRes = await axios.post(providerProfile.apiUrl, payload, {
+      timeout: 15000,
+    });
+
+    if (providerRes?.data?.order) {
+      order.providerOrderId = providerRes.data.order;
+      order.providerStatus = "processing";
+      order.status = "processing";
+      await order.save();
+    }
+  } catch (providerErr) {
+    // Refund on provider failure
+    wallet.transactions.push({
+      type: "Refund",
+      amount: finalCharge,
+      status: "Completed",
+      note: `Refund - Provider failed for API order`,
+      reference: order._id,
+      createdAt: new Date(),
+    });
+    wallet.balance = calculateBalance(wallet.transactions);
+    await wallet.save();
+
+    order.status = "failed";
+    order.providerStatus = "failed";
+    order.refundProcessed = true;
+    await order.save();
+
+    return res.json({ error: "Provider failed. Your balance has been refunded." });
+  }
+        }
 
       /* =====================================================
          📊 ORDER STATUS (SINGLE + MULTIPLE)

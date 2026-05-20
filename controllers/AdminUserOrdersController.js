@@ -117,22 +117,27 @@ export const getUserOrders = async (req, res) => {
     const pageNum = Math.max(1, Number(page));
     const limitNum = Math.max(1, Number(limit));
 
-    // ✅ FIX: get all CP end-user IDs so we can exclude un-stamped orders
-    // and collapse properly-stamped ones to show CP owner instead
+    // ✅ FIX: childPanelOwner defaults to null in the schema, so we must
+    // use $ne: null (not $exists) to detect stamped vs un-stamped orders.
+    // Get all CP end-user IDs to exclude their un-stamped orders.
     const cpEndUserIds = await User.find({
-      childPanelOwner: { $exists: true, $ne: null },
+      childPanelOwner: { $ne: null },
     }).distinct("_id");
 
-    // Base filter: exclude un-stamped CP end-user orders
-    // (orders where userId is a CP end-user but childPanelOwner was never set)
-    const baseFilter = {
-      $nor: [
-        {
-          userId: { $in: cpEndUserIds },
-          childPanelOwner: { $exists: false },
-        },
-      ],
-    };
+    // Base filter:
+    // - Include all orders where childPanelOwner is set (stamped CP orders)
+    //   → these get collapsed to show the CP owner as display user
+    // - Include all orders where userId is NOT a CP end-user (main platform orders)
+    // - Exclude orders where userId IS a CP end-user AND childPanelOwner is null
+    //   (un-stamped/legacy CP end-user orders that slipped through)
+    const baseFilter = cpEndUserIds.length > 0
+      ? {
+          $or: [
+            { childPanelOwner: { $ne: null } },
+            { userId: { $nin: cpEndUserIds } },
+          ],
+        }
+      : {};
 
     let query = { ...baseFilter };
 
@@ -167,10 +172,10 @@ export const getUserOrders = async (req, res) => {
     if (search && search.trim() !== "") {
       const cleanSearch = search.replace("#", "").trim();
 
-      // Only search main-platform users and CP owners, not CP end-users
+      // Search only main-platform users and CP owners, not CP end-users
       const users = await User.find({
         email: { $regex: cleanSearch, $options: "i" },
-        childPanelOwner: { $exists: false },
+        childPanelOwner: null,
       }).select("_id");
 
       const userIds = users.map((u) => u._id);
@@ -197,13 +202,31 @@ export const getUserOrders = async (req, res) => {
           userId: { $in: userIds },
         });
 
-        // Also match stamped CP orders where childPanelOwner is one of the matched users
+        // Also match stamped CP orders by CP owner email
         orConditions.push({
           childPanelOwner: { $in: userIds },
         });
       }
 
-      query.$or = orConditions;
+      // Merge search $or with base filter using $and so both apply
+      query = {
+        $and: [
+          baseFilter,
+          { $or: orConditions },
+        ],
+      };
+
+      if (status) query.status = status;
+
+      if (fromDate || toDate) {
+        query.createdAt = {};
+        if (fromDate) query.createdAt.$gte = new Date(fromDate);
+        if (toDate) {
+          const end = new Date(toDate);
+          end.setHours(23, 59, 59, 999);
+          query.createdAt.$lte = end;
+        }
+      }
     }
 
     /* ===============================
@@ -221,15 +244,16 @@ export const getUserOrders = async (req, res) => {
       Order.countDocuments(query),
     ]);
 
-    // ✅ FIX: collapse stamped CP orders to show CP owner instead of end-user
+    // ✅ Collapse stamped CP orders to show CP owner as the display user
     const formattedOrders = orders.map((order) => {
-      const displayUser = order.childPanelOwner
-        ? order.childPanelOwner
-        : order.userId;
+      const displayUser =
+        order.childPanelOwner && order.childPanelOwner._id
+          ? order.childPanelOwner
+          : order.userId;
 
       return {
         ...order,
-        isChildPanelOrder: !!order.childPanelOwner,
+        isChildPanelOrder: !!(order.childPanelOwner && order.childPanelOwner._id),
         userId: displayUser,
       };
     });
@@ -520,19 +544,21 @@ export const getOrderStats = async (req, res) => {
       toDate,
     } = req.query;
 
-    // ✅ FIX: exclude un-stamped CP end-user orders from stats too
+    // ✅ FIX: same null-based filter for stats consistency
     const cpEndUserIds = await User.find({
-      childPanelOwner: { $exists: true, $ne: null },
+      childPanelOwner: { $ne: null },
     }).distinct("_id");
 
-    const match = {
-      $nor: [
-        {
-          userId: { $in: cpEndUserIds },
-          childPanelOwner: { $exists: false },
-        },
-      ],
-    };
+    const baseFilter = cpEndUserIds.length > 0
+      ? {
+          $or: [
+            { childPanelOwner: { $ne: null } },
+            { userId: { $nin: cpEndUserIds } },
+          ],
+        }
+      : {};
+
+    const match = { ...baseFilter };
 
     if (status) match.status = status;
 
@@ -553,7 +579,7 @@ export const getOrderStats = async (req, res) => {
 
       const users = await User.find({
         email: regex,
-        childPanelOwner: { $exists: false },
+        childPanelOwner: null,
       }).select("_id");
 
       const userIds = users.map((u) => u._id);

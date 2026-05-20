@@ -78,6 +78,9 @@ const orderSchema = new mongoose.Schema(
       index: true,
     },
 
+    //Order placed via childPanel
+    placedViaChildPanel: { type: Boolean, default: false },
+
     /* ===============================
        📦 ORDER DETAILS
     =============================== */

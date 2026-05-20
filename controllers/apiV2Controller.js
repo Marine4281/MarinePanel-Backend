@@ -252,10 +252,7 @@ export const apiV2 = async (req, res) => {
           customRefillDays: selectedService.customRefillDays,
         });
 
-        return res.json({
-          order: order.customOrderId || order.orderId,
-        });
-      }
+        
 
 const providerProfile = await ProviderProfile.findById(
   selectedService.providerProfileId
@@ -302,6 +299,11 @@ if (providerProfile?.apiUrl && providerProfile?.apiKey) {
     return res.json({ error: "Provider failed. Your balance has been refunded." });
   }
         }
+
+        return res.json({
+          order: order.customOrderId || order.orderId,
+        });
+      }
 
       /* =====================================================
          📊 ORDER STATUS (SINGLE + MULTIPLE)

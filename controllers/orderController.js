@@ -488,7 +488,7 @@ if (req.childPanel && !serviceData.cpOwner) {
       isCharged: !isFreeOrder,
 
       provider: serviceData.provider,
-      providerApiUcpOwner.childProviderProfile.apiUrl,
+      providerApiUrl: effectiveProviderProfile.apiUrl,
       providerServiceId: serviceData.providerServiceId,
       providerProfileId: effectiveProviderProfile._id,
 

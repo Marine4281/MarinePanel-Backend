@@ -50,12 +50,41 @@ export const fetchProviderServices = async (req, res) => {
     const providerServices = response.data;
 
     /* get existing services */
-    const existingServices = await ProviderService.find({ provider });
+    const existingProviderServices = await ProviderService.find({ provider });
+const existingPanelServices = await Service.find({ provider, providerProfileId: profile._id });
 
-    const existingMap = {};
-    existingServices.forEach((s) => {
-      existingMap[s.providerServiceId] = s;
-    });
+const providerServiceMap = {};
+existingProviderServices.forEach((s) => {
+  providerServiceMap[s.providerServiceId] = s;
+});
+
+const panelServiceMap = {};
+existingPanelServices.forEach((s) => {
+  panelServiceMap[String(s.providerServiceId)] = s;
+});
+
+const services = providerServices.map((service) => {
+  const id = Number(service.service);
+  const inProviderCache = providerServiceMap[id];
+  const inPanel = panelServiceMap[String(id)];   // ← this is what matters
+
+  let rateDiff = 0;
+  let statusLabel = "new";
+
+  if (inPanel) {
+    rateDiff = Number(service.rate) - inPanel.rate;
+    statusLabel = rateDiff !== 0 ? "updated" : "imported";
+  }
+
+  return {
+    ...service,
+    imported: !!inPanel,           // ← now reflects actual panel state
+    existingRate: inPanel?.rate || null,
+    rateDiff,
+    statusLabel,
+    description: service.description || "",
+  };
+});
 
     // 🔥 TRACK provider IDs to detect deleted later
     const providerIds = new Set();

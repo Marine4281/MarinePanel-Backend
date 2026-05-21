@@ -271,10 +271,10 @@ if (
 // instead of the main platform's provider profile.
 let effectiveProviderProfile = providerProfile;
 
-if (req.childPanel && !serviceData.cpOwner) {
+if (req.childPanel && serviceData.cpOwner) {
   // Find the CP owner's provider profile that matches the same provider name
   const cpProviderProfile = await ProviderProfile.findOne({
-    name: serviceData.provider,
+    _id: serviceData.providerProfileId,
     cpOwner: req.childPanel._id,
   });
   if (cpProviderProfile) {

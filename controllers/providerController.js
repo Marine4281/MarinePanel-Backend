@@ -5,6 +5,7 @@ import ProviderService from "../models/ProviderService.js";
 import Service from "../models/Service.js";
 import ProviderProfile from "../models/ProviderProfile.js";
 import { clearCache } from "../utils/cache.js";
+import Counter from "../models/Counter.js";
 
 
 /*
@@ -331,9 +332,22 @@ Generate next serviceId
 
 */
 const generateServiceId = async () => {
-  const last = await Service.findOne().sort({ serviceId: -1 });
-  if (!last) return 1000;
-  return last.serviceId + 1;
+  const lastService = await Service.findOne().sort({ serviceId: -1 });
+  const maxId = lastService ? lastService.serviceId : 1000;
+
+  await Counter.findOneAndUpdate(
+    { _id: "serviceId" },
+    { $max: { seq: maxId } },
+    { upsert: true }
+  );
+
+  const counter = await Counter.findOneAndUpdate(
+    { _id: "serviceId" },
+    { $inc: { seq: 1 } },
+    { new: true }
+  );
+
+  return counter.seq;
 };
 
 /*

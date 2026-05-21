@@ -42,7 +42,7 @@ export const getAllUsers = async (req, res) => {
     const { search } = req.query;
 
     const baseFilter = {
-      childPanelOwner: { $exists: false },
+      childPanelOwner: { $eq: null },
     };
 
     const query = search

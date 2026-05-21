@@ -432,6 +432,59 @@ if (req.childPanel && !serviceData.cpOwner) {
       }
     }
 
+/* ================= CHARGE CP OWNER FOR FREE ORDERS ================= 
+   When a CP end-user claims a free service, the CP owner is responsible
+   for the base provider cost. Deduct from CP owner's wallet now.
+   If the CP owner has insufficient balance, block the order.
+================================================================== */
+let cpOwnerWallet = null;
+let cpOwnerBaseCharge = 0;
+
+if (isFreeOrder && childPanelOwnerId) {
+  const providerRate = Number(serviceData.rate || 0);
+  cpOwnerBaseCharge = (qty / 1000) * providerRate;
+
+  if (cpOwnerBaseCharge > 0) {
+    cpOwnerWallet = await Wallet.findOne({ user: childPanelOwnerId });
+
+    if (!cpOwnerWallet) {
+      return res.status(400).json({
+        message: "Child panel owner wallet not found",
+      });
+    }
+
+    const cpOwnerBalance = cpOwnerWallet.transactions.reduce(
+      (acc, t) => acc + (t.amount || 0),
+      0
+    );
+
+    if (cpOwnerBalance < cpOwnerBaseCharge) {
+      return res.status(400).json({
+        message: "Service temporarily unavailable",
+        // Don't leak the reason to end-users — CP owner must top up
+      });
+    }
+
+    cpOwnerWallet.transactions.push({
+      type: "Free Order Cost",
+      amount: -Number(cpOwnerBaseCharge),
+      status: "Completed",
+      note: `Free order cost for end-user claim`,
+      createdAt: new Date(),
+    });
+
+    cpOwnerWallet.balance = cpOwnerWallet.transactions.reduce(
+      (acc, t) => acc + (t.amount || 0),
+      0
+    );
+
+    await cpOwnerWallet.save();
+    await User.findByIdAndUpdate(childPanelOwnerId, {
+      balance: cpOwnerWallet.balance,
+    });
+  }
+  }
+
     /* ================= ORDER ID ================= */
 
     const customOrderId = await getNextOrderId();
@@ -452,6 +505,35 @@ if (req.childPanel && !serviceData.cpOwner) {
 
       await User.findByIdAndUpdate(user._id, { balance: wallet.balance });
     }
+
+    /* ================= ALSO DEDUCT BASE COST FROM CP OWNER ================= 
+   The end-user's wallet covers finalCharge (base + CP commission markup).
+   The CP owner's wallet must cover the raw baseCharge sent to the provider.
+   Main platform treats this the same as any normal user order.
+================================================================== */
+if (!isFreeOrder && childPanelOwnerId) {
+  const cpOwnerWalletForPaid = await Wallet.findOne({ user: childPanelOwnerId });
+
+  if (cpOwnerWalletForPaid) {
+    cpOwnerWalletForPaid.transactions.push({
+      type: "Order",
+      amount: -Number(baseCharge),
+      status: "Completed",
+      note: `CP end-user order cost #${customOrderId}`,
+      createdAt: new Date(),
+    });
+
+    cpOwnerWalletForPaid.balance = cpOwnerWalletForPaid.transactions.reduce(
+      (acc, t) => acc + (t.amount || 0),
+      0
+    );
+
+    await cpOwnerWalletForPaid.save();
+    await User.findByIdAndUpdate(childPanelOwnerId, {
+      balance: cpOwnerWalletForPaid.balance,
+    });
+  }
+}
 
     /* ================= CREATE ORDER ================= */
 

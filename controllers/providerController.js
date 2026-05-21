@@ -442,6 +442,7 @@ export const importSelectedServices = async (req, res) => {
       // ============================================
       const existingService = await Service.findOne({
         providerServiceId: String(providerServiceId),
+        providerProfileId,
       });
 
       const numericRate = Number(service.rate);

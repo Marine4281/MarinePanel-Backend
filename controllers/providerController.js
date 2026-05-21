@@ -51,37 +51,17 @@ export const fetchProviderServices = async (req, res) => {
 
     /* get existing services */
     const existingProviderServices = await ProviderService.find({ provider });
-const existingPanelServices = await Service.find({ provider, providerProfileId: profile._id });
+    const existingPanelServices = await Service.find({ provider, providerProfileId: profile._id });
 
-const providerServiceMap = {};
-existingProviderServices.forEach((s) => {
-  providerServiceMap[s.providerServiceId] = s;
-});
+    const providerServiceMap = {};
+    existingProviderServices.forEach((s) => {
+      providerServiceMap[s.providerServiceId] = s;
+    });
 
-
-
-const services = providerServices.map((service) => {
-  const id = Number(service.service);
-  const inProviderCache = providerServiceMap[id];
-  const inPanel = panelServiceMap[String(id)];   // ← this is what matters
-
-  let rateDiff = 0;
-  let statusLabel = "new";
-
-  if (inPanel) {
-    rateDiff = Number(service.rate) - inPanel.rate;
-    statusLabel = rateDiff !== 0 ? "updated" : "imported";
-  }
-
-  return {
-    ...service,
-    imported: !!inPanel,           // ← now reflects actual panel state
-    existingRate: inPanel?.rate || null,
-    rateDiff,
-    statusLabel,
-    description: service.description || "",
-  };
-});
+    const panelServiceMap = {};
+    existingPanelServices.forEach((s) => {
+      panelServiceMap[String(s.providerServiceId)] = s;
+    });
 
     // 🔥 TRACK provider IDs to detect deleted later
     const providerIds = new Set();
@@ -90,33 +70,28 @@ const services = providerServices.map((service) => {
       const id = Number(service.service);
       providerIds.add(id);
 
-      const existing = existingMap[id];
+      const inPanel = panelServiceMap[String(id)];
 
       let rateDiff = 0;
       let statusLabel = "new";
 
-      if (existing) {
-        rateDiff = Number(service.rate) - existing.rate;
-
-        if (rateDiff !== 0) {
-          statusLabel = "updated";
-        } else {
-          statusLabel = "imported";
-        }
+      if (inPanel) {
+        rateDiff = Number(service.rate) - inPanel.rate;
+        statusLabel = rateDiff !== 0 ? "updated" : "imported";
       }
 
       return {
         ...service,
-        imported: !!existing,
-        existingRate: existing?.rate || null,
+        imported: !!inPanel,
+        existingRate: inPanel?.rate || null,
         rateDiff,
         statusLabel,
-        description: service.description || "", // safe fallback
+        description: service.description || "",
       };
     });
 
     // 🔥 DETECT DELETED SERVICES (exist in DB but not provider anymore)
-    const deletedServices = existingServices
+    const deletedServices = existingProviderServices
       .filter((s) => !providerIds.has(s.providerServiceId))
       .map((s) => ({
         service: s.providerServiceId,
@@ -133,7 +108,7 @@ const services = providerServices.map((service) => {
       }));
 
     // ✅ MERGE ALL
-const allServices = [...services, ...deletedServices];
+    const allServices = [...services, ...deletedServices];
 
     const grouped = {};
     allServices.forEach((service) => {
@@ -433,135 +408,141 @@ export const importSelectedServices = async (req, res) => {
     const { apiUrl, apiKey, _id: providerProfileId } = profile;
 
     let count = 0;
+    const errors = [];
 
     for (const service of services) {
-      const providerServiceId = Number(service.service);
-      clearCache("public_services");
+      try {
+        const providerServiceId = Number(service.service);
 
-      // 🔥 Normalize provider booleans (VERY IMPORTANT)
-      const refillSupported =
-        service.refill === true || service.refill === "true";
+        // 🔥 Normalize provider booleans (VERY IMPORTANT)
+        const refillSupported =
+          service.refill === true || service.refill === "true";
 
-      const cancelSupported =
-        service.cancel === true || service.cancel === "true";
+        const cancelSupported =
+          service.cancel === true || service.cancel === "true";
 
-      // ============================================
-      // ✅ UPDATE PROVIDER SERVICE (SOURCE OF TRUTH)
-      // ============================================
-      await ProviderService.updateOne(
-        { provider, providerServiceId },
-        {
-          provider,
-          providerServiceId,
-          name: service.name,
-          category: service.category,
-          rate: Number(service.rate),
-          min: Number(service.min),
-          max: Number(service.max),
-          status: true,
-        },
-        { upsert: true }
-      );
+        // ============================================
+        // ✅ UPDATE PROVIDER SERVICE (SOURCE OF TRUTH)
+        // ============================================
+        await ProviderService.updateOne(
+          { provider, providerServiceId },
+          {
+            provider,
+            providerServiceId,
+            name: service.name,
+            category: service.category,
+            rate: Number(service.rate),
+            min: Number(service.min),
+            max: Number(service.max),
+            status: true,
+          },
+          { upsert: true }
+        );
 
-      // ============================================
-      // ✅ CHECK IF PANEL SERVICE EXISTS
-      // ============================================
-      const existingService = await Service.findOne({
-        providerServiceId: String(providerServiceId),
-        providerProfileId,
-      });
-
-      const numericRate = Number(service.rate);
-      const platform = extractPlatform(service.category, service.platform);
-
-      // ============================================
-      // 🆕 CREATE NEW SERVICE
-      // ============================================
-      if (!existingService) {
-        const newServiceId = await generateServiceId();
-
-        await Service.create({
-          serviceId: newServiceId,
-          platform,
-          category: service.category,
-          name: service.name,
-          provider,
+        // ============================================
+        // ✅ CHECK IF PANEL SERVICE EXISTS
+        // ============================================
+        const existingService = await Service.findOne({
           providerServiceId: String(providerServiceId),
-
-          providerApiUrl: apiUrl,
-          providerApiKey: apiKey,
-
-          rate: numericRate,
-          lastSyncedRate: numericRate,
-          previousRate: numericRate,
-
-          min: Number(service.min),
-          max: Number(service.max),
-
-          isFree: false,
-          freeQuantity: 0,
-          cooldownHours: 0,
-          description: service.description || "",
-          serviceType: service.type || "Default",
-
-          status: true,
-
-          // 🔥 REFILL + CANCEL (PROVIDER BASED)
-          refillAllowed: refillSupported,
-          cancelAllowed: cancelSupported,
-
-          // 🧠 YOUR SYSTEM POLICY
-          refillPolicy: refillSupported ? "30d" : "none",
-          customRefillDays: null,
-
-          isDefault: false,
-          isDefaultCategoryGlobal: false,
-          isDefaultCategoryPlatform: false,
-
           providerProfileId,
         });
-      }
 
-      // ============================================
-      // 🔄 UPDATE EXISTING SERVICE (CRITICAL FIX)
-      // ============================================
-      else {
-        existingService.name = service.name;
-        existingService.category = service.category;
-        existingService.platform = platform; 
-        existingService.serviceType = service.type || "Default";
-        existingService.rate = numericRate;
-        existingService.lastSyncedRate = numericRate;
+        const numericRate = Number(service.rate);
+        const platform = extractPlatform(service.category, service.platform);
 
-        existingService.min = Number(service.min);
-        existingService.max = Number(service.max);
+        // ============================================
+        // 🆕 CREATE NEW SERVICE
+        // ============================================
+        if (!existingService) {
+          const newServiceId = await generateServiceId();
 
-        existingService.providerApiUrl = apiUrl;
-        existingService.providerApiKey = apiKey;
+          await Service.create({
+            serviceId: newServiceId,
+            platform,
+            category: service.category,
+            name: service.name,
+            provider,
+            providerServiceId: String(providerServiceId),
 
-        // 🔥 KEEP PANEL IN SYNC WITH PROVIDER
-        existingService.refillAllowed = refillSupported;
-        existingService.cancelAllowed = cancelSupported;
+            providerApiUrl: apiUrl,
+            providerApiKey: apiKey,
 
-        // 🧠 Only auto-set policy if not manually customized
-        if (
-          existingService.refillPolicy === "none" ||
-          !existingService.refillPolicy
-        ) {
-          existingService.refillPolicy = refillSupported
-            ? "30d"
-            : "none";
+            rate: numericRate,
+            lastSyncedRate: numericRate,
+            previousRate: numericRate,
+
+            min: Number(service.min),
+            max: Number(service.max),
+
+            isFree: false,
+            freeQuantity: 0,
+            cooldownHours: 0,
+            description: service.description || "",
+            serviceType: service.type || "Default",
+
+            status: true,
+
+            // 🔥 REFILL + CANCEL (PROVIDER BASED)
+            refillAllowed: refillSupported,
+            cancelAllowed: cancelSupported,
+
+            // 🧠 YOUR SYSTEM POLICY
+            refillPolicy: refillSupported ? "30d" : "none",
+            customRefillDays: null,
+
+            isDefault: false,
+            isDefaultCategoryGlobal: false,
+            isDefaultCategoryPlatform: false,
+
+            providerProfileId,
+          });
         }
 
-        await existingService.save();
-      }
+        // ============================================
+        // 🔄 UPDATE EXISTING SERVICE (CRITICAL FIX)
+        // ============================================
+        else {
+          existingService.name = service.name;
+          existingService.category = service.category;
+          existingService.platform = platform;
+          existingService.serviceType = service.type || "Default";
+          existingService.rate = numericRate;
+          existingService.lastSyncedRate = numericRate;
 
-      count++;
+          existingService.min = Number(service.min);
+          existingService.max = Number(service.max);
+
+          existingService.providerApiUrl = apiUrl;
+          existingService.providerApiKey = apiKey;
+
+          // 🔥 KEEP PANEL IN SYNC WITH PROVIDER
+          existingService.refillAllowed = refillSupported;
+          existingService.cancelAllowed = cancelSupported;
+
+          // 🧠 Only auto-set policy if not manually customized
+          if (
+            existingService.refillPolicy === "none" ||
+            !existingService.refillPolicy
+          ) {
+            existingService.refillPolicy = refillSupported ? "30d" : "none";
+          }
+
+          await existingService.save();
+        }
+
+        count++;
+        clearCache("public_services");
+      } catch (err) {
+        console.error(`Failed to import service ${service.service}:`, err.message);
+        errors.push({ service: service.service, name: service.name, error: err.message });
+      }
     }
 
     res.json({
-      message: "Selected services imported",
+      message: "Import complete",
       count,
+      failed: errors.length,
+      errors,
     });
   } catch (error) {
     console.error("Import Selected Services Error:", error);
@@ -617,7 +598,7 @@ export const importCategoryServices = async (req, res) => {
 
     res.status(500).json({
       message: "Failed to import category services",
-      error: error.message, // 👈 ADD THIS (VERY IMPORTANT)
+      error: error.message,
     });
   }
 };

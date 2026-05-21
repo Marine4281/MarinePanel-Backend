@@ -58,10 +58,7 @@ existingProviderServices.forEach((s) => {
   providerServiceMap[s.providerServiceId] = s;
 });
 
-const panelServiceMap = {};
-existingPanelServices.forEach((s) => {
-  panelServiceMap[String(s.providerServiceId)] = s;
-});
+
 
 const services = providerServices.map((service) => {
   const id = Number(service.service);

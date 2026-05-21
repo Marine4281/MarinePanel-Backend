@@ -133,11 +133,11 @@ export const getUserOrders = async (req, res) => {
     const baseFilter = cpEndUserIds.length > 0
       ? {
           $or: [
-            { childPanelOwner: { $ne: null } },
-            { userId: { $nin: cpEndUserIds } },
+            { childPanelOwner: { $ne: null }, placedViaChildPanel: true },
+            { childPanelOwner: null, userId: { $nin: cpEndUserIds } },
           ],
         }
-      : {};
+      : { childPanelOwner: null };
 
     let query = { ...baseFilter };
 
@@ -552,11 +552,11 @@ export const getOrderStats = async (req, res) => {
     const baseFilter = cpEndUserIds.length > 0
       ? {
           $or: [
-            { childPanelOwner: { $ne: null } },
-            { userId: { $nin: cpEndUserIds } },
+            { childPanelOwner: { $ne: null }, placedViaChildPanel: true },
+            { childPanelOwner: null, userId: { $nin: cpEndUserIds } },
           ],
         }
-      : {};
+      : { childPanelOwner: null };
 
     const match = { ...baseFilter };
 

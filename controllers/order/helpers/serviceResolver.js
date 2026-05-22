@@ -22,9 +22,11 @@ export const resolveService = async ({ service, req }) => {
       });
     }
   } else if (!req.reseller) {
+    // cpOwner has default: null in the schema, so $exists: false never matches.
+    // Must query for null explicitly.
     serviceData = await Service.findOne({
       ...serviceQuery,
-      cpOwner: { $exists: false },
+      cpOwner: null,
     });
   } else {
     serviceData = await Service.findOne(serviceQuery);

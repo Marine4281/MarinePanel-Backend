@@ -1,4 +1,4 @@
-import Wallet from "../../models/Wallet.js";
+import Wallet from "../../../models/Wallet.js";
 import { calculateBalance } from "./wallet.js";
 
 export const creditResellerCommission = async (order) => {

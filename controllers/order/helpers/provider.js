@@ -1,4 +1,4 @@
-import ProviderProfile from "../../models/ProviderProfile.js";
+import ProviderProfile from "../../../models/ProviderProfile.js";
 
 export const resolveProviderProfile = async ({
   req,

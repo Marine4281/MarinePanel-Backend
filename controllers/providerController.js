@@ -397,8 +397,7 @@ export const importSelectedServices = async (req, res) => {
       });
     }
 
-    const profile = await ProviderProfile.findOne({ name: provider });
-
+    const profile = await ProviderProfile.findOne({ name: provider, cpOwner: { $in: [null, undefined] } });
     if (!profile) {
       return res.status(400).json({
         message: "Provider profile not found",

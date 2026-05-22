@@ -1,5 +1,5 @@
-import Wallet from "../../models/Wallet.js";
-import User from "../../models/User.js";
+import Wallet from "../../../models/Wallet.js";
+import User from "../../../models/User.js";
 
 export const calculateBalance = (transactions = []) =>
   transactions.reduce((acc, t) => acc + (t.amount || 0), 0);

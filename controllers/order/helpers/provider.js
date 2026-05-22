@@ -1,16 +1,11 @@
-import ProviderProfile from "../../../models/ProviderProfile.js";
-
-export const resolveProviderProfile = async ({
-  req,
-  serviceData,
-}) => {
+// controllers/order/helpers/provider.js
+export const resolveProviderProfile = async ({ req, serviceData }) => {
   const providerProfile = await ProviderProfile.findById(
     serviceData.providerProfileId
   );
 
-  if (!providerProfile) {
-    throw new Error("Provider profile not found");
-  }
+  // Return null so the caller can send the proper 400
+  if (!providerProfile) return null;
 
   let effectiveProviderProfile = providerProfile;
   let routeThroughMainPlatformApi = false;
@@ -21,10 +16,7 @@ export const resolveProviderProfile = async ({
         _id: serviceData.providerProfileId,
         cpOwner: req.childPanel._id,
       });
-
-      if (cpProviderProfile) {
-        effectiveProviderProfile = cpProviderProfile;
-      }
+      if (cpProviderProfile) effectiveProviderProfile = cpProviderProfile;
     } else {
       const cpPlatformProfile = await ProviderProfile.findOne({
         cpOwner: req.childPanel._id,
@@ -37,8 +29,5 @@ export const resolveProviderProfile = async ({
     }
   }
 
-  return {
-    effectiveProviderProfile,
-    routeThroughMainPlatformApi,
-  };
+  return { effectiveProviderProfile, routeThroughMainPlatformApi };
 };

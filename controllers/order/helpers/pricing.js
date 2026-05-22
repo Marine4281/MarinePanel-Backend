@@ -1,5 +1,5 @@
-import Settings from "../../models/Settings.js";
-import User from "../../models/User.js";
+import Settings from "../../../models/Settings.js";
+import User from "../../../models/User.js";
 
 export const calculateOrderPricing = async ({
   serviceData,

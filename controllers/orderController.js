@@ -269,17 +269,35 @@ if (
     // If this is a platform service being re-sold through a CP,
 // route the provider call through the CP owner's own provider profile
 // instead of the main platform's provider profile.
-let effectiveProviderProfile = providerProfile;
 
-if (req.childPanel && serviceData.cpOwner) {
-  // Find the CP owner's provider profile that matches the same provider name
-  const cpProviderProfile = await ProviderProfile.findOne({
-    _id: serviceData.providerProfileId,
-    cpOwner: req.childPanel._id,
-  });
-  if (cpProviderProfile) {
-    effectiveProviderProfile = cpProviderProfile;
+let effectiveProviderProfile = providerProfile;
+let routeThroughMainPlatformApi = false;
+
+if (req.childPanel) {
+  if (serviceData.cpOwner) {
+    // CP-owned service: CP has their own direct provider connection
+    const cpProviderProfile = await ProviderProfile.findOne({
+      _id: serviceData.providerProfileId,
+      cpOwner: req.childPanel._id,
+    });
+    if (cpProviderProfile) {
+      effectiveProviderProfile = cpProviderProfile;
+    }
+  } else {
+    // Main platform service re-sold by CP.
+    // Find the CP owner's provider profile that connects back to the main platform.
+    // We'll use IT to place the order — so the main platform creates one order
+    // under the CP owner's account, and routes to the real provider itself.
+    const cpPlatformProfile = await ProviderProfile.findOne({
+      cpOwner: req.childPanel._id,
+    }).sort({ createdAt: 1 }); // use first/only connected platform profile
+
+    if (cpPlatformProfile) {
+      effectiveProviderProfile = cpPlatformProfile;
+      routeThroughMainPlatformApi = true;
+    }
   }
+    }
   // If the CP owner has no matching provider profile, the order falls back
   // to the main platform's provider profile (current behavior).
       }
@@ -591,40 +609,60 @@ if (!isFreeOrder && childPanelOwnerId) {
     /* ================= PROVIDER CALL ================= */
 
     try {
-  const providerPayload = {
-    key: effectiveProviderProfile.apiKey,
-    action: "add",
-    service: serviceData.providerServiceId,
-    link,
-  };
+  let providerOrderId = null;
 
-  // Normal services
-  if (serviceData.serviceType !== "Custom Comments") {
-    providerPayload.quantity = qty;
+  if (routeThroughMainPlatformApi) {
+    // Sending through the main platform's SMM API (CP owner's account there)
+    const payload = new URLSearchParams();
+    payload.append("key", effectiveProviderProfile.apiKey);
+    payload.append("action", "add");
+    payload.append("service", serviceData.serviceId); // platform's serviceId, not providerServiceId
+    payload.append("link", link);
+    payload.append("quantity", qty);
+
+    const response = await axios.post(effectiveProviderProfile.apiUrl, payload, {
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      timeout: 15000,
+    });
+
+    if (response?.data?.order) {
+      providerOrderId = response.data.order;
+      order.providerOrderId = String(providerOrderId);
+      order.providerStatus = "processing";
+      order.status = "processing";
+    }
+    order.providerResponse = response.data;
+
+  } else {
+    // Direct provider call (normal flow)
+    const providerPayload = {
+      key: effectiveProviderProfile.apiKey,
+      action: "add",
+      service: serviceData.providerServiceId,
+      link,
+    };
+
+    if (serviceData.serviceType !== "Custom Comments") {
+      providerPayload.quantity = qty;
+    }
+    if (serviceData.serviceType === "Custom Comments" && comments?.trim()) {
+      providerPayload.comments = comments.trim();
+    }
+
+    const response = await axios.post(effectiveProviderProfile.apiUrl, providerPayload, {
+      timeout: 15000,
+    });
+
+    if (response?.data?.order) {
+      order.providerOrderId = response.data.order;
+      order.providerStatus = "processing";
+      order.status = "processing";
+    }
+    order.providerResponse = response.data;
   }
 
-  // Custom Comments services
-  if (
-    serviceData.serviceType === "Custom Comments" &&
-    comments?.trim()
-  ) {
-    providerPayload.comments = comments.trim();
-  }
-
-  const response = await axios.post(
-    effectiveProviderProfile.apiUrl,
-    providerPayload,
-    { timeout: 15000 }
-  );
-
-  if (response?.data?.order) {
-    order.providerOrderId = response.data.order;
-    order.providerStatus = "processing";
-    order.status = "processing";
-  }
-
-  order.providerResponse = response.data;
   await order.save();
+
 } catch (err) {
       /* ================= SAFE REFUND ON PROVIDER FAILURE ================= */
 

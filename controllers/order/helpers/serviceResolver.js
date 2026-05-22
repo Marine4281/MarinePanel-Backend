@@ -1,4 +1,4 @@
-import Service from "../../models/Service.js";
+import Service from "../../../models/Service.js";
 
 export const resolveService = async ({ service, req }) => {
   const serviceQuery = {

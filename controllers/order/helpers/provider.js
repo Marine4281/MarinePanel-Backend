@@ -1,10 +1,11 @@
 // controllers/order/helpers/provider.js
+import ProviderProfile from "../../../models/ProviderProfile.js";
+
 export const resolveProviderProfile = async ({ req, serviceData }) => {
   const providerProfile = await ProviderProfile.findById(
     serviceData.providerProfileId
   );
 
-  // Return null so the caller can send the proper 400
   if (!providerProfile) return null;
 
   let effectiveProviderProfile = providerProfile;

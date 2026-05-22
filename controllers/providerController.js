@@ -24,7 +24,7 @@ export const fetchProviderServices = async (req, res) => {
     }
 
     // ✅ AUTO LOAD PROVIDER PROFILE
-    const profile = await ProviderProfile.findOne({ name: provider, cpOwner: { $exists: false } });
+    const profile = await ProviderProfile.findOne({ name: provider, cpOwner: { $in: [null, undefined] } });
     
     if (profile) {
       apiUrl = profile.apiUrl;

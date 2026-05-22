@@ -300,7 +300,7 @@ if (req.childPanel) {
     }
   // If the CP owner has no matching provider profile, the order falls back
   // to the main platform's provider profile (current behavior).
-      }
+  
 
     /* ================= RESOLVE CHILD PANEL OWNER =================
     If this user belongs to a child panel (via scope), we resolve

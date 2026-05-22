@@ -1,8 +1,8 @@
+// controllers/order/helpers/childPanel.js
 import User from "../../../models/User.js";
 
 export const resolveChildPanelData = async (user) => {
   let childPanelOwnerId = null;
-  let childPanelCommission = 0;
   let childPanelPerOrderFee = 0;
 
   if (user.childPanelOwner) {
@@ -10,20 +10,9 @@ export const resolveChildPanelData = async (user) => {
 
     if (cpOwner && cpOwner.isChildPanel && cpOwner.childPanelIsActive) {
       childPanelOwnerId = cpOwner._id;
-
-      childPanelPerOrderFee = Number(
-        cpOwner.childPanelPerOrderFee || 0
-      );
-
-      childPanelCommission = Number(
-        cpOwner.childPanelCommissionRate || 0
-      );
+      childPanelPerOrderFee = Number(cpOwner.childPanelPerOrderFee || 0);
     }
   }
 
-  return {
-    childPanelOwnerId,
-    childPanelCommission,
-    childPanelPerOrderFee,
-  };
+  return { childPanelOwnerId, childPanelPerOrderFee };
 };

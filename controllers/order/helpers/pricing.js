@@ -1,3 +1,5 @@
+// controllers/order/helpers/pricing.js
+
 import Settings from "../../../models/Settings.js";
 import User from "../../../models/User.js";
 
@@ -14,21 +16,17 @@ export const calculateOrderPricing = async ({
   let childPanelCommission = 0;
 
   if (serviceData.cpOwner) {
-    const cpOwner = childPanelOwnerId
-      ? await User.findById(childPanelOwnerId)
-      : null;
+    // Resolve CP owner: prefer the linked childPanelOwner on the user,
+    // fall back to the service's own cpOwner (the missing piece)
+    const cpOwnerId = childPanelOwnerId || serviceData.cpOwner;
+    const cpOwner = cpOwnerId ? await User.findById(cpOwnerId) : null;
 
-    const cpCommissionRate = Number(
-      cpOwner?.childPanelCommissionRate || 0
-    );
+    const cpCommissionRate = Number(cpOwner?.childPanelCommissionRate || 0);
 
-    finalRate =
-      providerRate +
-      (providerRate * cpCommissionRate) / 100;
+    finalRate = providerRate + (providerRate * cpCommissionRate) / 100;
 
     if (cpOwner && cpCommissionRate > 0) {
-      childPanelCommission =
-        (qty / 1000) * (finalRate - providerRate);
+      childPanelCommission = (qty / 1000) * (finalRate - providerRate);
     }
   } else {
     const settings = await Settings.findOne().lean();
@@ -40,40 +38,25 @@ export const calculateOrderPricing = async ({
         ? Number(user.commissionOverride)
         : globalRate;
 
-    const systemRate =
-      providerRate +
-      (providerRate * adminRate) / 100;
+    const systemRate = providerRate + (providerRate * adminRate) / 100;
 
     finalRate = systemRate;
 
     if (user.resellerOwner) {
       const reseller = await User.findById(user.resellerOwner);
+      const resellerRate = Number(reseller?.resellerCommissionRate || 0);
 
-      const resellerRate = Number(
-        reseller?.resellerCommissionRate || 0
-      );
-
-      finalRate =
-        systemRate +
-        (systemRate * resellerRate) / 100;
-
-      resellerCommission =
-        ((qty / 1000) * systemRate * resellerRate) / 100;
+      finalRate = systemRate + (systemRate * resellerRate) / 100;
+      resellerCommission = ((qty / 1000) * systemRate * resellerRate) / 100;
     }
 
     if (childPanelOwnerId) {
       const cpOwner = await User.findById(childPanelOwnerId);
-
-      const cpCommissionRate = Number(
-        cpOwner?.childPanelCommissionRate || 0
-      );
+      const cpCommissionRate = Number(cpOwner?.childPanelCommissionRate || 0);
 
       if (cpCommissionRate > 0) {
-        const finalCharge =
-          (qty / 1000) * finalRate;
-
-        childPanelCommission =
-          (finalCharge * cpCommissionRate) / 100;
+        const finalCharge = (qty / 1000) * finalRate;
+        childPanelCommission = (finalCharge * cpCommissionRate) / 100;
       }
     }
   }

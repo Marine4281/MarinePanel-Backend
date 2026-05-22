@@ -28,12 +28,27 @@ export const createOrder = async (req, res) => {
     // ─── RESOLVE SERVICE ───────────────────────────────────────────────────
     const serviceData = await resolveService({ service, req });
 
+    if (!serviceData) {
+      return res.status(404).json({ message: "Service not found" });
+    }
+
+    if (serviceData.visible === false) {
+      return res.status(403).json({ message: "Service not available" });
+    }
+
     const isCustomCommentsOrder =
       serviceData?.serviceType === "Custom Comments" ||
       serviceData?.serviceType === "Custom Comments Package";
 
     if (!isCustomCommentsOrder && !quantity) {
       return res.status(400).json({ message: "Quantity is required" });
+    }
+
+    if (
+      serviceData?.serviceType === "Custom Comments" &&
+      (!comments || !comments.trim())
+    ) {
+      return res.status(400).json({ message: "Comments are required for this service" });
     }
 
     const qty = isCustomCommentsOrder
@@ -48,21 +63,6 @@ export const createOrder = async (req, res) => {
       return res.status(400).json({ message: "Please enter at least one comment" });
     }
 
-    if (!serviceData) {
-      return res.status(404).json({ message: "Service not found" });
-    }
-
-    if (serviceData.visible === false) {
-      return res.status(403).json({ message: "Service not available" });
-    }
-
-    if (
-      serviceData?.serviceType === "Custom Comments" &&
-      (!comments || !comments.trim())
-    ) {
-      return res.status(400).json({ message: "Comments are required for this service" });
-    }
-
     // ─── USER & WALLET ─────────────────────────────────────────────────────
     const user = await User.findById(req.user._id);
     if (!user) return res.status(404).json({ message: "User not found" });
@@ -73,8 +73,11 @@ export const createOrder = async (req, res) => {
     const wallet = await ensureWallet(user._id);
 
     // ─── RESOLVE PROVIDER ─────────────────────────────────────────────────
-    const { effectiveProviderProfile, routeThroughMainPlatformApi } =
-      await resolveProviderProfile({ req, serviceData });
+    const providerResult = await resolveProviderProfile({ req, serviceData });
+    if (!providerResult) {
+      return res.status(400).json({ message: "Provider profile not found" });
+    }
+    const { effectiveProviderProfile, routeThroughMainPlatformApi } = providerResult;
 
     // ─── RESOLVE CHILD PANEL DATA ─────────────────────────────────────────
     const { childPanelOwnerId, childPanelPerOrderFee } =

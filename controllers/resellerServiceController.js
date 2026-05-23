@@ -37,7 +37,8 @@ export const getResellerServices = async (req, res) => {
 
     // Fetch active services
     const services = await Service.find({ status: true })
-      .select("name rate min max category visible serviceId")
+      .select("name rate min max category platform visible serviceId isFree freeQuantity cooldownHours refillAllowed cancelAllowed serviceType isDefaultCategoryGlobal isDefaultCategoryPlatform description")
+      .sort({ createdAt: -1 })
       .lean();
 
     // Fetch reseller-specific overrides
@@ -71,6 +72,7 @@ export const getResellerServices = async (req, res) => {
           serviceId: s.serviceId || s._id,
           name: s.name,
           category: s.category || "General",
+          platform: s.platform || "General",
           visible,
 
           // Pricing
@@ -82,6 +84,17 @@ export const getResellerServices = async (req, res) => {
 
           min: Number(s.min ?? 1),
           max: Number(s.max ?? 100000),
+
+          // Service meta
+          serviceType:               s.serviceType  || "Default",
+          description:               s.description  || "",
+          isFree:                    s.isFree        || false,
+          freeQuantity:              s.freeQuantity  || 0,
+          cooldownHours:             s.cooldownHours || 0,
+          refillAllowed:             s.refillAllowed || false,
+          cancelAllowed:             s.cancelAllowed || false,
+          isDefaultCategoryGlobal:   s.isDefaultCategoryGlobal   || false,
+          isDefaultCategoryPlatform: s.isDefaultCategoryPlatform || false,
         };
       })
       .filter((s) => s.visible);

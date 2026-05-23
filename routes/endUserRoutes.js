@@ -31,6 +31,6 @@ End User Branding (from Reseller)
 GET /api/end-user/branding
 --------------------------------
 */
-router.get("/branding", protect, getResellerBranding);
+router.get("/branding", getResellerBranding);
 
 export default router;

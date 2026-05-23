@@ -216,6 +216,14 @@ export const updateResellerCommission = async (req, res) => {
 
     await reseller.save();
 
+    const io = req?.app?.get("io");
+    if (io) {
+      io.emit("commissionUpdated", {
+        commission: rate,
+        resellerId: reseller._id.toString(),
+      });
+    }
+
     res.json({
       success: true,
       message: "Commission updated",
@@ -226,7 +234,6 @@ export const updateResellerCommission = async (req, res) => {
     res.status(500).json({ success: false, message: "Failed to update commission" });
   }
 };
-
 /* =========================================================
    TOGGLE STATUS (SAFE)
 ========================================================= */

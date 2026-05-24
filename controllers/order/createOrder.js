@@ -191,23 +191,32 @@ export const createOrder = async (req, res) => {
     }
 
     // ─── DEDUCT BASE COST FROM CP OWNER (PAID ORDERS) ────────────────────
-    if (!isFreeOrder && childPanelOwnerId) {
-      const cpOwnerWalletForPaid = await Wallet.findOne({ user: childPanelOwnerId });
+if (!isFreeOrder && childPanelOwnerId) {
+  const cpOwnerWalletForPaid = await Wallet.findOne({ user: childPanelOwnerId });
 
-      if (cpOwnerWalletForPaid) {
-        cpOwnerWalletForPaid.transactions.push({
-          type: "Order",
-          amount: -Number(baseCharge),
-          status: "Completed",
-          note: `CP end-user order cost #${customOrderId}`,
-          createdAt: new Date(),
-        });
+  if (cpOwnerWalletForPaid) {
+    cpOwnerWalletForPaid.transactions.push({
+      type: "Order",
+      amount: -Number(baseCharge),
+      status: "Completed",
+      note: `CP end-user order cost #${customOrderId}`,
+      createdAt: new Date(),
+    });
 
-        cpOwnerWalletForPaid.balance = calculateBalance(cpOwnerWalletForPaid.transactions);
-        await cpOwnerWalletForPaid.save();
-        await updateUserBalance(childPanelOwnerId, cpOwnerWalletForPaid);
-      }
+    cpOwnerWalletForPaid.balance = calculateBalance(cpOwnerWalletForPaid.transactions);
+    await cpOwnerWalletForPaid.save();
+    await updateUserBalance(childPanelOwnerId, cpOwnerWalletForPaid);
+
+    // If CP owner is now in negative, flag their account so the main
+    // platform admin can see and act — mirrors how provider APIs treat
+    // broke panels (they reject on their side, not the end-user's side).
+    if (cpOwnerWalletForPaid.balance < 0) {
+      await User.findByIdAndUpdate(childPanelOwnerId, {
+        childPanelNegativeBalance: true,
+      });
     }
+  }
+}
 
     // ─── CREATE ORDER ─────────────────────────────────────────────────────
     const order = await Order.create({

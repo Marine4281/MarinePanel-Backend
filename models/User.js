@@ -505,6 +505,11 @@ childPanelBillingIntervalDays: {
       default: null,
     },
 
+    childPanelNegativeBalance: {
+      type: Boolean,
+      default: false,
+    },
+
     // Kept for backward compatibility — use isChildPanel instead
     childPanelEnabled: {
       type: Boolean,

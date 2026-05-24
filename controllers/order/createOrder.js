@@ -45,7 +45,7 @@ export const createOrder = async (req, res) => {
     }
 
     if (
-      serviceData?.serviceType === "Custom Comments" &&
+      isCustomCommentsOrder &&
       (!comments || !comments.trim())
     ) {
       return res.status(400).json({ message: "Comments are required for this service" });
@@ -84,9 +84,6 @@ export const createOrder = async (req, res) => {
       await resolveChildPanelData(user);
 
     // ─── REJECT IF CP OWNER IS IN NEGATIVE BALANCE ────────────────────────
-    // New orders are blocked when the CP owner owes the main platform money.
-    // Already in-flight orders complete normally — only new ones are gated.
-    // The end-user sees a generic message; the real reason is internal.
     if (childPanelOwnerId) {
       const cpOwner = await User.findById(childPanelOwnerId).select("childPanelNegativeBalance");
       if (cpOwner?.childPanelNegativeBalance) {
@@ -202,14 +199,36 @@ export const createOrder = async (req, res) => {
     }
 
     // ─── DEDUCT BASE COST FROM CP OWNER (PAID ORDERS) ────────────────────
-    // No upfront balance check here — CP owner operates on credit from the
-    // main platform. If they go negative, we flag their account so future
-    // orders are rejected until they top up. This mirrors how provider APIs
-    // treat underfunded panels: they reject on their side, not the end-user's.
+    // We check BEFORE deducting so the balance can never go negative.
+    // If this order would tip them below zero, refund the end-user and flag
+    // the CP owner — mirroring how provider APIs reject broke panels.
     if (!isFreeOrder && childPanelOwnerId) {
       const cpOwnerWalletForPaid = await Wallet.findOne({ user: childPanelOwnerId });
 
       if (cpOwnerWalletForPaid) {
+        const cpOwnerCurrentBalance = calculateBalance(cpOwnerWalletForPaid.transactions);
+
+        if (cpOwnerCurrentBalance < baseCharge) {
+          // Refund the end-user since we already deducted them above
+          wallet.transactions.push({
+            type: "Refund",
+            amount: Number(finalCharge),
+            status: "Completed",
+            note: `Refund - CP owner insufficient balance #${customOrderId}`,
+            createdAt: new Date(),
+          });
+          wallet.balance = calculateBalance(wallet.transactions);
+          await wallet.save();
+          await updateUserBalance(user._id, wallet);
+
+          // Flag the CP owner so all future orders are gated at the top
+          await User.findByIdAndUpdate(childPanelOwnerId, {
+            childPanelNegativeBalance: true,
+          });
+
+          return res.status(402).json({ message: "Service temporarily unavailable" });
+        }
+
         cpOwnerWalletForPaid.transactions.push({
           type: "Order",
           amount: -Number(baseCharge),
@@ -221,14 +240,6 @@ export const createOrder = async (req, res) => {
         cpOwnerWalletForPaid.balance = calculateBalance(cpOwnerWalletForPaid.transactions);
         await cpOwnerWalletForPaid.save();
         await updateUserBalance(childPanelOwnerId, cpOwnerWalletForPaid);
-
-        // Flag the CP owner if they've gone into negative so the main platform
-        // admin can act and future orders are gated until they top up.
-        if (cpOwnerWalletForPaid.balance < 0) {
-          await User.findByIdAndUpdate(childPanelOwnerId, {
-            childPanelNegativeBalance: true,
-          });
-        }
       }
     }
 
@@ -286,10 +297,9 @@ export const createOrder = async (req, res) => {
         const payload = new URLSearchParams();
         payload.append("key", effectiveProviderProfile.apiKey);
         payload.append("action", "add");
-        payload.append("service", serviceData.providerServiceId); // provider's own ID, not internal
+        payload.append("service", serviceData.providerServiceId);
         payload.append("link", link);
 
-        // Custom comments services send comments instead of quantity
         if (isCustomCommentsOrder) {
           payload.append("comments", comments.trim());
         } else {
@@ -315,11 +325,12 @@ export const createOrder = async (req, res) => {
           link,
         };
 
-        if (serviceData.serviceType !== "Custom Comments") {
+        // Both "Custom Comments" and "Custom Comments Package" send comments,
+        // not quantity — isCustomCommentsOrder covers both.
+        if (isCustomCommentsOrder) {
+          if (comments?.trim()) providerPayload.comments = comments.trim();
+        } else {
           providerPayload.quantity = qty;
-        }
-        if (serviceData.serviceType === "Custom Comments" && comments?.trim()) {
-          providerPayload.comments = comments.trim();
         }
 
         const response = await axios.post(

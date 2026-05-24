@@ -30,12 +30,13 @@ export const getServicesPublic = async (req, res) => {
       let services = [];
 
       // ── OWN services: imported from CP's own providers OR manually added ──
-      // These are stored in the Service model with cpOwner = cp._id
       if (serviceMode === "own" || serviceMode === "both") {
         const ownServices = await Service.find({
           cpOwner: cp._id,
           status: true,
-        }).lean();
+        })
+          .sort({ createdAt: -1 })
+          .lean();
 
         const priced = ownServices.map((s) => {
           const costRate  = Number(s.rate || 0);
@@ -46,10 +47,17 @@ export const getServicesPublic = async (req, res) => {
             serviceId: s.serviceId,
             costRate,
             finalRate,
-            rate: finalRate,          // end users always see final price
+            rate: finalRate,
             source: "own",
-            isFree:       s.isFree || false,
-            freeQuantity: s.freeQuantity || 0,
+            platform:    s.platform    || "General",
+            category:    s.category    || "General",
+            serviceType: s.serviceType || "Default",
+            description: s.description || "",
+            icon:        s.icon        || "",
+            isDefaultCategoryGlobal:   s.isDefaultCategoryGlobal   || false,
+            isDefaultCategoryPlatform: s.isDefaultCategoryPlatform || false,
+            isFree:        s.isFree        || false,
+            freeQuantity:  s.freeQuantity  || 0,
             cooldownHours: s.cooldownHours || 0,
             refillAllowed: s.refillAllowed || false,
             cancelAllowed: s.cancelAllowed || false,
@@ -66,30 +74,33 @@ export const getServicesPublic = async (req, res) => {
         const platformServices = await Service.find({
           status: true,
           availableToChildPanels: true,
-          cpOwner: null,             // strictly main-panel services only
-        }).lean();
+          cpOwner: null,
+        })
+          .sort({ createdAt: -1 })
+          .lean();
 
         const priced = platformServices.map((s) => {
           const providerRate = Number(s.rate || 0);
-          // Admin's commission is already baked into the rate stored in DB
-          // when the admin sets prices. So we apply ONLY cpCommission on top.
-          // BUT: if the DB stores the raw provider rate (pre-admin commission),
-          // we need to add admin commission first. Check your admin flow.
-          // In this codebase the admin's "rate" IS the rate to charge users
-          // (after admin sets their price), so we apply cpCommission only:
-          const systemRate = providerRate + (providerRate * adminCommission) / 100;
-          const finalRate  = systemRate  + (systemRate  * cpCommission)    / 100;
+          const systemRate   = providerRate + (providerRate * adminCommission) / 100;
+          const finalRate    = systemRate   + (systemRate   * cpCommission)    / 100;
           return {
             ...s,
-            _id:        s._id,
-            serviceId:  s.serviceId,
+            _id:       s._id,
+            serviceId: s.serviceId,
             providerRate,
             systemRate,
             finalRate,
             rate: finalRate,
             source: "platform",
-            isFree:        s.isFree || false,
-            freeQuantity:  s.freeQuantity || 0,
+            platform:    s.platform    || "General",
+            category:    s.category    || "General",
+            serviceType: s.serviceType || "Default",
+            description: s.description || "",
+            icon:        s.icon        || "",
+            isDefaultCategoryGlobal:   s.isDefaultCategoryGlobal   || false,
+            isDefaultCategoryPlatform: s.isDefaultCategoryPlatform || false,
+            isFree:        s.isFree        || false,
+            freeQuantity:  s.freeQuantity  || 0,
             cooldownHours: s.cooldownHours || 0,
             refillAllowed: s.refillAllowed || false,
             cancelAllowed: s.cancelAllowed || false,
@@ -101,7 +112,18 @@ export const getServicesPublic = async (req, res) => {
         services = [...services, ...priced];
       }
 
-      // Filter any explicitly hidden
+      // When mode is "both", own services take priority over platform services
+      // with the same name — deduplicate keeping the own version.
+      if (serviceMode === "both") {
+        const seen = new Set();
+        services = services.filter((s) => {
+          const key = s.name.toLowerCase().trim();
+          if (seen.has(key)) return false;
+          seen.add(key);
+          return true;
+        });
+      }
+
       const visible = services.filter((s) => s.status !== false);
       return res.status(200).json(visible);
     }
@@ -116,8 +138,9 @@ export const getServicesPublic = async (req, res) => {
       const settings = await Settings.findOne();
       const adminCommission = Number(settings?.commission || 0);
 
-      // Only main-panel services (no CP-scoped ones)
-      const services = await Service.find({ status: true, cpOwner: null }).lean();
+      const services = await Service.find({ status: true, cpOwner: null })
+        .sort({ createdAt: -1 })
+        .lean();
 
       const resellerOverrides = await ResellerService.find({
         resellerId: reseller._id,
@@ -137,19 +160,23 @@ export const getServicesPublic = async (req, res) => {
           const override = overridesMap[s._id.toString()];
           const visible  = override?.visible ?? (s.visible !== false);
 
+          // Apply reseller name/category overrides at read time
+          const name     = override?.customName     || s.name;
+          const category = override?.customCategory || s.category || "General";
+
           return {
             _id:       s._id,
             serviceId: s.serviceId || s._id,
-            name:      s.name,
-            category:  s.category || "General",
-            platform:  s.platform || "General",
+            name,
+            category,
+            platform:    s.platform    || "General",
             description: s.description || "",
-            icon: s.icon || "",
-            serviceType: s.serviceType || "Default", 
-            isDefaultCategoryGlobal:   s.isDefaultCategoryGlobal  || false,
+            icon:        s.icon        || "",
+            serviceType: s.serviceType || "Default",
+            isDefaultCategoryGlobal:   s.isDefaultCategoryGlobal   || false,
             isDefaultCategoryPlatform: s.isDefaultCategoryPlatform || false,
-            isFree:        s.isFree || false,
-            freeQuantity:  s.freeQuantity || 0,
+            isFree:        s.isFree        || false,
+            freeQuantity:  s.freeQuantity  || 0,
             cooldownHours: s.cooldownHours || 0,
             refillAllowed: s.refillAllowed || false,
             cancelAllowed: s.cancelAllowed || false,
@@ -178,7 +205,6 @@ export const getServicesPublic = async (req, res) => {
     const settings = await Settings.findOne();
     const adminCommission = Number(settings?.commission || 0);
 
-    // Only main-panel services — exclude CP-scoped ones
     const services = await Service.find({ status: true, cpOwner: null })
       .sort({ createdAt: -1 })
       .lean();
@@ -192,15 +218,15 @@ export const getServicesPublic = async (req, res) => {
           _id:       s._id,
           serviceId: s.serviceId || s._id,
           name:      s.name,
-          category:  s.category || "General",
-          platform:  s.platform || "General",
+          category:  s.category  || "General",
+          platform:  s.platform  || "General",
           description: s.description || "",
-          icon: s.icon || "",
-          serviceType: s.serviceType || "Default", 
-          isDefaultCategoryGlobal:   s.isDefaultCategoryGlobal  || false,
+          icon:        s.icon        || "",
+          serviceType: s.serviceType || "Default",
+          isDefaultCategoryGlobal:   s.isDefaultCategoryGlobal   || false,
           isDefaultCategoryPlatform: s.isDefaultCategoryPlatform || false,
-          isFree:        s.isFree || false,
-          freeQuantity:  s.freeQuantity || 0,
+          isFree:        s.isFree        || false,
+          freeQuantity:  s.freeQuantity  || 0,
           cooldownHours: s.cooldownHours || 0,
           refillAllowed: s.refillAllowed || false,
           cancelAllowed: s.cancelAllowed || false,

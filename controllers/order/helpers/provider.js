@@ -2,9 +2,19 @@
 import ProviderProfile from "../../../models/ProviderProfile.js";
 
 export const resolveProviderProfile = async ({ req, serviceData }) => {
-  const providerProfile = await ProviderProfile.findById(
+  let providerProfile = await ProviderProfile.findById(
     serviceData.providerProfileId
   );
+
+  // Fallback: providerProfileId is stale (e.g. after a re-sync or reseller
+  // name override mutated the service doc). Try matching by provider name
+  // against the main-platform profiles (cpOwner: null).
+  if (!providerProfile && serviceData.provider && serviceData.provider !== "manual") {
+    providerProfile = await ProviderProfile.findOne({
+      name: serviceData.provider,
+      cpOwner: null,
+    });
+  }
 
   if (!providerProfile) return null;
 

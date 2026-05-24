@@ -83,6 +83,17 @@ export const createOrder = async (req, res) => {
     const { childPanelOwnerId, childPanelPerOrderFee } =
       await resolveChildPanelData(user);
 
+    // ─── REJECT IF CP OWNER IS IN NEGATIVE BALANCE ────────────────────────
+    // New orders are blocked when the CP owner owes the main platform money.
+    // Already in-flight orders complete normally — only new ones are gated.
+    // The end-user sees a generic message; the real reason is internal.
+    if (childPanelOwnerId) {
+      const cpOwner = await User.findById(childPanelOwnerId).select("childPanelNegativeBalance");
+      if (cpOwner?.childPanelNegativeBalance) {
+        return res.status(402).json({ message: "Service temporarily unavailable" });
+      }
+    }
+
     // ─── PRICING ──────────────────────────────────────────────────────────
     let isFreeOrder = false;
     let finalCharge = 0;
@@ -191,32 +202,35 @@ export const createOrder = async (req, res) => {
     }
 
     // ─── DEDUCT BASE COST FROM CP OWNER (PAID ORDERS) ────────────────────
-if (!isFreeOrder && childPanelOwnerId) {
-  const cpOwnerWalletForPaid = await Wallet.findOne({ user: childPanelOwnerId });
+    // No upfront balance check here — CP owner operates on credit from the
+    // main platform. If they go negative, we flag their account so future
+    // orders are rejected until they top up. This mirrors how provider APIs
+    // treat underfunded panels: they reject on their side, not the end-user's.
+    if (!isFreeOrder && childPanelOwnerId) {
+      const cpOwnerWalletForPaid = await Wallet.findOne({ user: childPanelOwnerId });
 
-  if (cpOwnerWalletForPaid) {
-    cpOwnerWalletForPaid.transactions.push({
-      type: "Order",
-      amount: -Number(baseCharge),
-      status: "Completed",
-      note: `CP end-user order cost #${customOrderId}`,
-      createdAt: new Date(),
-    });
+      if (cpOwnerWalletForPaid) {
+        cpOwnerWalletForPaid.transactions.push({
+          type: "Order",
+          amount: -Number(baseCharge),
+          status: "Completed",
+          note: `CP end-user order cost #${customOrderId}`,
+          createdAt: new Date(),
+        });
 
-    cpOwnerWalletForPaid.balance = calculateBalance(cpOwnerWalletForPaid.transactions);
-    await cpOwnerWalletForPaid.save();
-    await updateUserBalance(childPanelOwnerId, cpOwnerWalletForPaid);
+        cpOwnerWalletForPaid.balance = calculateBalance(cpOwnerWalletForPaid.transactions);
+        await cpOwnerWalletForPaid.save();
+        await updateUserBalance(childPanelOwnerId, cpOwnerWalletForPaid);
 
-    // If CP owner is now in negative, flag their account so the main
-    // platform admin can see and act — mirrors how provider APIs treat
-    // broke panels (they reject on their side, not the end-user's side).
-    if (cpOwnerWalletForPaid.balance < 0) {
-      await User.findByIdAndUpdate(childPanelOwnerId, {
-        childPanelNegativeBalance: true,
-      });
+        // Flag the CP owner if they've gone into negative so the main platform
+        // admin can act and future orders are gated until they top up.
+        if (cpOwnerWalletForPaid.balance < 0) {
+          await User.findByIdAndUpdate(childPanelOwnerId, {
+            childPanelNegativeBalance: true,
+          });
+        }
+      }
     }
-  }
-}
 
     // ─── CREATE ORDER ─────────────────────────────────────────────────────
     const order = await Order.create({
@@ -272,9 +286,15 @@ if (!isFreeOrder && childPanelOwnerId) {
         const payload = new URLSearchParams();
         payload.append("key", effectiveProviderProfile.apiKey);
         payload.append("action", "add");
-        payload.append("service", serviceData.serviceId);
+        payload.append("service", serviceData.providerServiceId); // provider's own ID, not internal
         payload.append("link", link);
-        payload.append("quantity", qty);
+
+        // Custom comments services send comments instead of quantity
+        if (isCustomCommentsOrder) {
+          payload.append("comments", comments.trim());
+        } else {
+          payload.append("quantity", qty);
+        }
 
         const response = await axios.post(effectiveProviderProfile.apiUrl, payload, {
           headers: { "Content-Type": "application/x-www-form-urlencoded" },

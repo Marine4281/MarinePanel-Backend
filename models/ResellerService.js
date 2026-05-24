@@ -17,7 +17,19 @@ const resellerServiceSchema = new mongoose.Schema({
   visible: {
     type: Boolean,
     default: true
-  }
+  },
+
+  customName: {
+    type: String,
+    default: null,
+    trim: true,
+  },
+
+  customCategory: {
+    type: String,
+    default: null,
+    trim: true,
+  },
 
 });
 

@@ -14,6 +14,7 @@ import axios from "axios";
 import ProviderProfile from "../models/ProviderProfile.js";
 import ProviderService from "../models/ProviderService.js";
 import Service from "../models/Service.js";
+import User from "../models/User.js";
 import Counter from "../models/Counter.js";
 
 // ======================= HELPERS =======================
@@ -30,7 +31,6 @@ const generateServiceId = async () => {
 };
 
 // ======================= GET PROVIDER PROFILES =======================
-// Only returns providers that belong to this child panel
 
 export const getCPProviderProfiles = async (req, res) => {
   try {
@@ -77,7 +77,6 @@ export const createCPProviderProfile = async (req, res) => {
       });
     }
 
-    // Duplicate check scoped to this child panel only
     const existing = await ProviderProfile.findOne({
       name,
       cpOwner: req.user._id,
@@ -119,7 +118,6 @@ export const updateCPProviderProfile = async (req, res) => {
       return res.status(404).json({ message: "Provider not found" });
     }
 
-    // Duplicate name check scoped to this child panel
     if (name && name !== provider.name) {
       const existing = await ProviderProfile.findOne({
         name,
@@ -130,7 +128,7 @@ export const updateCPProviderProfile = async (req, res) => {
       }
     }
 
-    provider.name = name || provider.name;
+    provider.name   = name   || provider.name;
     provider.apiUrl = apiUrl || provider.apiUrl;
     provider.apiKey = apiKey || provider.apiKey;
 
@@ -166,8 +164,6 @@ export const deleteCPProviderProfile = async (req, res) => {
 };
 
 // ======================= FETCH SERVICES FROM PROVIDER API =======================
-// Calls the external provider API and returns available services
-// with import status compared to what's already in the panel
 
 export const fetchCPProviderServices = async (req, res) => {
   try {
@@ -177,7 +173,6 @@ export const fetchCPProviderServices = async (req, res) => {
       return res.status(400).json({ message: "provider is required" });
     }
 
-    // Load profile scoped to this child panel
     const profile = await ProviderProfile.findOne({
       name: provider,
       cpOwner: req.user._id,
@@ -197,7 +192,6 @@ export const fetchCPProviderServices = async (req, res) => {
 
     const providerServices = response.data;
 
-    // Get existing services for this provider scoped to this child panel
     const existingServices = await ProviderService.find({
       provider,
       cpOwner: req.user._id,
@@ -233,7 +227,6 @@ export const fetchCPProviderServices = async (req, res) => {
       };
     });
 
-    // Detect services deleted from provider
     const deletedServices = existingServices
       .filter((s) => !providerIds.has(s.providerServiceId))
       .map((s) => ({
@@ -271,7 +264,6 @@ export const fetchCPProviderServices = async (req, res) => {
 };
 
 // ======================= IMPORT SELECTED SERVICES =======================
-// Imports chosen services into the child panel's service catalog
 
 export const importCPSelectedServices = async (req, res) => {
   try {
@@ -306,7 +298,10 @@ export const importCPSelectedServices = async (req, res) => {
       const cancelSupported =
         service.cancel === true || service.cancel === "true";
 
-      // Save to ProviderService scoped to this child panel
+      // Provider APIs return a "type" field — map it to our serviceType.
+      // This is critical for Custom Comments services to work correctly.
+      const serviceType = service.type || "Default";
+
       await ProviderService.updateOne(
         { provider, providerServiceId, cpOwner: req.user._id },
         {
@@ -323,7 +318,6 @@ export const importCPSelectedServices = async (req, res) => {
         { upsert: true }
       );
 
-      // Check if service already exists in panel scoped to this cp
       const existingService = await Service.findOne({
         providerServiceId: String(providerServiceId),
         cpOwner: req.user._id,
@@ -353,6 +347,7 @@ export const importCPSelectedServices = async (req, res) => {
           freeQuantity: 0,
           cooldownHours: 0,
           description: service.description || "",
+          serviceType,                  // ← saved from provider API response
           status: true,
           refillAllowed: refillSupported,
           cancelAllowed: cancelSupported,
@@ -365,16 +360,17 @@ export const importCPSelectedServices = async (req, res) => {
           cpOwner: req.user._id,
         });
       } else {
-        existingService.name = service.name;
-        existingService.category = service.category;
-        existingService.rate = numericRate;
+        existingService.name          = service.name;
+        existingService.category      = service.category;
+        existingService.rate          = numericRate;
         existingService.lastSyncedRate = numericRate;
-        existingService.min = Number(service.min);
-        existingService.max = Number(service.max);
+        existingService.min           = Number(service.min);
+        existingService.max           = Number(service.max);
         existingService.providerApiUrl = apiUrl;
         existingService.providerApiKey = apiKey;
-        existingService.refillAllowed = refillSupported;
-        existingService.cancelAllowed = cancelSupported;
+        existingService.refillAllowed  = refillSupported;
+        existingService.cancelAllowed  = cancelSupported;
+        existingService.serviceType    = serviceType; // ← keep in sync on re-import
 
         if (
           existingService.refillPolicy === "none" ||
@@ -387,6 +383,19 @@ export const importCPSelectedServices = async (req, res) => {
       }
 
       count++;
+    }
+
+    // Flip childPanelServiceMode so end-users can see the imported services.
+    // Preserves existing mode: none → own, platform → both, own/both → unchanged.
+    const cpUser = await User.findById(req.user._id).select("childPanelServiceMode");
+    const currentMode = cpUser?.childPanelServiceMode || "none";
+    const newMode =
+      currentMode === "none"     ? "own"  :
+      currentMode === "platform" ? "both" :
+      currentMode;
+
+    if (newMode !== currentMode) {
+      await User.findByIdAndUpdate(req.user._id, { childPanelServiceMode: newMode });
     }
 
     res.json({ message: "Selected services imported", count });
@@ -457,7 +466,6 @@ export const toggleCPProviderServiceStatus = async (req, res) => {
     service.status = !service.status;
     await service.save();
 
-    // Sync status to panel services scoped to this child panel
     await Service.updateMany(
       {
         providerServiceId: String(service.providerServiceId),
@@ -488,7 +496,6 @@ export const deleteCPProviderService = async (req, res) => {
 
     await service.deleteOne();
 
-    // Remove from panel services scoped to this child panel
     await Service.deleteMany({
       providerServiceId: String(service.providerServiceId),
       cpOwner: req.user._id,

@@ -252,7 +252,7 @@ app.use("/api/admin/payment-methods", adminPaymentMethodRoutes);
 app.use("/api/provider", providerRoutes);
 app.use("/api/admin/orders", adminOrderRoutes);
 app.use("/api/admin/user-orders", adminUserOrdersRoutes);
-app.use("/api/admin-logs", authMiddleware, adminOnly, adminLogRoutes);
+app.use("/api/admin-logs", adminLogRoutes);
 app.use("/provider", providerProfileRoutes);
 app.use("/api/category-meta", categoryMetaRoutes);
 app.use("/api/admin/financial", authMiddleware, adminOnly, financialRoutes);

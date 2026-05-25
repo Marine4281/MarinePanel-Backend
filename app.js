@@ -239,7 +239,7 @@ app.use("/api/child-panel/guides", childPanelGuideRoutes);
 app.use("/api/cp/financial", authMiddleware, cpOwnerOnly, updateLastSeen, cpOwnerFinancialRoutes);
 app.use("/api/cp/reseller-guides", authMiddleware, cpOwnerOnly, updateLastSeen, cpOwnerResellerGuidesRoutes);
 app.use("/api/cp/categories", authMiddleware, cpOwnerOnly, updateLastSeen, cpOwnerCategoryRoutes);
-app.use("/api/child-panel/logs", cpAdminLogRoutes);
+app.use("/api/cp/logs", authMiddleware, cpOwnerOnly, updateLastSeen, cpAdminLogRoutes);
 
 /* =================================================
    ADMIN ROUTES

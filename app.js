@@ -60,6 +60,7 @@ import cpOwnerWithdrawalRoutes from "./routes/cpOwnerWithdrawalRoutes.js";
 import cpOwnerServiceRoutes from "./routes/cpOwnerServiceRoutes.js";
 import cpOwnerFinancialRoutes from "./routes/cpOwnerFinancialRoutes.js";
 import cpOwnerResellerGuidesRoutes from "./routes/cpOwnerResellerGuidesRoutes.js";
+import cpOwnerCategoryRoutes from "./routes/cpOwnerCategoryRoutes.js";
 
 // Middleware
 import { protect as authMiddleware } from "./middlewares/authMiddleware.js";
@@ -236,6 +237,7 @@ app.use("/api/cp/withdrawals", authMiddleware, childPanelOnly, updateLastSeen, c
 app.use("/api/child-panel/guides", childPanelGuideRoutes);
 app.use("/api/cp/financial", authMiddleware, cpOwnerOnly, updateLastSeen, cpOwnerFinancialRoutes);
 app.use("/api/cp/reseller-guides", authMiddleware, cpOwnerOnly, updateLastSeen, cpOwnerResellerGuidesRoutes);
+app.use("/api/cp/categories", authMiddleware, cpOwnerOnly, updateLastSeen, cpOwnerCategoryRoutes);
 
 /* =================================================
    ADMIN ROUTES

@@ -1,25 +1,23 @@
-import CpAdminLog from "../models/CpAdminLog.js";
+import AdminLog from "../models/AdminLog.js";
 import User from "../models/User.js";
-import logCpAdminAction from "../utils/logCpAdminAction.js";
 
 const EXCLUDED_ACTIONS = [
   "VIEW_PROFILE", "VIEW_CP_LOGS", "CP_LOGIN", "VIEW_USER", "VIEW_USERS",
+  "VIEW_ADMIN_LOGS", "ADMIN_LOGIN",
 ];
 
-// GET /api/child-panel/logs
+// GET /api/cp/logs
 export const getCpAdminLogs = async (req, res) => {
   try {
-    const childPanelId = req.user?.childPanelId; // set by your CP auth middleware
-    if (!childPanelId) {
-      return res.status(403).json({ message: "No child panel context" });
-    }
+    const cpOwnerId = req.user._id; // set by cpOwnerOnly middleware in app.js
 
     let { page = 1, limit = 50, action, actions, admin, dateFrom, dateTo } = req.query;
 
-    page  = Math.max(1, parseInt(page, 10)  || 1);
+    page  = Math.max(1, parseInt(page,  10) || 1);
     limit = Math.max(1, Math.min(100, parseInt(limit, 10) || 50));
 
-    const query = { childPanel: childPanelId };
+    // Scoped to this CP owner's own actions only
+    const query = { admin: cpOwnerId };
 
     // ── Action filter ─────────────────────────────────────────────
     if (action) {
@@ -39,7 +37,7 @@ export const getCpAdminLogs = async (req, res) => {
       query.action = { $nin: EXCLUDED_ACTIONS };
     }
 
-    // ── Admin search ──────────────────────────────────────────────
+    // ── Admin search (sub-admins if you add them later) ───────────
     if (admin?.trim()) {
       const matched = await User.find({
         $or: [
@@ -65,23 +63,13 @@ export const getCpAdminLogs = async (req, res) => {
     }
 
     const [logs, total] = await Promise.all([
-      CpAdminLog.find(query)
+      AdminLog.find(query)
         .populate("admin", "name email")
         .sort({ createdAt: -1 })
         .skip((page - 1) * limit)
         .limit(limit),
-      CpAdminLog.countDocuments(query),
+      AdminLog.countDocuments(query),
     ]);
-
-    // audit self-view
-    logCpAdminAction({
-      adminId:     req.user._id,
-      adminEmail:  req.user.email,
-      childPanelId,
-      action:      "VIEW_CP_LOGS",
-      description: `Viewed CP logs${action ? ` (filtered: ${action})` : ""}`,
-      ipAddress:   req.ip,
-    }).catch(() => {});
 
     res.json({ logs, total, page, pages: Math.ceil(total / limit) });
 

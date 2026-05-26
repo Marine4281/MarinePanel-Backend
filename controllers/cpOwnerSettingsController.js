@@ -14,7 +14,8 @@
 //   - Service mode (platform services vs own providers vs both)
 //   - Branding (brand name, logo, theme color)
 
-import User from "../models/User.js";
+import User from "../model
+import logAdminAction from "../utils/logAdminAction.js";s/User.js";
 
 // ======================= GET ALL SETTINGS =======================
 // Returns all configurable settings for this child panel owner
@@ -82,6 +83,7 @@ export const updateCPBranding = async (req, res) => {
     if (themeColor !== undefined) user.childPanelThemeColor = themeColor;
 
     await user.save();
+    logAdminAction({ adminId: req.user._id, adminEmail: req.user.email, action: "UPDATE_BRANDING", targetType: "Settings", description: "Updated CP branding", ipAddress: req.ip }).catch(() => {});
 
     res.json({ success: true, message: "Branding updated" });
   } catch (err) {
@@ -178,6 +180,7 @@ export const updateCPPaymentMode = async (req, res) => {
 
     user.childPanelPaymentMode = paymentMode;
     await user.save();
+    logAdminAction({ adminId: req.user._id, adminEmail: req.user.email, action: "UPDATE_PAYMENT_MODE", targetType: "Settings", description: "Updated CP payment mode", ipAddress: req.ip }).catch(() => {});
 
     res.json({
       success: true,
@@ -257,6 +260,7 @@ export const updateCPDomain = async (req, res) => {
 
     user.childPanelDomain = cleanDomain;
     await user.save();
+    logAdminAction({ adminId: req.user._id, adminEmail: req.user.email, action: "UPDATE_DOMAIN", targetType: "Settings", description: `Updated CP domain to ${req.body.domain}`, ipAddress: req.ip }).catch(() => {});
 
     res.json({
       success: true,

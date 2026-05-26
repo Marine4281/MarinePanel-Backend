@@ -8,7 +8,7 @@ import User from "../models/User.js";
 import Order from "../models/Order.js";
 import Wallet from "../models/Wallet.js";
 import formatLastSeen from "../utils/formatLastSeen.js";
-import logAdminAction from "../utils/logAdminAction.js";
+import logCpAdminAction from "../utils/logCpAdminAction.js";
 
 // ======================= HELPERS =======================
 

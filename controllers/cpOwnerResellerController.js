@@ -9,6 +9,7 @@ import User from "../models/User.js";
 import Order from "../models/Order.js";
 import Wallet from "../models/Wallet.js";
 import mongoose from "mongoose";
+import logAdminAction from "../utils/logAdminAction.js";
 
 // ======================= HELPERS =======================
 
@@ -238,6 +239,7 @@ export const toggleCPResellerStatus = async (req, res) => {
         { $set: { isSuspended: true } }
       );
     }
+    logAdminAction({ adminId: req.user._id, adminEmail: req.user.email, action: "TOGGLE_RESELLER_STATUS", targetType: "Reseller", targetId: reseller._id, description: `Toggled reseller ${reseller._id} status`, ipAddress: req.ip }).catch(() => {});
 
     res.json({
       success: true,
@@ -282,6 +284,7 @@ export const updateCPResellerCommission = async (req, res) => {
     reseller.resellerCommissionRate = rate;
     reseller.commissionUpdatedAt = new Date();
     await reseller.save();
+    logAdminAction({ adminId: req.user._id, adminEmail: req.user.email, action: "UPDATE_COMMISSION", targetType: "Reseller", targetId: reseller._id, description: `Updated reseller ${reseller._id} commission`, ipAddress: req.ip }).catch(() => {});
 
     res.json({ success: true, message: "Commission updated" });
   } catch (error) {
@@ -350,6 +353,7 @@ export const updateCPResellerBalance = async (req, res) => {
     await wallet.save();
 
     await User.findByIdAndUpdate(reseller._id, { balance: wallet.balance });
+    logAdminAction({ adminId: req.user._id, adminEmail: req.user.email, action: "UPDATE_BALANCE", targetType: "Reseller", targetId: reseller._id, description: `Updated reseller ${reseller._id} balance`, ipAddress: req.ip }).catch(() => {});
 
     res.json({ success: true, message: "Balance updated", balance: wallet.balance });
   } catch (error) {

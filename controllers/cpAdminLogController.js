@@ -1,4 +1,4 @@
-import AdminLog from "../models/AdminLog.js";
+import CpAdminLog from "../models/CpAdminLog.js";
 import User from "../models/User.js";
 
 const EXCLUDED_ACTIONS = [
@@ -63,12 +63,12 @@ export const getCpAdminLogs = async (req, res) => {
     }
 
     const [logs, total] = await Promise.all([
-      AdminLog.find(query)
+      CpAdminLog.find(query)
         .populate("admin", "name email")
         .sort({ createdAt: -1 })
         .skip((page - 1) * limit)
         .limit(limit),
-      AdminLog.countDocuments(query),
+      CpAdminLog.countDocuments(query),
     ]);
 
     res.json({ logs, total, page, pages: Math.ceil(total / limit) });

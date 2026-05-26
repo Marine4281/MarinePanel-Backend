@@ -14,8 +14,8 @@
 //   - Service mode (platform services vs own providers vs both)
 //   - Branding (brand name, logo, theme color)
 
-import User from "../model
-import logAdminAction from "../utils/logAdminAction.js";s/User.js";
+import User from "../models/User.js";
+import logAdminAction from "../utils/logAdminAction.js";
 
 // ======================= GET ALL SETTINGS =======================
 // Returns all configurable settings for this child panel owner

@@ -8,6 +8,7 @@ import User from "../models/User.js";
 import Order from "../models/Order.js";
 import Wallet from "../models/Wallet.js";
 import formatLastSeen from "../utils/formatLastSeen.js";
+import logAdminAction from "../utils/logAdminAction.js";
 
 // ======================= HELPERS =======================
 
@@ -188,6 +189,7 @@ export const updateCPUserBalance = async (req, res) => {
     wallet.balance = calculateBalance(wallet.transactions);
     await wallet.save();
     await User.findByIdAndUpdate(user._id, { balance: wallet.balance });
+    logAdminAction({ adminId: req.user._id, adminEmail: req.user.email, action: "UPDATE_BALANCE", targetType: "User", targetId: user._id, description: `Updated balance for ${user.email}`, ipAddress: req.ip }).catch(() => {});
 
     res.json({ balance: wallet.balance });
   } catch (err) {
@@ -215,6 +217,7 @@ export const updateCPUserCommission = async (req, res) => {
 
     user.commissionOverride = rate;
     await user.save();
+    logAdminAction({ adminId: req.user._id, adminEmail: req.user.email, action: "UPDATE_USER_COMMISSION", targetType: "User", targetId: user._id, description: `Updated commission for ${user.email}`, ipAddress: req.ip }).catch(() => {});
 
     res.json({ commissionOverride: rate });
   } catch (err) {
@@ -233,6 +236,7 @@ export const promoteCPUser = async (req, res) => {
       { new: true }
     );
     if (!user) return res.status(404).json({ message: "User not found" });
+    logAdminAction({ adminId: req.user._id, adminEmail: req.user.email, action: "PROMOTE_ADMIN", targetType: "User", targetId: user._id, description: `Promoted ${user.email} to admin`, ipAddress: req.ip }).catch(() => {});
     res.json({
       ...user.toObject(),
       countryCode: normalizeCountryCode(user.countryCode),
@@ -256,6 +260,7 @@ export const demoteCPUser = async (req, res) => {
       { new: true }
     );
     if (!user) return res.status(404).json({ message: "User not found" });
+    logAdminAction({ adminId: req.user._id, adminEmail: req.user.email, action: "DEMOTE_ADMIN", targetType: "User", targetId: user._id, description: `Demoted ${user.email} from admin`, ipAddress: req.ip }).catch(() => {});
     res.json({
       ...user.toObject(),
       countryCode: normalizeCountryCode(user.countryCode),
@@ -279,6 +284,7 @@ export const blockCPUser = async (req, res) => {
       { new: true }
     );
     if (!user) return res.status(404).json({ message: "User not found" });
+    logAdminAction({ adminId: req.user._id, adminEmail: req.user.email, action: "BLOCK_USER", targetType: "User", targetId: user._id, description: `Blocked ${user.email}`, ipAddress: req.ip }).catch(() => {});
     res.json({
       ...user.toObject(),
       countryCode: normalizeCountryCode(user.countryCode),
@@ -302,6 +308,7 @@ export const unblockCPUser = async (req, res) => {
       { new: true }
     );
     if (!user) return res.status(404).json({ message: "User not found" });
+    logAdminAction({ adminId: req.user._id, adminEmail: req.user.email, action: "UNBLOCK_USER", targetType: "User", targetId: user._id, description: `Unblocked ${user.email}`, ipAddress: req.ip }).catch(() => {});
     res.json({
       ...user.toObject(),
       countryCode: normalizeCountryCode(user.countryCode),
@@ -325,6 +332,7 @@ export const freezeCPUser = async (req, res) => {
       { new: true }
     );
     if (!user) return res.status(404).json({ message: "User not found" });
+    logAdminAction({ adminId: req.user._id, adminEmail: req.user.email, action: "FREEZE_USER", targetType: "User", targetId: user._id, description: `Froze ${user.email}`, ipAddress: req.ip }).catch(() => {});
     res.json({
       ...user.toObject(),
       countryCode: normalizeCountryCode(user.countryCode),
@@ -348,6 +356,7 @@ export const unfreezeCPUser = async (req, res) => {
       { new: true }
     );
     if (!user) return res.status(404).json({ message: "User not found" });
+    logAdminAction({ adminId: req.user._id, adminEmail: req.user.email, action: "UNFREEZE_USER", targetType: "User", targetId: user._id, description: `Unfroze ${user.email}`, ipAddress: req.ip }).catch(() => {});
     res.json({
       ...user.toObject(),
       countryCode: normalizeCountryCode(user.countryCode),
@@ -376,6 +385,7 @@ export const deleteCPUser = async (req, res) => {
       Order.deleteMany({ userId: user._id }),
       Wallet.deleteOne({ user: user._id }),
     ]);
+    logAdminAction({ adminId: req.user._id, adminEmail: req.user.email, action: "DELETE_USER", targetType: "User", targetId: userId, description: `Deleted user ${userId}`, ipAddress: req.ip }).catch(() => {});
 
     res.json({ message: "User deleted" });
   } catch (err) {

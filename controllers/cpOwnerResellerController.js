@@ -353,7 +353,7 @@ export const updateCPResellerBalance = async (req, res) => {
     await wallet.save();
 
     await User.findByIdAndUpdate(reseller._id, { balance: wallet.balance });
-logCpAdminAction adminId: req.user._id, adminEmail: req.user.email, childPanelId: req.user._id,action: "UPDATE_BALANCE", targetType: "Reseller", targetId: reseller._id, description: `Updated reseller ${reseller._id} balance`, ipAddress: req.ip }).catch(() => {});
+logCpAdminAction({ adminId: req.user._id, adminEmail: req.user.email, childPanelId: req.user._id,action: "UPDATE_BALANCE", targetType: "Reseller", targetId: reseller._id, description: `Updated reseller ${reseller._id} balance`, ipAddress: req.ip }).catch(() => {});
 
     res.json({ success: true, message: "Balance updated", balance: wallet.balance });
   } catch (error) {

@@ -1,4 +1,4 @@
-l// controllers/adminLogController.js
+// controllers/adminLogController.js
 
 import AdminLog from "../models/AdminLog.js";
 import User from "../models/User.js";

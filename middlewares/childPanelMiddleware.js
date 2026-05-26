@@ -121,26 +121,17 @@ export const cpOwnerOnly = (req, res, next) => {
   }
 
   if (!user.isChildPanel) {
+    console.log("cpOwnerOnly FAIL — isChildPanel:", user.isChildPanel, "userId:", user._id);
     return res.status(403).json({ message: "Access denied: Child panel owners only" });
   }
 
   if (!user.childPanelIsActive) {
-    return res.status(403).json({
-      code: "PANEL_SUSPENDED",
-      message: user.childPanelSuspendReason || "Your panel has been suspended. Contact support.",
-    });
+    console.log("cpOwnerOnly FAIL — childPanelIsActive:", user.childPanelIsActive, "userId:", user._id);
+    return res.status(403).json({ ... });
   }
 
-  // Subscription expiry check
   if (user.childPanelNextBilledAt && new Date() > new Date(user.childPanelNextBilledAt)) {
-    return res.status(403).json({
-      code: "SUBSCRIPTION_EXPIRED",
-      message:
-        "Your subscription has expired. Please contact the platform admin to renew your plan.",
-      expiredAt: user.childPanelNextBilledAt,
-    });
+    console.log("cpOwnerOnly FAIL — subscription expired:", user.childPanelNextBilledAt, "userId:", user._id);
+    return res.status(403).json({ ... });
   }
-
-  req.childPanel = user;
-  next();
-};
+  ...

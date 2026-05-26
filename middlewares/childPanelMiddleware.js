@@ -133,5 +133,4 @@ export const cpOwnerOnly = (req, res, next) => {
   if (user.childPanelNextBilledAt && new Date() > new Date(user.childPanelNextBilledAt)) {
     console.log("cpOwnerOnly FAIL — subscription expired:", user.childPanelNextBilledAt, "userId:", user._id);
     return res.status(403).json({ ... });
-  }
-  ...
+

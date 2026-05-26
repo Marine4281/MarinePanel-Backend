@@ -3,6 +3,7 @@ import mongoose from "mongoose";
 import Order from "../models/Order.js";
 import Wallet from "../models/Wallet.js";
 import User from "../models/User.js";
+import logAdminAction from "../utils/logAdminAction.js";
 import {
   creditChildPanelCommission,
   reverseChildPanelCommission,
@@ -279,6 +280,7 @@ export const updateCPOrderStatus = async (req, res) => {
       io.emit("order:update", formatOrder(order));
       if (refundData) io.emit("wallet:update", { userId: refundData.walletUserId, balance: refundData.walletBalance });
     }
+    logAdminAction({ adminId: req.user._id, adminEmail: req.user.email, action: "COMPLETE_ORDER", targetType: "Order", targetId: order._id, description: `Updated order ${order._id} status to ${status}`, ipAddress: req.ip }).catch(() => {});
 
     res.json({ message: "Status updated", order: formatOrder(order), refundAmount: refundData?.refundAmount || 0 });
   } catch (err) {
@@ -358,6 +360,7 @@ export const refundCPOrder = async (req, res) => {
       io.emit("order:update", formatOrder(order));
       io.emit("wallet:update", { userId: refundData.walletUserId, balance: refundData.walletBalance });
     }
+    logAdminAction({ adminId: req.user._id, adminEmail: req.user.email, action: "REFUND_ORDER", targetType: "Order", targetId: order._id, description: `Refunded order ${order._id}`, ipAddress: req.ip }).catch(() => {});
 
     res.json({ message: "Refund successful", refundAmount: refundData.refundAmount });
   } catch (err) {

@@ -1,4 +1,4 @@
-//routes/adminServiceRoutes.js
+// routes/adminServiceRoutes.js
 import express from "express";
 import {
   getAllServices,
@@ -14,32 +14,36 @@ import {
   getServiceSettings,
 } from "../controllers/serviceTogglesController.js";
 
+import {
+  setServiceCommission,
+  getCategoryCommissions,
+  setCategoryCommission,
+} from "../controllers/commissionOverrideController.js";
+
 import { protect } from "../middlewares/authMiddleware.js";
 import { adminOnly } from "../middlewares/adminMiddleware.js";
 
 const router = express.Router();
 
-// All routes protected and admin-only
 router.use(protect, adminOnly);
 
-// 🔥 GLOBAL TOGGLES FIRST (IMPORTANT)
+// Global toggles
 router.patch("/toggle-refill-global", toggleRefillGlobal);
 router.patch("/toggle-cancel-global", toggleCancelGlobal);
 router.get("/service-settings", getServiceSettings);
 
-// GET all services
-router.get("/", getAllServices);
+// Category commissions — BEFORE /:id to avoid conflicts
+router.get("/category-commissions", getCategoryCommissions);
+router.patch("/category-commissions", setCategoryCommission);
 
-// Toggle visibility 
+// CRUD
+router.get("/", getAllServices);
+router.post("/", addService);
+router.put("/:id", updateService);
+router.delete("/:id", deleteService);
 router.patch("/:id/toggle", toggleServiceStatus);
 
-// POST add new service
-router.post("/", addService);
-
-// PUT update service by id
-router.put("/:id", updateService);
-
-// DELETE service by id
-router.delete("/:id", deleteService);
+// Per-service commission override
+router.patch("/:id/commission", setServiceCommission);
 
 export default router;

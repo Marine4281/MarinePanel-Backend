@@ -128,6 +128,82 @@ export const fetchProviderServices = async (req, res) => {
     res.status(500).json({ message: "Failed to fetch provider services" });
   }
 };
+// GET /api/admin/providers/deleted-sync
+// For each admin provider profile, fetches live services and returns
+// any Service in the DB that no longer exists on the provider side.
+export const getAdminDeletedSync = async (req, res) => {
+  try {
+    // Only check non-manual services that have a providerProfileId
+    const services = await Service.find({
+      cpOwner: { $in: [null, undefined] },
+      provider: { $ne: "manual" },
+      providerProfileId: { $exists: true, $ne: null },
+    }).lean();
+
+    if (!services.length) return res.json([]);
+
+    // Group by providerProfileId
+    const profileIds = [
+      ...new Set(
+        services.map((s) => s.providerProfileId?.toString()).filter(Boolean)
+      ),
+    ];
+
+    const profiles = await ProviderProfile.find({
+      _id: { $in: profileIds },
+      cpOwner: { $in: [null, undefined] },
+    }).lean();
+
+    // Fetch live service IDs from each provider API
+    const liveServiceIds = {}; // providerProfileId → Set<string>
+
+    await Promise.allSettled(
+      profiles.map(async (profile) => {
+        try {
+          const response = await axios.post(
+            profile.apiUrl,
+            new URLSearchParams({ key: profile.apiKey, action: "services" }).toString(),
+            {
+              headers: { "Content-Type": "application/x-www-form-urlencoded" },
+              timeout: 10000,
+            }
+          );
+          const list = Array.isArray(response.data) ? response.data : [];
+          liveServiceIds[profile._id.toString()] = new Set(
+            list.map((i) => String(i.service))
+          );
+        } catch {
+          // Provider unreachable — skip so we don't false-positive delete
+        }
+      })
+    );
+
+    // A service is "deleted" if the provider was reachable but doesn't list it
+    const deleted = services.filter((s) => {
+      const pId = s.providerProfileId?.toString();
+      if (!pId || !liveServiceIds[pId]) return false; // skip unreachable providers
+      return !liveServiceIds[pId].has(String(s.providerServiceId));
+    });
+
+    const result = deleted.map((s) => ({
+      _id: s._id,
+      serviceId: s.serviceId,
+      name: s.name,
+      category: s.category,
+      platform: s.platform,
+      provider: s.provider,
+      rate: s.rate,
+      status: s.status,
+      providerServiceId: s.providerServiceId,
+    }));
+
+    res.json(result);
+  } catch (err) {
+    console.error("ADMIN DELETED SYNC ERROR:", err);
+    res.status(500).json({ message: "Failed to check deleted services" });
+  }
+};
+
 
 /*
 

@@ -121,6 +121,8 @@ const userSchema = new mongoose.Schema(
       type: Number,
       default: null,
     },
+
+    
     /*
     --------------------------------
     RESELLER SYSTEM
@@ -458,6 +460,12 @@ childPanelBillingIntervalDays: {
     childPanelCommissionRate: {
       type: Number,
       default: 0,
+    },
+
+    categoryCommissions: {
+      type: Map,
+      of: Number,
+      default: {},
     },
 
     // Activation fee this child panel charges their own resellers

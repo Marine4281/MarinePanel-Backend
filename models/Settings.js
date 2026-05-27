@@ -14,6 +14,11 @@ const settingsSchema = new mongoose.Schema(
       type: Number,
       default: 0,
     },
+    categoryCommissions: {
+      type: Map,
+      of: Number,
+      default: {},
+     },
 
     // Reseller activation fee
     resellerActivationFee: {

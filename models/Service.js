@@ -33,6 +33,11 @@ const serviceSchema = new mongoose.Schema(
       trim: true,
     },
 
+    commissionOverride: {
+      type: Number,
+      default: null,  // null = use category or global
+     },
+
     // =====================================================
     // 🟣 PROVIDER RELATION
     // =====================================================

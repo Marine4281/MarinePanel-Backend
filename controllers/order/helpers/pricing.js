@@ -16,8 +16,6 @@ export const calculateOrderPricing = async ({
   let childPanelCommission = 0;
 
   if (serviceData.cpOwner) {
-    // Resolve CP owner: prefer the linked childPanelOwner on the user,
-    // fall back to the service's own cpOwner (the missing piece)
     const cpOwnerId = childPanelOwnerId || serviceData.cpOwner;
     const cpOwner = cpOwnerId ? await User.findById(cpOwnerId) : null;
 
@@ -30,16 +28,35 @@ export const calculateOrderPricing = async ({
     }
   } else {
     const settings = await Settings.findOne().lean();
-
     const globalRate = Number(settings?.commission || 0);
 
-    const adminRate =
-      user.commissionOverride != null
-        ? Number(user.commissionOverride)
-        : globalRate;
+    // ─── COMMISSION OVERRIDE HIERARCHY ─────────────────────────────────
+    // 1. Per-service override on the service itself
+    // 2. Per-category override in settings.categoryCommissions
+    // 3. Per-user (commissionOverride on user)
+    // 4. Global commission
+    let adminRate;
+
+    if (serviceData.commissionOverride != null) {
+      // Service-level override wins
+      adminRate = Number(serviceData.commissionOverride);
+    } else if (
+      serviceData.category &&
+      settings?.categoryCommissions &&
+      settings.categoryCommissions[serviceData.category] != null
+    ) {
+      // Category-level override
+      adminRate = Number(settings.categoryCommissions[serviceData.category]);
+    } else if (user.commissionOverride != null) {
+      // Per-user override (existing behaviour)
+      adminRate = Number(user.commissionOverride);
+    } else {
+      // Global fallback
+      adminRate = globalRate;
+    }
+    // ────────────────────────────────────────────────────────────────────
 
     const systemRate = providerRate + (providerRate * adminRate) / 100;
-
     finalRate = systemRate;
 
     if (user.resellerOwner) {

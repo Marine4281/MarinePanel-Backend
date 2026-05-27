@@ -1,4 +1,5 @@
 import express from "express";
+import { getAdminDeletedSync } from "../controllers/providerController.js";
 import {
 fetchProviderServices,
 getSavedProviderServices,
@@ -59,6 +60,8 @@ router.post("/import-category", importCategoryServices);
 
 //Update provider
 router.put("/profiles/:id", updateProviderProfile);
+
+router.get("/deleted-sync", getAdminDeletedSync);
 
 
 export default router;

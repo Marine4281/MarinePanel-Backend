@@ -1,5 +1,4 @@
 // routes/cpOwnerServiceRoutes.js
-
 import express from "express";
 import {
   getCPServices,
@@ -18,23 +17,33 @@ import {
   getCPDeletedSync,
 } from "../controllers/cpOwnerServiceController.js";
 
+import {
+  setCPServiceCommission,
+  getCPCategoryCommissions,
+  setCPCategoryCommission,
+} from "../controllers/commissionOverrideController.js";
+
 const router = express.Router();
 
-// Commission
+// Commission (global CP rate)
 router.get("/commission", getCPCommission);
 router.patch("/commission", setCPCommission);
 
-// Platform services (main admin published)
+// Category commissions — BEFORE /:id
+router.get("/category-commissions", getCPCategoryCommissions);
+router.patch("/category-commissions", setCPCategoryCommission);
+
+// Platform services
 router.get("/platform", getCPPlatformServices);
 
 // Rate changes + sync
 router.get("/rate-changes", getCPRateChanges);
 router.patch("/sync-all-rates", syncAllCPRates);
 
-// Deleted services sync
+// Deleted sync
 router.get("/deleted-sync", getCPDeletedSync);
 
-// Bulk operations — must be before /:id
+// Bulk ops — before /:id
 router.patch("/bulk-toggle", bulkToggleCPServices);
 router.delete("/bulk", bulkDeleteCPServices);
 
@@ -45,5 +54,8 @@ router.put("/:id", updateCPService);
 router.delete("/:id", deleteCPService);
 router.patch("/:id/toggle", toggleCPServiceStatus);
 router.patch("/:id/sync-rate", syncCPServiceRate);
+
+// Per-service commission override
+router.patch("/:id/commission", setCPServiceCommission);
 
 export default router;

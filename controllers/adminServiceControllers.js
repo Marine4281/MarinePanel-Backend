@@ -96,6 +96,7 @@ export const importService = async (req, res) => {
     const existing = await Service.findOne({
       providerServiceId,
       providerProfileId,
+      cpOwner: null, 
     });
 
     if (existing) {

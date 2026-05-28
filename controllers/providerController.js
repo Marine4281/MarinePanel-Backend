@@ -364,8 +364,8 @@ export const saveProviderProfile = async (req, res) => {
     }
 
     const profile = await ProviderProfile.findOneAndUpdate(
-      { name },
-      { name, apiUrl, apiKey },
+      { name, cpOwner: null },
+      { name, apiUrl, apiKey , cpOwner: null},
       { upsert: true, new: true }
     );
 
@@ -387,7 +387,7 @@ Get provider profiles
 */
 export const getProviderProfiles = async (req, res) => {
   try {
-    const providers = await ProviderProfile.find().sort({ name: 1 });
+    const providers = await ProviderProfile.find({ cpOwner: null }).sort({ name: 1 });
     res.json(providers);
 
   } catch (error) {

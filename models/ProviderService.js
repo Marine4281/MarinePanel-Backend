@@ -84,7 +84,7 @@ const providerServiceSchema = new mongoose.Schema(
 Prevent duplicate provider services
 */
 providerServiceSchema.index(
-  { provider: 1, providerServiceId: 1 },
+  { provider: 1, providerServiceId: 1, cpOwner: 1 },
   { unique: true }
 );
 

@@ -231,6 +231,7 @@ serviceSchema.pre("save", function () {
 serviceSchema.index({
   providerProfileId: 1,
   providerServiceId: 1,
+  cpOwner: 1,
 });
 
 // Fast category queries

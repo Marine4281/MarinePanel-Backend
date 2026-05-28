@@ -133,16 +133,14 @@ export const fetchProviderServices = async (req, res) => {
 // any Service in the DB that no longer exists on the provider side.
 export const getAdminDeletedSync = async (req, res) => {
   try {
-    // Only check non-manual services that have a providerProfileId
     const services = await Service.find({
       cpOwner: { $in: [null, undefined] },
-      provider: { $ne: "manual" },
       providerProfileId: { $exists: true, $ne: null },
+      providerServiceId: { $exists: true, $ne: null, $not: /^manual-/ },
     }).lean();
 
     if (!services.length) return res.json([]);
 
-    // Group by providerProfileId
     const profileIds = [
       ...new Set(
         services.map((s) => s.providerProfileId?.toString()).filter(Boolean)
@@ -154,8 +152,7 @@ export const getAdminDeletedSync = async (req, res) => {
       cpOwner: { $in: [null, undefined] },
     }).lean();
 
-    // Fetch live service IDs from each provider API
-    const liveServiceIds = {}; // providerProfileId → Set<string>
+    const liveServiceIds = {};
 
     await Promise.allSettled(
       profiles.map(async (profile) => {
@@ -178,6 +175,30 @@ export const getAdminDeletedSync = async (req, res) => {
       })
     );
 
+    const deleted = services.filter((s) => {
+      const pId = s.providerProfileId?.toString();
+      if (!pId || !liveServiceIds[pId]) return false;
+      return !liveServiceIds[pId].has(String(s.providerServiceId));
+    });
+
+    const result = deleted.map((s) => ({
+      _id: s._id,
+      serviceId: s.serviceId,
+      name: s.name,
+      category: s.category,
+      platform: s.platform,
+      provider: s.provider,
+      rate: s.rate,
+      status: s.status,
+      providerServiceId: s.providerServiceId,
+    }));
+
+    res.json(result);
+  } catch (err) {
+    console.error("ADMIN DELETED SYNC ERROR:", err);
+    res.status(500).json({ message: "Failed to check deleted services" });
+  }
+};
     // A service is "deleted" if the provider was reachable but doesn't list it
     const deleted = services.filter((s) => {
       const pId = s.providerProfileId?.toString();

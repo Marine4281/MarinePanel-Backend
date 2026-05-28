@@ -15,7 +15,7 @@ export const createProviderProfile = async (req, res) => {
     }
 
     // Prevent duplicate provider names
-    const existing = await ProviderProfile.findOne({ name });
+    const existing = await ProviderProfile.findOne({ name, cpOwner: null });
 
     if (existing) {
       return res.status(400).json({
@@ -48,7 +48,7 @@ GET ALL PROVIDERS
 ========================================================= */
 export const getProviderProfiles = async (req, res) => {
   try {
-    const providers = await ProviderProfile.find()
+    const providers = await ProviderProfile.find({ cpOwner: null })
       .sort({ createdAt: -1 })
       .lean();
 
@@ -68,7 +68,7 @@ GET SINGLE PROVIDER
 ========================================================= */
 export const getProviderProfileById = async (req, res) => {
   try {
-    const provider = await ProviderProfile.findById(req.params.id);
+    const provider = await ProviderProfile.findById({ _id: req.params.id, cpOwner: null });
 
     if (!provider) {
       return res.status(404).json({
@@ -94,7 +94,7 @@ export const updateProviderProfile = async (req, res) => {
   try {
     const { name, apiUrl, apiKey } = req.body;
 
-    const provider = await ProviderProfile.findById(req.params.id);
+    const provider = await ProviderProfile.findById({ _id: req.params.id, cpOwner: null });
 
     if (!provider) {
       return res.status(404).json({
@@ -104,7 +104,7 @@ export const updateProviderProfile = async (req, res) => {
 
     // Prevent duplicate name (if changed)
     if (name && name !== provider.name) {
-      const existing = await ProviderProfile.findOne({ name });
+      const existing = await ProviderProfile.findOne({ name, cpOwner: null });
       if (existing) {
         return res.status(400).json({
           message: "Provider name already exists",
@@ -137,7 +137,7 @@ DELETE PROVIDER
 ========================================================= */
 export const deleteProviderProfile = async (req, res) => {
   try {
-    const provider = await ProviderProfile.findById(req.params.id);
+    const provider = await ProviderProfile.findById({ _id: req.params.id, cpOwner: null });
 
     if (!provider) {
       return res.status(404).json({

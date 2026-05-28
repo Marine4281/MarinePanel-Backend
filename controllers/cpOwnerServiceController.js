@@ -526,7 +526,8 @@ export const getCPDeletedSync = async (req, res) => {
   try {
     const services = await Service.find({
       cpOwner: req.user._id,
-      provider: { $ne: "manual" },
+      providerProfileId: { $exists: true, $ne: null },
+      providerServiceId: { $exists: true, $ne: null, $not: /^manual-/ },
     }).lean();
 
     if (!services.length) return res.json([]);
@@ -534,8 +535,7 @@ export const getCPDeletedSync = async (req, res) => {
     const profileIds = [...new Set(services.map((s) => s.providerProfileId?.toString()).filter(Boolean))];
     const profiles   = await ProviderProfile.find({ _id: { $in: profileIds }, cpOwner: req.user._id }).lean();
 
-    // Build set of live service IDs per provider
-    const liveServiceIds = {}; // providerProfileId → Set of providerServiceId strings
+    const liveServiceIds = {};
     await Promise.allSettled(
       profiles.map(async (profile) => {
         try {

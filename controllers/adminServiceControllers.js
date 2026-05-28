@@ -45,8 +45,23 @@ export const getAllServices = async (req, res) => {
       "VIEW_SERVICES",
       "Viewed all services"
     );
+    const categoryMaxId = {};
+services.forEach((s) => {
+  const cat = s.category || "Uncategorized";
+  if (categoryMaxId[cat] === undefined || s.serviceId > categoryMaxId[cat]) {
+    categoryMaxId[cat] = s.serviceId;
+  }
+});
 
-    res.json(services);
+const sorted = services.slice().sort((a, b) => {
+  const catDiff = categoryMaxId[b.category] - categoryMaxId[a.category];
+  if (catDiff !== 0) return catDiff;
+  return (a.serviceId ?? 0) - (b.serviceId ?? 0);
+});
+
+res.json(sorted);
+
+    
 
   } catch (err) {
     console.error("GET SERVICES ERROR:", err);

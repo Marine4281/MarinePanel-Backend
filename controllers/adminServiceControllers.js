@@ -314,7 +314,7 @@ export const updateService = async (req, res) => {
     ========================================================= */
     if (!service.providerProfileId) {
       const provider = await ProviderProfile.findOne({
-        name: service.provider,
+        name: service.provider, cpOwner: null
       });
 
       if (provider) {

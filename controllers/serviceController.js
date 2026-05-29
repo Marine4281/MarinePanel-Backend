@@ -49,12 +49,11 @@ export const getServicesPublic = async (req, res) => {
 
       // ── OWN services: imported from CP's own providers OR manually added ──
       if (serviceMode === "own" || serviceMode === "both") {
-        const ownServices = await Service.find({
-          cpOwner: cp._id,
-          status: true,
-        })
-          .sort({ createdAt: -1 })
-          .lean();
+        const ownServices = sortByNewestCategoryFirst(
+  await Service.find({ cpOwner: cp._id, status: true })
+    .sort({ serviceId: 1 })
+    .lean()
+);
 
         const priced = ownServices.map((s) => {
           const costRate  = Number(s.rate || 0);
@@ -89,13 +88,11 @@ export const getServicesPublic = async (req, res) => {
 
       // ── PLATFORM services: main admin published these for child panels ──
       if (serviceMode === "platform" || serviceMode === "both") {
-        const platformServices = await Service.find({
-          status: true,
-          availableToChildPanels: true,
-          cpOwner: null,
-        })
-          .sort({ createdAt: -1 })
-          .lean();
+        const platformServices = sortByNewestCategoryFirst(
+  await Service.find({ status: true, availableToChildPanels: true, cpOwner: null })
+    .sort({ serviceId: 1 })
+    .lean()
+);
 
         const priced = platformServices.map((s) => {
           const providerRate = Number(s.rate || 0);
@@ -156,9 +153,11 @@ export const getServicesPublic = async (req, res) => {
       const settings = await Settings.findOne();
       const adminCommission = Number(settings?.commission || 0);
 
-      const services = await Service.find({ status: true, cpOwner: null })
-        .sort({ createdAt: -1 })
-        .lean();
+      const services = sortByNewestCategoryFirst(
+  await Service.find({ status: true, cpOwner: null })
+    .sort({ serviceId: 1 })
+    .lean()
+);
 
       const resellerOverrides = await ResellerService.find({
         resellerId: reseller._id,
@@ -223,9 +222,11 @@ export const getServicesPublic = async (req, res) => {
     const settings = await Settings.findOne();
     const adminCommission = Number(settings?.commission || 0);
 
-    const services = await Service.find({ status: true, cpOwner: null })
-      .sort({ createdAt: -1 })
-      .lean();
+    const services = sortByNewestCategoryFirst(
+  await Service.find({ status: true, cpOwner: null })
+    .sort({ serviceId: 1 })
+    .lean()
+);
 
     const formattedServices = services
       .map((s) => {

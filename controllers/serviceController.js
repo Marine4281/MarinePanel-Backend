@@ -6,6 +6,24 @@ import Settings from "../models/Settings.js";
 import ResellerService from "../models/ResellerService.js";
 import { getCache, setCache } from "../utils/cache.js";
 
+// Newest category on top, provider order (serviceId asc) within each category
+function sortByNewestCategoryFirst(services) {
+  const categoryMaxId = {};
+  services.forEach((s) => {
+    const cat = s.category || "General";
+    if (categoryMaxId[cat] === undefined || s.serviceId > categoryMaxId[cat]) {
+      categoryMaxId[cat] = s.serviceId;
+    }
+  });
+  return services.slice().sort((a, b) => {
+    const catDiff =
+      (categoryMaxId[b.category || "General"] ?? 0) -
+      (categoryMaxId[a.category || "General"] ?? 0);
+    if (catDiff !== 0) return catDiff;
+    return (a.serviceId ?? 0) - (b.serviceId ?? 0);
+  });
+}
+
 /* =========================================================
    GET PUBLIC SERVICES (SMART + FREE SUPPORT)
 ========================================================= */

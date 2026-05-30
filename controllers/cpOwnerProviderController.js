@@ -251,12 +251,19 @@ export const fetchCPProviderServices = async (req, res) => {
       grouped[service.category].push(service);
     });
 
-    const categories = Object.keys(grouped).map((category) => ({
-      category,
-      services: grouped[category],
-    }));
+    const categories = Object.keys(grouped)
+  .map((category) => ({
+    category,
+    services: grouped[category], // preserve provider order within category
+  }))
+  .sort((a, b) => {
+    // newest category (highest service ID) first
+    const maxA = Math.max(...a.services.map((s) => Number(s.service) || 0));
+    const maxB = Math.max(...b.services.map((s) => Number(s.service) || 0));
+    return maxB - maxA;
+  });
 
-    res.json(categories);
+res.json(categories);
   } catch (error) {
     console.error("CP FETCH PROVIDER SERVICES ERROR:", error);
     res.status(500).json({ message: "Failed to fetch provider services" });

@@ -48,7 +48,7 @@ export const getCPServices = async (req, res) => {
     const adminCommission = Number(settings?.commission ?? 0);
 
     const services = await Service.find({ cpOwner: req.user._id })
-      .sort({ createdAt: -1 })
+      .sort({ serviceId: 1 })
       .lean();
 
     const withFinal = services.map((s) => {

@@ -553,3 +553,15 @@ export const toggleServiceStatus = async (req, res) => {
     res.status(500).json({ message: "Failed to update status" });
   }
 };
+// PATCH /admin/services/:id/toggle-cp
+export const toggleAvailableToChildPanels = async (req, res) => {
+  try {
+    const service = await Service.findById(req.params.id);
+    if (!service) return res.status(404).json({ message: "Service not found" });
+    service.availableToChildPanels = !service.availableToChildPanels;
+    await service.save();
+    res.json({ availableToChildPanels: service.availableToChildPanels });
+  } catch (err) {
+    res.status(500).json({ message: "Failed to toggle" });
+  }
+};

@@ -3,49 +3,49 @@ import express from "express";
 import { protect } from "../middlewares/authMiddleware.js";
 import { adminOnly, childPanelOnly } from "../middlewares/adminMiddleware.js";
 import {
-  getProviders,
-  getQuote,
-  getUserGateways,
-  initializePayment,
-  handleWebhook,
-  getCpGateways,
-  createCpGateway,
-  updateCpGateway,
-  deleteCpGateway,
-  rotateCpWebhookToken,
-  adminGetAllGateways,
-  adminCreateGateway,
-  adminUpdateGateway,
-  adminDeleteGateway,
-  adminToggleHidden,
-  adminRotateWebhookToken,
+  getProviders, getQuote, getUserGateways, initializePayment, handleWebhook,
+  adminGetProviders, adminCreateProvider, adminUpdateProvider, adminDeleteProvider,
+  adminGetAllGateways, adminCreateGateway, adminUpdateGateway, adminDeleteGateway,
+  adminToggleHidden, adminRotateWebhookToken,
+  adminGetPendingDeposits, adminApproveDeposit, adminRejectDeposit,
+  getCpGateways, createCpGateway, updateCpGateway, deleteCpGateway, rotateCpWebhookToken,
 } from "../controllers/paymentGatewayController.js";
 
 const router = express.Router();
 
-// ─── PUBLIC ──────────────────────────────────────────────────────────
-// Webhook — no auth, identified by webhookToken in URL
+// ─── PUBLIC (webhook) ─────────────────────────────────────────────────
 router.post("/webhooks/:provider/:token", handleWebhook);
 
-// ─── AUTHENTICATED USERS ─────────────────────────────────────────────
-router.get("/gateways/providers",    protect, getProviders);       // dynamic form meta
-router.get("/gateways/quote",        protect, getQuote);           // fee breakdown
-router.get("/gateways",              protect, getUserGateways);    // visible gateways
-router.post("/gateways/pay",         protect, initializePayment);  // start payment
+// ─── USER ─────────────────────────────────────────────────────────────
+router.get("/gateways/providers",  protect, getProviders);
+router.get("/gateways/quote",      protect, getQuote);
+router.get("/gateways",            protect, getUserGateways);
+router.post("/gateways/pay",       protect, initializePayment);
 
-// ─── CHILD PANEL OWNER ───────────────────────────────────────────────
-router.get("/cp/gateways",                    protect, childPanelOnly, getCpGateways);
-router.post("/cp/gateways",                   protect, childPanelOnly, createCpGateway);
-router.put("/cp/gateways/:id",                protect, childPanelOnly, updateCpGateway);
-router.delete("/cp/gateways/:id",             protect, childPanelOnly, deleteCpGateway);
-router.post("/cp/gateways/:id/rotate-token",  protect, childPanelOnly, rotateCpWebhookToken);
+// ─── CP OWNER ─────────────────────────────────────────────────────────
+router.get("/cp/gateways",                   protect, childPanelOnly, getCpGateways);
+router.post("/cp/gateways",                  protect, childPanelOnly, createCpGateway);
+router.put("/cp/gateways/:id",               protect, childPanelOnly, updateCpGateway);
+router.delete("/cp/gateways/:id",            protect, childPanelOnly, deleteCpGateway);
+router.post("/cp/gateways/:id/rotate-token", protect, childPanelOnly, rotateCpWebhookToken);
 
-// ─── ADMIN ───────────────────────────────────────────────────────────
+// ─── ADMIN: PROVIDERS ─────────────────────────────────────────────────
+router.get("/admin/payment-providers",        protect, adminOnly, adminGetProviders);
+router.post("/admin/payment-providers",       protect, adminOnly, adminCreateProvider);
+router.put("/admin/payment-providers/:id",    protect, adminOnly, adminUpdateProvider);
+router.delete("/admin/payment-providers/:id", protect, adminOnly, adminDeleteProvider);
+
+// ─── ADMIN: GATEWAYS ──────────────────────────────────────────────────
 router.get("/admin/gateways",                      protect, adminOnly, adminGetAllGateways);
 router.post("/admin/gateways",                     protect, adminOnly, adminCreateGateway);
 router.put("/admin/gateways/:id",                  protect, adminOnly, adminUpdateGateway);
 router.delete("/admin/gateways/:id",               protect, adminOnly, adminDeleteGateway);
 router.post("/admin/gateways/:id/toggle-hidden",   protect, adminOnly, adminToggleHidden);
 router.post("/admin/gateways/:id/rotate-token",    protect, adminOnly, adminRotateWebhookToken);
+
+// ─── ADMIN: PENDING DEPOSITS ──────────────────────────────────────────
+router.get("/admin/deposits/pending",         protect, adminOnly, adminGetPendingDeposits);
+router.post("/admin/deposits/:id/approve",    protect, adminOnly, adminApproveDeposit);
+router.post("/admin/deposits/:id/reject",     protect, adminOnly, adminRejectDeposit);
 
 export default router;

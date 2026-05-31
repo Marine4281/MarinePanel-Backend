@@ -7,6 +7,7 @@ import {
   deleteService,
   toggleServiceStatus,
   toggleAvailableToChildPanels,
+  toggleCategoryAvailableToChildPanels,
 } from "../controllers/adminServiceControllers.js";
 
 import {
@@ -50,4 +51,6 @@ router.patch("/:id/commission", setServiceCommission);
 //Toggle Available To ChildPanels
 router.patch("/:id/toggle-cp", toggleAvailableToChildPanels);
 
+//Toggle Category Available To ChildPanels
+router.patch("/category-toggle-cp", toggleCategoryAvailableToChildPanels);
 export default router;

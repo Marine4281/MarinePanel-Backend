@@ -566,6 +566,7 @@ export const importSelectedServices = async (req, res) => {
             isDefaultCategoryPlatform: false,
 
             providerProfileId,
+            availableToChildPanels: true,
           });
         }
 

@@ -157,6 +157,7 @@ Boolean(cancelAllowed ?? false),
 
       refillPolicy: "none",
       customRefillDays: null,
+      availableToChildPanels: true,
     });
 
     clearCache("public_services");
@@ -563,5 +564,22 @@ export const toggleAvailableToChildPanels = async (req, res) => {
     res.json({ availableToChildPanels: service.availableToChildPanels });
   } catch (err) {
     res.status(500).json({ message: "Failed to toggle" });
+  }
+};
+
+// PATCH /admin/services/category-toggle-cp
+export const toggleCategoryAvailableToChildPanels = async (req, res) => {
+  try {
+    const { category, available } = req.body;
+    if (!category) return res.status(400).json({ message: "category required" });
+
+    await Service.updateMany(
+      { category, cpOwner: null },
+      { availableToChildPanels: Boolean(available) }
+    );
+
+    res.json({ message: `Category "${category}" updated`, availableToChildPanels: Boolean(available) });
+  } catch (err) {
+    res.status(500).json({ message: "Failed to update category" });
   }
 };

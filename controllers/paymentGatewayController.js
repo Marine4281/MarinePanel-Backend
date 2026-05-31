@@ -1,50 +1,66 @@
 // controllers/paymentGatewayController.js
 import crypto from "crypto";
-import PaymentGateway from "../models/PaymentGateway.js";
-import Transaction    from "../models/Transaction.js";
-import Wallet         from "../models/Wallet.js";
-import User           from "../models/User.js";
+import PaymentGateway  from "../models/PaymentGateway.js";
+import PaymentProvider from "../models/PaymentProvider.js";
+import Transaction     from "../models/Transaction.js";
+import Wallet          from "../models/Wallet.js";
+import User            from "../models/User.js";
 import { getGateway, getProvidersMeta } from "../utils/gateways/index.js";
 import { encryptCredentials, decryptCredentials } from "../utils/encryptCredentials.js";
 import { calculateFee } from "../utils/calculateFee.js";
+
+// ─── HELPERS ─────────────────────────────────────────────────────────
 
 const calcBalance = (transactions = []) =>
   transactions
     .filter((t) => t.status === "Completed")
     .reduce((acc, t) => acc + (Number(t.amount) || 0), 0);
 
-// ─── HELPERS ─────────────────────────────────────────────────────────
-
 const safeGateway = (gw) => ({
-  _id:                     gw._id,
-  provider:                gw.provider,
-  label:                   gw.label,
-  processingCurrency:      gw.processingCurrency,
-  processingCurrencySymbol:gw.processingCurrencySymbol,
-  exchangeRate:            gw.exchangeRate,
-  rateMode:                gw.rateMode,
-  feeType:                 gw.feeType,
-  feePercentage:           gw.feePercentage,
-  feeFixed:                gw.feeFixed,
-  adminNote:               gw.adminNote,
-  cpNote:                  gw.cpNote,
-  minDeposit:              gw.minDeposit,
-  isActive:                gw.isActive,
-  isVisible:               gw.isVisible,
-  adminHidden:             gw.adminHidden,
-  webhookToken:            gw.webhookToken,
-  // credentials intentionally omitted — write-only after save
-  hasCredentials: !!(gw.credentials?.secretKey || gw.credentials?.consumerKey),
-  owner:          gw.owner,
-  createdAt:      gw.createdAt,
+  _id:                      gw._id,
+  name:                     gw.name,
+  description:              gw.description,
+  paymentMode:              gw.paymentMode,
+  binanceId:                gw.binanceId,
+  paymentInstructions:      gw.paymentInstructions,
+  processingCurrency:       gw.processingCurrency,
+  processingCurrencySymbol: gw.processingCurrencySymbol,
+  exchangeRate:             gw.exchangeRate,
+  feeType:                  gw.feeType,
+  feePercentage:            gw.feePercentage,
+  feeFixed:                 gw.feeFixed,
+  adminNote:                gw.adminNote,
+  cpNote:                   gw.cpNote,
+  minDeposit:               gw.minDeposit,
+  isActive:                 gw.isActive,
+  isVisible:                gw.isVisible,
+  adminHidden:              gw.adminHidden,
+  visibleToCp:              gw.visibleToCp,
+  webhookToken:             gw.webhookToken,
+  providerProfile:          gw.providerProfile,
+  owner:                    gw.owner,
+  createdAt:                gw.createdAt,
+  // providerType for display only — never credentials
+  providerType:             gw.providerProfile?.providerType || null,
 });
 
-// ─── PUBLIC: GET PROVIDERS META (drives dynamic frontend form) ───────
+const safeProvider = (p) => ({
+  _id:          p._id,
+  name:         p.name,
+  providerType: p.providerType,
+  isActive:     p.isActive,
+  owner:        p.owner,
+  createdAt:    p.createdAt,
+  // credentials intentionally omitted
+  hasCredentials: !!(p.credentials?.secretKey || p.credentials?.apiKey || p.credentials?.consumerKey),
+});
+
+// ─── PUBLIC: GET PROVIDERS META ──────────────────────────────────────
 export const getProviders = (_req, res) => {
   res.json({ providers: getProvidersMeta() });
 };
 
-// ─── PUBLIC: GET QUOTE (user sees fee breakdown before paying) ───────
+// ─── PUBLIC: GET QUOTE ───────────────────────────────────────────────
 export const getQuote = async (req, res) => {
   try {
     const { gatewayId, usdAmount } = req.query;
@@ -57,23 +73,23 @@ export const getQuote = async (req, res) => {
       return res.status(404).json({ message: "Gateway not found" });
     }
 
-    const usd        = Number(usdAmount);
-    const localBase  = Math.round(usd * gw.exchangeRate * 100) / 100;
+    const usd       = Number(usdAmount);
+    const localBase = Math.round(usd * gw.exchangeRate * 100) / 100;
     const { depositAmount, fee, total } = calculateFee(
       localBase, gw.feeType, gw.feePercentage, gw.feeFixed
     );
 
     res.json({
-      usdAmount:               usd,
-      processingCurrency:      gw.processingCurrency,
-      processingCurrencySymbol:gw.processingCurrencySymbol,
-      exchangeRate:            gw.exchangeRate,
-      depositAmount,   // local currency before fee
-      fee,             // processing fee in local currency
-      total,           // what provider charges in local currency
-      walletCredit:    usd, // always USD to wallet
-      adminNote:       gw.adminNote || "",
-      cpNote:          gw.cpNote   || "",
+      usdAmount:                usd,
+      processingCurrency:       gw.processingCurrency,
+      processingCurrencySymbol: gw.processingCurrencySymbol,
+      exchangeRate:             gw.exchangeRate,
+      depositAmount,
+      fee,
+      total,
+      walletCredit: usd,
+      adminNote:    gw.adminNote || "",
+      cpNote:       gw.cpNote   || "",
     });
   } catch (err) {
     console.error("getQuote error:", err);
@@ -85,8 +101,7 @@ export const getQuote = async (req, res) => {
 export const getUserGateways = async (req, res) => {
   try {
     const user = req.user;
-
-    let ownerFilter = null; // platform gateways by default
+    let ownerFilter = null;
 
     if (user.childPanelOwner) {
       ownerFilter = user.childPanelOwner;
@@ -97,7 +112,7 @@ export const getUserGateways = async (req, res) => {
       isActive:    true,
       isVisible:   true,
       adminHidden: false,
-    });
+    }).populate("providerProfile", "providerType name");
 
     res.json({ gateways: gateways.map(safeGateway) });
   } catch (err) {
@@ -109,14 +124,16 @@ export const getUserGateways = async (req, res) => {
 // ─── USER: INITIALIZE PAYMENT ────────────────────────────────────────
 export const initializePayment = async (req, res) => {
   try {
-    const { gatewayId, usdAmount } = req.body;
+    const { gatewayId, usdAmount, userPaymentData = {} } = req.body;
     const user = req.user;
 
     if (!gatewayId || !usdAmount || usdAmount <= 0) {
       return res.status(400).json({ message: "Invalid request" });
     }
 
-    const gw = await PaymentGateway.findById(gatewayId);
+    const gw = await PaymentGateway.findById(gatewayId)
+      .populate("providerProfile");
+
     if (!gw || !gw.isActive || !gw.isVisible || gw.adminHidden) {
       return res.status(404).json({ message: "Gateway not found" });
     }
@@ -129,12 +146,58 @@ export const initializePayment = async (req, res) => {
       });
     }
 
-    const adapter = getGateway(gw.provider);
+    // Binance manual — save pending, admin verifies
+    if (gw.paymentMode === "binance") {
+      const reference = `BNB-${Date.now()}-${user._id}`;
+      await Transaction.create({
+        user:           user._id,
+        reference,
+        amount:         usd,
+        localAmount:    usd,
+        localCurrency:  "USDT",
+        status:         "Pending",
+        type:           "Deposit",
+        method:         gw.name,
+        gateway:        gw._id,
+        provider:       "binance",
+        details:        {
+          binanceOrderId: userPaymentData.binanceOrderId || "",
+          amountSent:     userPaymentData.amountSent     || "",
+        },
+      });
+      return res.json({ message: "Deposit submitted. Pending verification." });
+    }
+
+    // Manual — save pending
+    if (gw.paymentMode === "manual") {
+      const reference = `MAN-${Date.now()}-${user._id}`;
+      await Transaction.create({
+        user:          user._id,
+        reference,
+        amount:        usd,
+        localAmount:   usd,
+        localCurrency: gw.processingCurrency,
+        status:        "Pending",
+        type:          "Deposit",
+        method:        gw.name,
+        gateway:       gw._id,
+        provider:      "manual",
+        details:       userPaymentData,
+      });
+      return res.json({ message: "Deposit submitted. Pending verification." });
+    }
+
+    // All other modes — use provider adapter
+    if (!gw.providerProfile) {
+      return res.status(400).json({ message: "No provider configured for this gateway" });
+    }
+
+    const adapter = getGateway(gw.providerProfile.providerType);
     if (!adapter) {
       return res.status(400).json({ message: "Unsupported provider" });
     }
 
-    const credentials = decryptCredentials(gw.credentials);
+    const credentials = decryptCredentials(gw.providerProfile.credentials);
     const localBase   = Math.round(usd * gw.exchangeRate * 100) / 100;
     const { total }   = calculateFee(localBase, gw.feeType, gw.feePercentage, gw.feeFixed);
     const reference   = `MP-${Date.now()}-${user._id}`;
@@ -143,36 +206,37 @@ export const initializePayment = async (req, res) => {
     // Resolve child panel owner
     let childPanelOwner = null;
     if (user.childPanelOwner) {
-      const cpOwner = await User.findById(user.childPanelOwner).select(
-        "isChildPanel childPanelIsActive childPanelPaymentMode"
+      const cp = await User.findById(user.childPanelOwner).select(
+        "isChildPanel childPanelIsActive"
       );
-      if (cpOwner?.isChildPanel && cpOwner?.childPanelIsActive) {
-        childPanelOwner = cpOwner._id;
+      if (cp?.isChildPanel && cp?.childPanelIsActive) {
+        childPanelOwner = cp._id;
       }
     }
 
-    // Save pending transaction before hitting provider
     await Transaction.create({
-      user:           user._id,
+      user:               user._id,
       reference,
-      amount:         usd,             // USD — always credited to wallet
-      localAmount:    total,           // what provider charges
-      localCurrency:  gw.processingCurrency,
-      status:         "Pending",
-      type:           "Deposit",
-      method:         gw.label,
-      gateway:        gw._id,
-      provider:       gw.provider,
+      amount:             usd,
+      localAmount:        total,
+      localCurrency:      gw.processingCurrency,
+      status:             "Pending",
+      type:               "Deposit",
+      method:             gw.name,
+      gateway:            gw._id,
+      provider:           gw.providerProfile.providerType,
       childPanelOwner,
       childPanelCredited: false,
+      details:            userPaymentData,
     });
 
     const result = await adapter.initialize(credentials, {
-      amount:      total,
-      currency:    gw.processingCurrency,
-      email:       user.email,
+      amount:          total,
+      currency:        gw.processingCurrency,
+      email:           user.email,
       reference,
       callbackUrl,
+      userPaymentData, // passed to adapter for mpesa phone etc
     });
 
     res.json(result);
@@ -182,24 +246,23 @@ export const initializePayment = async (req, res) => {
   }
 };
 
-// ─── WEBHOOK (one route handles all providers) ───────────────────────
+// ─── WEBHOOK ─────────────────────────────────────────────────────────
 export const handleWebhook = async (req, res) => {
   try {
     const { provider, token } = req.params;
 
-    const gw = await PaymentGateway.findOne({ webhookToken: token, provider });
+    const gw = await PaymentGateway.findOne({ webhookToken: token })
+      .populate("providerProfile");
     if (!gw) return res.status(404).send("Gateway not found");
 
     const adapter = getGateway(provider);
     if (!adapter) return res.status(400).send("Unsupported provider");
 
-    const credentials = decryptCredentials(gw.credentials);
+    const credentials = decryptCredentials(gw.providerProfile?.credentials || {});
 
-    // Verify webhook signature
     const isValid = adapter.verifyWebhook(credentials, req);
     if (!isValid) return res.status(400).send("Invalid signature");
 
-    // Extract reference
     const reference = adapter.extractReference(req.body);
     if (!reference) return res.status(400).send("No reference");
 
@@ -207,67 +270,10 @@ export const handleWebhook = async (req, res) => {
     if (!transaction) return res.status(404).send("Transaction not found");
     if (transaction.status === "Completed") return res.status(200).send("Already processed");
 
-    // Verify with provider
     const verified = await adapter.verify(credentials, reference);
     if (!verified) return res.status(400).send("Verification failed");
 
-    // Credit user wallet
-    let wallet = await Wallet.findOne({ user: transaction.user });
-    if (!wallet) {
-      wallet = await Wallet.create({ user: transaction.user, balance: 0, transactions: [] });
-    }
-
-    wallet.transactions.push({
-      type:      "Deposit",
-      amount:    transaction.amount, // USD
-      status:    "Completed",
-      reference: transaction.reference,
-      note:      `${gw.label} deposit`,
-    });
-
-    wallet.balance = calcBalance(wallet.transactions);
-    await wallet.save();
-
-    transaction.status = "Completed";
-    await transaction.save();
-
-    // Emit real-time update
-    const io = req.app.get("io");
-    if (io) {
-      io.emit("wallet:update", { userId: transaction.user, balance: wallet.balance });
-    }
-
-    // Credit child panel owner wallet if applicable
-    if (transaction.childPanelOwner && !transaction.childPanelCredited) {
-      try {
-        const cpOwner = await User.findById(transaction.childPanelOwner);
-        if (cpOwner?.isChildPanel && cpOwner?.childPanelIsActive) {
-          let cpWallet = await Wallet.findOne({ user: cpOwner._id });
-          if (!cpWallet) {
-            cpWallet = await Wallet.create({ user: cpOwner._id, balance: 0, transactions: [] });
-          }
-          cpWallet.transactions.push({
-            type:      "CP Deposit Earning",
-            amount:    transaction.amount,
-            status:    "Completed",
-            reference: `CP-${transaction.reference}`,
-            note:      `User deposit via ${gw.label}`,
-            createdAt: new Date(),
-          });
-          cpWallet.balance = calcBalance(cpWallet.transactions);
-          await cpWallet.save();
-
-          transaction.childPanelCredited = true;
-          await transaction.save();
-
-          if (io) {
-            io.emit("wallet:update", { userId: cpOwner._id, balance: cpWallet.balance });
-          }
-        }
-      } catch (cpErr) {
-        console.error("CP wallet credit error:", cpErr.message);
-      }
-    }
+    await creditWallet(transaction, gw, req.app.get("io"));
 
     res.status(200).send("OK");
   } catch (err) {
@@ -276,123 +282,195 @@ export const handleWebhook = async (req, res) => {
   }
 };
 
-// ─── CP OWNER: GET OWN GATEWAYS ──────────────────────────────────────
-export const getCpGateways = async (req, res) => {
-  try {
-    const gateways = await PaymentGateway.find({ owner: req.user._id });
-    res.json({ gateways: gateways.map(safeGateway) });
-  } catch (err) {
-    res.status(500).json({ message: "Failed to fetch gateways" });
+// ─── SHARED WALLET CREDIT ────────────────────────────────────────────
+const creditWallet = async (transaction, gw, io) => {
+  let wallet = await Wallet.findOne({ user: transaction.user });
+  if (!wallet) {
+    wallet = await Wallet.create({ user: transaction.user, balance: 0, transactions: [] });
+  }
+
+  wallet.transactions.push({
+    type:      "Deposit",
+    amount:    transaction.amount,
+    status:    "Completed",
+    reference: transaction.reference,
+    note:      `${gw?.name || "Gateway"} deposit`,
+  });
+
+  wallet.balance = calcBalance(wallet.transactions);
+  await wallet.save();
+
+  transaction.status = "Completed";
+  await transaction.save();
+
+  if (io) {
+    io.emit("wallet:update", { userId: transaction.user, balance: wallet.balance });
+  }
+
+  // Credit child panel owner
+  if (transaction.childPanelOwner && !transaction.childPanelCredited) {
+    try {
+      const cpOwner = await User.findById(transaction.childPanelOwner);
+      if (cpOwner?.isChildPanel && cpOwner?.childPanelIsActive) {
+        let cpWallet = await Wallet.findOne({ user: cpOwner._id });
+        if (!cpWallet) {
+          cpWallet = await Wallet.create({ user: cpOwner._id, balance: 0, transactions: [] });
+        }
+        cpWallet.transactions.push({
+          type:      "CP Deposit Earning",
+          amount:    transaction.amount,
+          status:    "Completed",
+          reference: `CP-${transaction.reference}`,
+          note:      `User deposit via ${gw?.name || "gateway"}`,
+        });
+        cpWallet.balance = calcBalance(cpWallet.transactions);
+        await cpWallet.save();
+        transaction.childPanelCredited = true;
+        await transaction.save();
+        if (io) {
+          io.emit("wallet:update", { userId: cpOwner._id, balance: cpWallet.balance });
+        }
+      }
+    } catch (err) {
+      console.error("CP credit error:", err.message);
+    }
   }
 };
 
-// ─── CP OWNER: CREATE GATEWAY ────────────────────────────────────────
-export const createCpGateway = async (req, res) => {
+// ─── ADMIN: APPROVE MANUAL/BINANCE DEPOSIT ───────────────────────────
+export const adminApproveDeposit = async (req, res) => {
   try {
-    const {
-      provider, label,
-      processingCurrency, processingCurrencySymbol,
-      exchangeRate, rateMode,
-      feeType, feePercentage, feeFixed,
-      minDeposit, cpNote,
-      credentials: rawCredentials,
-    } = req.body;
-
-    if (!provider || !label) {
-      return res.status(400).json({ message: "provider and label are required" });
+    const transaction = await Transaction.findById(req.params.id);
+    if (!transaction) return res.status(404).json({ message: "Transaction not found" });
+    if (transaction.status !== "Pending") {
+      return res.status(400).json({ message: "Transaction is not pending" });
     }
 
-    if (!getGateway(provider)) {
-      return res.status(400).json({ message: "Unsupported provider" });
-    }
+    const gw = await PaymentGateway.findById(transaction.gateway);
+    await creditWallet(transaction, gw, req.app.get("io"));
 
-    const webhookToken = `wh_${crypto.randomBytes(24).toString("hex")}`;
-
-    const gw = await PaymentGateway.create({
-      owner:                   req.user._id,
-      provider,
-      label,
-      processingCurrency:      processingCurrency || "USD",
-      processingCurrencySymbol:processingCurrencySymbol || "$",
-      exchangeRate:            exchangeRate || 1,
-      rateMode:                rateMode || "manual",
-      feeType:                 feeType || "none",
-      feePercentage:           feePercentage || 0,
-      feeFixed:                feeFixed || 0,
-      minDeposit:              minDeposit || 0,
-      cpNote:                  cpNote || "",
-      credentials:             encryptCredentials(rawCredentials || {}),
-      webhookToken,
-    });
-
-    res.status(201).json({ message: "Gateway created", gateway: safeGateway(gw) });
+    res.json({ message: "Deposit approved and wallet credited" });
   } catch (err) {
-    console.error("createCpGateway error:", err);
-    res.status(500).json({ message: "Failed to create gateway" });
+    console.error("adminApproveDeposit error:", err.message);
+    res.status(500).json({ message: "Failed to approve deposit" });
   }
 };
 
-// ─── CP OWNER: UPDATE GATEWAY ────────────────────────────────────────
-export const updateCpGateway = async (req, res) => {
+// ─── ADMIN: REJECT MANUAL/BINANCE DEPOSIT ────────────────────────────
+export const adminRejectDeposit = async (req, res) => {
   try {
-    const gw = await PaymentGateway.findOne({ _id: req.params.id, owner: req.user._id });
-    if (!gw) return res.status(404).json({ message: "Gateway not found" });
+    const transaction = await Transaction.findById(req.params.id);
+    if (!transaction) return res.status(404).json({ message: "Transaction not found" });
+    if (transaction.status !== "Pending") {
+      return res.status(400).json({ message: "Transaction is not pending" });
+    }
 
-    const allowed = [
-      "label", "processingCurrency", "processingCurrencySymbol",
-      "exchangeRate", "rateMode", "feeType", "feePercentage",
-      "feeFixed", "minDeposit", "cpNote", "isActive", "isVisible",
-    ];
+    transaction.status = "Failed";
+    await transaction.save();
 
-    allowed.forEach((field) => {
-      if (req.body[field] !== undefined) gw[field] = req.body[field];
+    const io = req.app.get("io");
+    if (io) {
+      io.emit("wallet:update", { userId: transaction.user });
+    }
+
+    res.json({ message: "Deposit rejected" });
+  } catch (err) {
+    res.status(500).json({ message: "Failed to reject deposit" });
+  }
+};
+
+// ─── ADMIN: GET PENDING MANUAL DEPOSITS ──────────────────────────────
+export const adminGetPendingDeposits = async (req, res) => {
+  try {
+    const pending = await Transaction.find({
+      status:  "Pending",
+      type:    "Deposit",
+      provider: { $in: ["binance", "manual"] },
+    })
+      .populate("user", "email")
+      .populate("gateway", "name paymentMode")
+      .sort({ createdAt: -1 });
+
+    res.json({ deposits: pending });
+  } catch (err) {
+    res.status(500).json({ message: "Failed to fetch pending deposits" });
+  }
+};
+
+// ─── ADMIN: PROVIDER CRUD ─────────────────────────────────────────────
+export const adminGetProviders = async (req, res) => {
+  try {
+    const providers = await PaymentProvider.find({ owner: null }).sort({ createdAt: -1 });
+    res.json({ providers: providers.map(safeProvider) });
+  } catch (err) {
+    res.status(500).json({ message: "Failed to fetch providers" });
+  }
+};
+
+export const adminCreateProvider = async (req, res) => {
+  try {
+    const { name, providerType, credentials: raw, isActive } = req.body;
+    if (!name || !providerType) {
+      return res.status(400).json({ message: "name and providerType required" });
+    }
+
+    const provider = await PaymentProvider.create({
+      owner:       null,
+      name,
+      providerType,
+      isActive:    isActive !== false,
+      credentials: encryptCredentials(raw || {}),
     });
 
-    // Update credentials only if provided
+    res.status(201).json({ message: "Provider created", provider: safeProvider(provider) });
+  } catch (err) {
+    console.error("adminCreateProvider error:", err);
+    res.status(500).json({ message: "Failed to create provider" });
+  }
+};
+
+export const adminUpdateProvider = async (req, res) => {
+  try {
+    const provider = await PaymentProvider.findOne({ _id: req.params.id, owner: null });
+    if (!provider) return res.status(404).json({ message: "Provider not found" });
+
+    if (req.body.name)     provider.name     = req.body.name;
+    if (req.body.isActive !== undefined) provider.isActive = req.body.isActive;
+
     if (req.body.credentials) {
-      const existing  = decryptCredentials(gw.credentials);
-      const merged    = { ...existing, ...req.body.credentials };
-      gw.credentials  = encryptCredentials(merged);
+      const existing = decryptCredentials(provider.credentials);
+      const merged   = { ...existing, ...req.body.credentials };
+      provider.credentials = encryptCredentials(merged);
     }
 
-    await gw.save();
-    res.json({ message: "Gateway updated", gateway: safeGateway(gw) });
+    await provider.save();
+    res.json({ message: "Provider updated", provider: safeProvider(provider) });
   } catch (err) {
-    console.error("updateCpGateway error:", err);
-    res.status(500).json({ message: "Failed to update gateway" });
+    res.status(500).json({ message: "Failed to update provider" });
   }
 };
 
-// ─── CP OWNER: DELETE GATEWAY ────────────────────────────────────────
-export const deleteCpGateway = async (req, res) => {
+export const adminDeleteProvider = async (req, res) => {
   try {
-    const gw = await PaymentGateway.findOneAndDelete({ _id: req.params.id, owner: req.user._id });
-    if (!gw) return res.status(404).json({ message: "Gateway not found" });
-    res.json({ message: "Gateway deleted" });
+    // Check if any gateway uses this provider
+    const inUse = await PaymentGateway.findOne({ providerProfile: req.params.id });
+    if (inUse) {
+      return res.status(400).json({
+        message: "Cannot delete — provider is used by one or more gateways",
+      });
+    }
+    await PaymentProvider.findOneAndDelete({ _id: req.params.id, owner: null });
+    res.json({ message: "Provider deleted" });
   } catch (err) {
-    res.status(500).json({ message: "Failed to delete gateway" });
+    res.status(500).json({ message: "Failed to delete provider" });
   }
 };
 
-// ─── CP OWNER: ROTATE WEBHOOK TOKEN ──────────────────────────────────
-export const rotateCpWebhookToken = async (req, res) => {
-  try {
-    const gw = await PaymentGateway.findOne({ _id: req.params.id, owner: req.user._id });
-    if (!gw) return res.status(404).json({ message: "Gateway not found" });
-
-    gw.webhookToken = `wh_${crypto.randomBytes(24).toString("hex")}`;
-    await gw.save();
-
-    res.json({ message: "Webhook token rotated", webhookToken: gw.webhookToken });
-  } catch (err) {
-    res.status(500).json({ message: "Failed to rotate token" });
-  }
-};
-
-// ─── ADMIN: GET ALL GATEWAYS ─────────────────────────────────────────
+// ─── ADMIN: GATEWAY CRUD ─────────────────────────────────────────────
 export const adminGetAllGateways = async (req, res) => {
   try {
     const gateways = await PaymentGateway.find()
+      .populate("providerProfile", "name providerType")
       .populate("owner", "email")
       .sort({ createdAt: -1 });
     res.json({ gateways: gateways.map(safeGateway) });
@@ -401,43 +479,40 @@ export const adminGetAllGateways = async (req, res) => {
   }
 };
 
-// ─── ADMIN: CREATE PLATFORM GATEWAY ──────────────────────────────────
 export const adminCreateGateway = async (req, res) => {
   try {
     const {
-      provider, label,
+      name, description, paymentMode,
+      providerProfile, binanceId, paymentInstructions,
       processingCurrency, processingCurrencySymbol,
-      exchangeRate, rateMode,
-      feeType, feePercentage, feeFixed,
+      exchangeRate, feeType, feePercentage, feeFixed,
       minDeposit, adminNote, cpNote,
-      credentials: rawCredentials,
+      isVisible, visibleToCp,
     } = req.body;
 
-    if (!provider || !label) {
-      return res.status(400).json({ message: "provider and label are required" });
-    }
-
-    if (!getGateway(provider)) {
-      return res.status(400).json({ message: "Unsupported provider" });
-    }
+    if (!name) return res.status(400).json({ message: "name is required" });
 
     const webhookToken = `wh_${crypto.randomBytes(24).toString("hex")}`;
 
     const gw = await PaymentGateway.create({
-      owner:                   null, // platform gateway
-      provider,
-      label,
-      processingCurrency:      processingCurrency || "USD",
-      processingCurrencySymbol:processingCurrencySymbol || "$",
-      exchangeRate:            exchangeRate || 1,
-      rateMode:                rateMode || "manual",
-      feeType:                 feeType || "none",
-      feePercentage:           feePercentage || 0,
-      feeFixed:                feeFixed || 0,
-      minDeposit:              minDeposit || 0,
-      adminNote:               adminNote || "",
-      cpNote:                  cpNote || "",
-      credentials:             encryptCredentials(rawCredentials || {}),
+      owner:                    null,
+      name,
+      description:              description              || "",
+      paymentMode:              paymentMode              || "hosted",
+      providerProfile:          providerProfile          || null,
+      binanceId:                binanceId                || "",
+      paymentInstructions:      paymentInstructions      || "",
+      processingCurrency:       processingCurrency       || "USD",
+      processingCurrencySymbol: processingCurrencySymbol || "$",
+      exchangeRate:             exchangeRate             || 1,
+      feeType:                  feeType                  || "none",
+      feePercentage:            feePercentage            || 0,
+      feeFixed:                 feeFixed                 || 0,
+      minDeposit:               minDeposit               || 0,
+      adminNote:                adminNote                || "",
+      cpNote:                   cpNote                   || "",
+      isVisible:                isVisible  !== false,
+      visibleToCp:              visibleToCp === true,
       webhookToken,
     });
 
@@ -448,41 +523,145 @@ export const adminCreateGateway = async (req, res) => {
   }
 };
 
-// ─── ADMIN: UPDATE ANY GATEWAY ───────────────────────────────────────
 export const adminUpdateGateway = async (req, res) => {
   try {
     const gw = await PaymentGateway.findById(req.params.id);
     if (!gw) return res.status(404).json({ message: "Gateway not found" });
 
-    // Admin can update everything
-    const allowed = [
-      "label", "processingCurrency", "processingCurrencySymbol",
-      "exchangeRate", "rateMode", "feeType", "feePercentage",
-      "feeFixed", "minDeposit", "adminNote", "cpNote",
-      "isActive", "isVisible", "adminHidden",
+    const fields = [
+      "name", "description", "paymentMode", "providerProfile",
+      "binanceId", "paymentInstructions",
+      "processingCurrency", "processingCurrencySymbol", "exchangeRate",
+      "feeType", "feePercentage", "feeFixed", "minDeposit",
+      "adminNote", "cpNote", "isActive", "isVisible",
+      "adminHidden", "visibleToCp",
     ];
 
-    allowed.forEach((field) => {
-      if (req.body[field] !== undefined) gw[field] = req.body[field];
-    });
-
-    if (req.body.credentials) {
-      const existing = decryptCredentials(gw.credentials);
-      const merged   = { ...existing, ...req.body.credentials };
-      gw.credentials = encryptCredentials(merged);
-    }
-
+    fields.forEach((f) => { if (req.body[f] !== undefined) gw[f] = req.body[f]; });
     await gw.save();
+
     res.json({ message: "Gateway updated", gateway: safeGateway(gw) });
   } catch (err) {
     res.status(500).json({ message: "Failed to update gateway" });
   }
 };
 
-// ─── ADMIN: DELETE ANY GATEWAY ───────────────────────────────────────
 export const adminDeleteGateway = async (req, res) => {
   try {
-    const gw = await PaymentGateway.findByIdAndDelete(req.params.id);
+    await PaymentGateway.findByIdAndDelete(req.params.id);
+    res.json({ message: "Gateway deleted" });
+  } catch (err) {
+    res.status(500).json({ message: "Failed to delete gateway" });
+  }
+};
+
+export const adminToggleHidden = async (req, res) => {
+  try {
+    const gw = await PaymentGateway.findById(req.params.id);
+    if (!gw) return res.status(404).json({ message: "Gateway not found" });
+    gw.adminHidden = !gw.adminHidden;
+    await gw.save();
+    res.json({ message: `Gateway ${gw.adminHidden ? "hidden" : "visible"}`, adminHidden: gw.adminHidden });
+  } catch (err) {
+    res.status(500).json({ message: "Failed to toggle" });
+  }
+};
+
+export const adminRotateWebhookToken = async (req, res) => {
+  try {
+    const gw = await PaymentGateway.findById(req.params.id);
+    if (!gw) return res.status(404).json({ message: "Gateway not found" });
+    gw.webhookToken = `wh_${crypto.randomBytes(24).toString("hex")}`;
+    await gw.save();
+    res.json({ message: "Token rotated", webhookToken: gw.webhookToken });
+  } catch (err) {
+    res.status(500).json({ message: "Failed to rotate token" });
+  }
+};
+
+// ─── CP OWNER: GET GATEWAYS ──────────────────────────────────────────
+// CP owner only sees platform gateways where visibleToCp=true + their own
+export const getCpGateways = async (req, res) => {
+  try {
+    const [platform, own] = await Promise.all([
+      PaymentGateway.find({ owner: null, visibleToCp: true, adminHidden: false })
+        .populate("providerProfile", "providerType name"),
+      PaymentGateway.find({ owner: req.user._id })
+        .populate("providerProfile", "providerType name"),
+    ]);
+
+    res.json({ gateways: [...platform, ...own].map(safeGateway) });
+  } catch (err) {
+    res.status(500).json({ message: "Failed to fetch gateways" });
+  }
+};
+
+export const createCpGateway = async (req, res) => {
+  try {
+    const {
+      name, description, paymentMode,
+      providerProfile, binanceId, paymentInstructions,
+      processingCurrency, processingCurrencySymbol,
+      exchangeRate, feeType, feePercentage, feeFixed,
+      minDeposit, cpNote, isVisible,
+    } = req.body;
+
+    if (!name) return res.status(400).json({ message: "name is required" });
+
+    const webhookToken = `wh_${crypto.randomBytes(24).toString("hex")}`;
+
+    const gw = await PaymentGateway.create({
+      owner:                    req.user._id,
+      name,
+      description:              description              || "",
+      paymentMode:              paymentMode              || "hosted",
+      providerProfile:          providerProfile          || null,
+      binanceId:                binanceId                || "",
+      paymentInstructions:      paymentInstructions      || "",
+      processingCurrency:       processingCurrency       || "USD",
+      processingCurrencySymbol: processingCurrencySymbol || "$",
+      exchangeRate:             exchangeRate             || 1,
+      feeType:                  feeType                  || "none",
+      feePercentage:            feePercentage            || 0,
+      feeFixed:                 feeFixed                 || 0,
+      minDeposit:               minDeposit               || 0,
+      cpNote:                   cpNote                   || "",
+      isVisible:                isVisible !== false,
+      visibleToCp:              false,
+      webhookToken,
+    });
+
+    res.status(201).json({ message: "Gateway created", gateway: safeGateway(gw) });
+  } catch (err) {
+    res.status(500).json({ message: "Failed to create gateway" });
+  }
+};
+
+export const updateCpGateway = async (req, res) => {
+  try {
+    const gw = await PaymentGateway.findOne({ _id: req.params.id, owner: req.user._id });
+    if (!gw) return res.status(404).json({ message: "Gateway not found" });
+
+    const allowed = [
+      "name", "description", "paymentMode",
+      "binanceId", "paymentInstructions",
+      "processingCurrency", "processingCurrencySymbol", "exchangeRate",
+      "feeType", "feePercentage", "feeFixed", "minDeposit",
+      "cpNote", "isActive", "isVisible",
+    ];
+
+    allowed.forEach((f) => { if (req.body[f] !== undefined) gw[f] = req.body[f]; });
+    await gw.save();
+
+    res.json({ message: "Gateway updated", gateway: safeGateway(gw) });
+  } catch (err) {
+    res.status(500).json({ message: "Failed to update gateway" });
+  }
+};
+
+export const deleteCpGateway = async (req, res) => {
+  try {
+    const gw = await PaymentGateway.findOneAndDelete({ _id: req.params.id, owner: req.user._id });
     if (!gw) return res.status(404).json({ message: "Gateway not found" });
     res.json({ message: "Gateway deleted" });
   } catch (err) {
@@ -490,34 +669,13 @@ export const adminDeleteGateway = async (req, res) => {
   }
 };
 
-// ─── ADMIN: HIDE/SHOW GATEWAY FROM CP OWNER ─────────────────────────
-export const adminToggleHidden = async (req, res) => {
+export const rotateCpWebhookToken = async (req, res) => {
   try {
-    const gw = await PaymentGateway.findById(req.params.id);
+    const gw = await PaymentGateway.findOne({ _id: req.params.id, owner: req.user._id });
     if (!gw) return res.status(404).json({ message: "Gateway not found" });
-
-    gw.adminHidden = !gw.adminHidden;
-    await gw.save();
-
-    res.json({
-      message: `Gateway ${gw.adminHidden ? "hidden from" : "visible to"} CP owner`,
-      adminHidden: gw.adminHidden,
-    });
-  } catch (err) {
-    res.status(500).json({ message: "Failed to toggle visibility" });
-  }
-};
-
-// ─── ADMIN: ROTATE ANY WEBHOOK TOKEN ─────────────────────────────────
-export const adminRotateWebhookToken = async (req, res) => {
-  try {
-    const gw = await PaymentGateway.findById(req.params.id);
-    if (!gw) return res.status(404).json({ message: "Gateway not found" });
-
     gw.webhookToken = `wh_${crypto.randomBytes(24).toString("hex")}`;
     await gw.save();
-
-    res.json({ message: "Webhook token rotated", webhookToken: gw.webhookToken });
+    res.json({ message: "Token rotated", webhookToken: gw.webhookToken });
   } catch (err) {
     res.status(500).json({ message: "Failed to rotate token" });
   }

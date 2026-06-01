@@ -83,7 +83,7 @@ export const getCPPlatformServices = async (req, res) => {
       availableToChildPanels: true,
       cpOwner: null,
     })
-      .sort({ category: 1, name: 1 })
+      .sort({ serviceId: -1 })
       .lean();
 
     const priced = services.map((s) => {

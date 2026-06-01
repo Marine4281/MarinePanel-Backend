@@ -31,6 +31,15 @@ const paymentGatewaySchema = new mongoose.Schema(
       enum: ["hosted", "mpesa", "momo", "airtel", "card", "bank", "crypto", "binance", "manual"],
       default: "hosted",
     },
+    
+    // Reference to a platform gateway (when CP owner connects an admin gateway)
+   platformGatewayRef: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "PaymentGateway",
+      default: null,
+  },
+
+    isPlatformConnected: { type: Boolean, default: false },
 
     // For binance manual mode — shown to user
     binanceId: { type: String, default: "" },

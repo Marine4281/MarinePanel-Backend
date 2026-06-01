@@ -101,7 +101,6 @@ export const getCPPlatformServices = async (req, res) => {
       .lean();
 
     const priced = services.map((s) => {
-    const priced = services.map((s) => {
   const providerRate = Number(s.rate || 0);
   const systemRate   = providerRate + (providerRate * adminCommission) / 100;
   return {

@@ -3,9 +3,6 @@ import mongoose from "mongoose";
 
 const paymentProviderSchema = new mongoose.Schema(
   {
-    // ─── OWNERSHIP ───────────────────────────────────────────
-    // null = main platform provider
-    // ObjId = child panel owner's provider
     owner: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
@@ -13,19 +10,18 @@ const paymentProviderSchema = new mongoose.Schema(
       index: true,
     },
 
-    // Provider type — drives credential fields
     providerType: {
       type: String,
       enum: ["paystack", "flutterwave", "mpesa", "kora", "binance", "cryptomus", "manual"],
       required: true,
     },
 
-    // Friendly name e.g. "Main Flutterwave Account"
     name: { type: String, required: true, trim: true },
-
     isActive: { type: Boolean, default: true },
 
-    // ─── CREDENTIALS (encrypted) ─────────────────────────────
+    // Admin toggles this — if true, CP owners can see and use this provider
+    visibleToCp: { type: Boolean, default: false },
+
     credentials: {
       secretKey:      { type: String, default: "" },
       publicKey:      { type: String, default: "" },

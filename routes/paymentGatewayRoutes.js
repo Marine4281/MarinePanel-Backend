@@ -9,6 +9,8 @@ import {
   adminToggleHidden, adminRotateWebhookToken,
   adminGetPendingDeposits, adminApproveDeposit, adminRejectDeposit,
   getCpGateways, createCpGateway, updateCpGateway, deleteCpGateway, rotateCpWebhookToken,
+  getCpAvailableProviders,
+  connectPlatformGateway,
 } from "../controllers/paymentGatewayController.js";
 
 const router = express.Router();
@@ -16,6 +18,10 @@ const router = express.Router();
 // ─── PUBLIC (webhook) ─────────────────────────────────────────────────
 router.post("/webhooks/:provider/:token", handleWebhook);
 
+
+
+router.get("/cp/available-providers",           protect, childPanelOnly, getCpAvailableProviders);
+router.post("/cp/gateways/connect-platform",    protect, childPanelOnly, connectPlatformGateway);
 // ─── USER ─────────────────────────────────────────────────────────────
 router.get("/gateways/providers",  protect, getProviders);
 router.get("/gateways/quote",      protect, getQuote);

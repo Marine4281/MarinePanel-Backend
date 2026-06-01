@@ -436,6 +436,7 @@ export const adminUpdateProvider = async (req, res) => {
 
     if (req.body.name)     provider.name     = req.body.name;
     if (req.body.isActive !== undefined) provider.isActive = req.body.isActive;
+    if (req.body.visibleToCp !== undefined) provider.visibleToCp = req.body.visibleToCp;
 
     if (req.body.credentials) {
       const existing = decryptCredentials(provider.credentials);

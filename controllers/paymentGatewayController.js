@@ -702,23 +702,7 @@ export const getCpAvailableProviders = async (req, res) => {
 // Returns:
 // 1. Platform gateways where visibleToCp=true (read-only, can connect)
 // 2. CP owner's own gateways
-export const getCpGateways = async (req, res) => {
-  try {
-    const [platformGateways, ownGateways] = await Promise.all([
-      PaymentGateway.find({ owner: null, visibleToCp: true, adminHidden: false })
-        .populate("providerProfile", "providerType name"),
-      PaymentGateway.find({ owner: req.user._id })
-        .populate("providerProfile", "providerType name"),
-    ]);
 
-    res.json({
-      platformGateways: platformGateways.map(safeGateway),
-      ownGateways:      ownGateways.map(safeGateway),
-    });
-  } catch (err) {
-    res.status(500).json({ message: "Failed to fetch gateways" });
-  }
-};
 
 // ─── CP OWNER: CONNECT PLATFORM GATEWAY ─────────────────────────────
 // CP owner connects to one of admin's platform gateways

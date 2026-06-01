@@ -16,11 +16,12 @@ export const getCategoryMeta = async (req, res) => {
     const merged = allCats.map((c) => {
       const saved = metaMap[`${c.platform}::${c.category}`];
       return {
-        platform: c.platform,
-        category: c.category,
-        sortOrder: saved?.sortOrder ?? 999,
-        isFeatured: saved?.isFeatured ?? false,
-        _id: saved?._id ?? null,
+        platform:      c.platform,
+        category:      c.category,
+        sortOrder:     saved?.sortOrder     ?? 999,
+        isFeatured:    saved?.isFeatured    ?? false,
+        featuredColor: saved?.featuredColor ?? "orange",
+        _id:           saved?._id           ?? null,
       };
     });
 
@@ -36,10 +37,10 @@ export const saveCategoryMeta = async (req, res) => {
     if (!Array.isArray(items) || items.length === 0)
       return res.status(400).json({ message: "Expected an array" });
 
-    const ops = items.map(({ platform, category, sortOrder, isFeatured }) => ({
+    const ops = items.map(({ platform, category, sortOrder, isFeatured, featuredColor }) => ({
       updateOne: {
         filter: { platform, category },
-        update: { $set: { sortOrder, isFeatured } },
+        update: { $set: { sortOrder, isFeatured, featuredColor: featuredColor ?? "orange" } },
         upsert: true,
       },
     }));
@@ -48,5 +49,18 @@ export const saveCategoryMeta = async (req, res) => {
     res.json({ message: "Saved successfully" });
   } catch (err) {
     res.status(500).json({ message: "Failed to save category meta" });
+  }
+};
+
+// GET /api/category-meta/:category/services
+export const getCategoryServices = async (req, res) => {
+  try {
+    const category = decodeURIComponent(req.params.category);
+    const services = await Service.find({ category })
+      .sort({ name: 1 })
+      .lean();
+    res.json(services);
+  } catch (err) {
+    res.status(500).json({ message: "Failed to fetch category services" });
   }
 };

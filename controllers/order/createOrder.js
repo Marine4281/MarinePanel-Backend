@@ -44,10 +44,7 @@ export const createOrder = async (req, res) => {
       return res.status(400).json({ message: "Quantity is required" });
     }
 
-    if (
-      isCustomCommentsOrder &&
-      (!comments || !comments.trim())
-    ) {
+    if (isCustomCommentsOrder && (!comments || !comments.trim())) {
       return res.status(400).json({ message: "Comments are required for this service" });
     }
 
@@ -72,26 +69,18 @@ export const createOrder = async (req, res) => {
 
     const wallet = await ensureWallet(user._id);
 
-    // ─── RESOLVE PROVIDER ─────────────────────────────────────────────────
+    // ─── RESOLVE PROVIDER ──────────────────────────────────────────────────
     const providerResult = await resolveProviderProfile({ req, serviceData });
     if (!providerResult) {
       return res.status(400).json({ message: "Provider profile not found" });
     }
     const { effectiveProviderProfile, routeThroughMainPlatformApi } = providerResult;
 
-    // ─── RESOLVE CHILD PANEL DATA ─────────────────────────────────────────
+    // ─── RESOLVE CHILD PANEL DATA ──────────────────────────────────────────
     const { childPanelOwnerId, childPanelPerOrderFee } =
       await resolveChildPanelData(user);
 
-    // ─── REJECT IF CP OWNER IS IN NEGATIVE BALANCE ────────────────────────
-    if (childPanelOwnerId) {
-      const cpOwner = await User.findById(childPanelOwnerId).select("childPanelNegativeBalance");
-      if (cpOwner?.childPanelNegativeBalance) {
-        return res.status(402).json({ message: "Service temporarily unavailable" });
-      }
-    }
-
-    // ─── PRICING ──────────────────────────────────────────────────────────
+    // ─── PRICING ───────────────────────────────────────────────────────────
     let isFreeOrder = false;
     let finalCharge = 0;
     let baseCharge = 0;
@@ -149,7 +138,7 @@ export const createOrder = async (req, res) => {
       }
     }
 
-    // ─── CHARGE CP OWNER FOR FREE ORDERS ─────────────────────────────────
+    // ─── CHARGE CP OWNER FOR FREE ORDERS ──────────────────────────────────
     if (isFreeOrder && childPanelOwnerId) {
       const providerRate = Number(serviceData.rate || 0);
       const cpOwnerBaseCharge = (qty / 1000) * providerRate;
@@ -180,10 +169,10 @@ export const createOrder = async (req, res) => {
       }
     }
 
-    // ─── ORDER ID ─────────────────────────────────────────────────────────
+    // ─── ORDER ID ──────────────────────────────────────────────────────────
     const customOrderId = await getNextOrderId();
 
-    // ─── DEDUCT USER WALLET ───────────────────────────────────────────────
+    // ─── DEDUCT USER WALLET ────────────────────────────────────────────────
     if (!isFreeOrder) {
       wallet.transactions.push({
         type: "Order",
@@ -198,10 +187,15 @@ export const createOrder = async (req, res) => {
       await updateUserBalance(user._id, wallet);
     }
 
-    // ─── DEDUCT BASE COST FROM CP OWNER (PAID ORDERS) ────────────────────
-    // We check BEFORE deducting so the balance can never go negative.
-    // If this order would tip them below zero, refund the end-user and flag
-    // the CP owner — mirroring how provider APIs reject broke panels.
+    // ─── DEDUCT BASE COST FROM CP OWNER (PAID ORDERS) ─────────────────────
+    // If the CP owner can't cover the base cost:
+    //   • Do NOT refund the end-user
+    //   • Do NOT return an error to the end-user
+    //   • Skip deducting the CP owner (balance stays where it is, never negative)
+    //   • Set a flag so the provider call is skipped — order lands as "pending"
+    //   • The order will sit pending until the CP owner tops up
+    let cpOwnerInsufficientFunds = false;
+
     if (!isFreeOrder && childPanelOwnerId) {
       const cpOwnerWalletForPaid = await Wallet.findOne({ user: childPanelOwnerId });
 
@@ -209,41 +203,24 @@ export const createOrder = async (req, res) => {
         const cpOwnerCurrentBalance = calculateBalance(cpOwnerWalletForPaid.transactions);
 
         if (cpOwnerCurrentBalance < baseCharge) {
-          // Refund the end-user since we already deducted them above
-          wallet.transactions.push({
-            type: "Refund",
-            amount: Number(finalCharge),
+          cpOwnerInsufficientFunds = true;
+        } else {
+          cpOwnerWalletForPaid.transactions.push({
+            type: "Order",
+            amount: -Number(baseCharge),
             status: "Completed",
-            note: `Refund - CP owner insufficient balance #${customOrderId}`,
+            note: `CP end-user order cost #${customOrderId}`,
             createdAt: new Date(),
           });
-          wallet.balance = calculateBalance(wallet.transactions);
-          await wallet.save();
-          await updateUserBalance(user._id, wallet);
 
-          // Flag the CP owner so all future orders are gated at the top
-          await User.findByIdAndUpdate(childPanelOwnerId, {
-            childPanelNegativeBalance: true,
-          });
-
-          return res.status(402).json({ message: "Service temporarily unavailable" });
+          cpOwnerWalletForPaid.balance = calculateBalance(cpOwnerWalletForPaid.transactions);
+          await cpOwnerWalletForPaid.save();
+          await updateUserBalance(childPanelOwnerId, cpOwnerWalletForPaid);
         }
-
-        cpOwnerWalletForPaid.transactions.push({
-          type: "Order",
-          amount: -Number(baseCharge),
-          status: "Completed",
-          note: `CP end-user order cost #${customOrderId}`,
-          createdAt: new Date(),
-        });
-
-        cpOwnerWalletForPaid.balance = calculateBalance(cpOwnerWalletForPaid.transactions);
-        await cpOwnerWalletForPaid.save();
-        await updateUserBalance(childPanelOwnerId, cpOwnerWalletForPaid);
       }
     }
 
-    // ─── CREATE ORDER ─────────────────────────────────────────────────────
+    // ─── CREATE ORDER ──────────────────────────────────────────────────────
     const order = await Order.create({
       orderId: "ORD-" + uuidv4().slice(0, 8),
       customOrderId,
@@ -292,88 +269,95 @@ export const createOrder = async (req, res) => {
     });
 
     // ─── PROVIDER CALL ────────────────────────────────────────────────────
-    try {
-      if (routeThroughMainPlatformApi) {
-        const payload = new URLSearchParams();
-        payload.append("key", effectiveProviderProfile.apiKey);
-        payload.append("action", "add");
-        payload.append("service", serviceData.providerServiceId);
-        payload.append("link", link);
-
-        if (isCustomCommentsOrder) {
-          payload.append("comments", comments.trim());
-        } else {
-          payload.append("quantity", qty);
-        }
-
-        const response = await axios.post(effectiveProviderProfile.apiUrl, payload, {
-          headers: { "Content-Type": "application/x-www-form-urlencoded" },
-          timeout: 15000,
-        });
-
-        if (response?.data?.order) {
-          order.providerOrderId = String(response.data.order);
-          order.providerStatus = "processing";
-          order.status = "processing";
-        }
-        order.providerResponse = response.data;
-      } else {
-        const providerPayload = {
-          key: effectiveProviderProfile.apiKey,
-          action: "add",
-          service: serviceData.providerServiceId,
-          link,
-        };
-
-        // Both "Custom Comments" and "Custom Comments Package" send comments,
-        // not quantity — isCustomCommentsOrder covers both.
-        if (isCustomCommentsOrder) {
-          if (comments?.trim()) providerPayload.comments = comments.trim();
-        } else {
-          providerPayload.quantity = qty;
-        }
-
-        const response = await axios.post(
-          effectiveProviderProfile.apiUrl,
-          providerPayload,
-          { timeout: 15000 }
-        );
-
-        if (response?.data?.order) {
-          order.providerOrderId = response.data.order;
-          order.providerStatus = "processing";
-          order.status = "processing";
-        }
-        order.providerResponse = response.data;
-      }
-
+    // Skip provider call entirely if the CP owner has insufficient funds.
+    // The order stays "pending" — no error shown to the end-user.
+    if (cpOwnerInsufficientFunds) {
+      order.status = "pending";
+      order.providerStatus = "pending";
+      order.errorMessage = "CP owner insufficient funds — provider call skipped";
       await order.save();
-    } catch (err) {
-      // ─── SAFE REFUND ON PROVIDER FAILURE ─────────────────────────────
-      if (!isFreeOrder) {
-        wallet.transactions.push({
-          type: "Refund",
-          amount: Number(finalCharge),
-          status: "Completed",
-          note: `Refund - Provider failed #${customOrderId}`,
-          reference: order._id,
-          createdAt: new Date(),
+    } else {
+      try {
+        if (routeThroughMainPlatformApi) {
+          const payload = new URLSearchParams();
+          payload.append("key", effectiveProviderProfile.apiKey);
+          payload.append("action", "add");
+          payload.append("service", serviceData.providerServiceId);
+          payload.append("link", link);
+
+          if (isCustomCommentsOrder) {
+            payload.append("comments", comments.trim());
+          } else {
+            payload.append("quantity", qty);
+          }
+
+          const response = await axios.post(effectiveProviderProfile.apiUrl, payload, {
+            headers: { "Content-Type": "application/x-www-form-urlencoded" },
+            timeout: 15000,
+          });
+
+          if (response?.data?.order) {
+            order.providerOrderId = String(response.data.order);
+            order.providerStatus = "processing";
+            order.status = "processing";
+          }
+          order.providerResponse = response.data;
+        } else {
+          const providerPayload = {
+            key: effectiveProviderProfile.apiKey,
+            action: "add",
+            service: serviceData.providerServiceId,
+            link,
+          };
+
+          if (isCustomCommentsOrder) {
+            if (comments?.trim()) providerPayload.comments = comments.trim();
+          } else {
+            providerPayload.quantity = qty;
+          }
+
+          const response = await axios.post(
+            effectiveProviderProfile.apiUrl,
+            providerPayload,
+            { timeout: 15000 }
+          );
+
+          if (response?.data?.order) {
+            order.providerOrderId = response.data.order;
+            order.providerStatus = "processing";
+            order.status = "processing";
+          }
+          order.providerResponse = response.data;
+        }
+
+        await order.save();
+      } catch (err) {
+        // ─── SAFE REFUND ON PROVIDER FAILURE ─────────────────────────────
+        if (!isFreeOrder) {
+          wallet.transactions.push({
+            type: "Refund",
+            amount: Number(finalCharge),
+            status: "Completed",
+            note: `Refund - Provider failed #${customOrderId}`,
+            reference: order._id,
+            createdAt: new Date(),
+          });
+
+          wallet.balance = calculateBalance(wallet.transactions);
+          await wallet.save();
+        }
+
+        order.status = "failed";
+        order.providerStatus = "failed";
+        order.errorMessage = err.response?.data || err.message;
+        order.refundProcessed = true;
+        await order.save();
+
+        return res.status(500).json({
+          message: "Provider failed",
+          error: err.response?.data || err.message,
         });
-
-        wallet.balance = calculateBalance(wallet.transactions);
-        await wallet.save();
       }
-
-      order.status = "failed";
-      order.providerStatus = "failed";
-      order.errorMessage = err.response?.data || err.message;
-      order.refundProcessed = true;
-      await order.save();
-
-      return res.status(500).json({
-        message: "Provider failed",
-        error: err.response?.data || err.message,
-      });
     }
 
     // ─── ADMIN REVENUE ────────────────────────────────────────────────────

@@ -10,7 +10,6 @@ import { getNextOrderId } from "../utils/orderId.js";
 const calculateBalance = (transactions = []) =>
   transactions.reduce((acc, t) => acc + (t.amount || 0), 0);
 
-// ✅ Safe query builder for customOrderId (Number) + orderId (String).
 const buildOrderQuery = (userId, rawId) => {
   const str = rawId?.toString().trim();
   const num = !isNaN(str) && str !== "" ? Number(str) : null;
@@ -24,7 +23,6 @@ const buildOrderQuery = (userId, rawId) => {
   };
 };
 
-// Same as above but for arrays
 const buildMultiOrderQuery = (userId, rawIds) => {
   const numericIds = rawIds.filter((id) => !isNaN(id) && id !== "").map(Number);
   const stringIds = rawIds;
@@ -38,26 +36,17 @@ const buildMultiOrderQuery = (userId, rawIds) => {
   };
 };
 
-/* =====================================================
-   💰 RATE RESOLVER
-   Mirrors the exact same logic as orderController.js
-   so API orders are charged identically to web orders.
-   Returns finalRate, finalCharge, resellerCommission,
-   childPanelOwner, childPanelCommission.
-===================================================== */
 const resolveRateAndOwnership = async (user, selectedService, qty) => {
   const providerRate = Number(selectedService.rate || 0);
   const settings = await Settings.findOne().lean();
   const adminRate = Number(settings?.commission || 0);
 
-  // Admin commission baked in — same as web flow
   const systemRate = providerRate + (providerRate * adminRate) / 100;
 
   let finalRate = systemRate;
   let resellerCommission = 0;
   let resellerOwnerId = null;
 
-  // If the API key owner is a user who belongs to a reseller
   if (user.resellerOwner) {
     const reseller = await User.findById(user.resellerOwner);
     const resellerRate = Number(reseller?.resellerCommissionRate || 0);
@@ -72,7 +61,6 @@ const resolveRateAndOwnership = async (user, selectedService, qty) => {
 
   const finalCharge = Number(((qty / 1000) * finalRate).toFixed(4));
 
-  // Child panel ownership
   let childPanelOwnerId = null;
   let childPanelCommission = 0;
   let childPanelPerOrderFee = 0;
@@ -118,12 +106,6 @@ export const apiV2 = async (req, res) => {
 
     switch (action) {
 
-      /* =====================================================
-         📦 SERVICES
-         ✅ FIX: Rate returned is now the correct final rate
-         for this user (admin commission + reseller markup),
-         not the raw provider rate.
-      ===================================================== */
       case "services": {
         const services = await Service.find({ status: true });
 
@@ -161,12 +143,6 @@ export const apiV2 = async (req, res) => {
         );
       }
 
-      /* =====================================================
-         ➕ ADD ORDER
-         ✅ FIX: Applies admin commission + reseller markup,
-         stamps resellerOwner + childPanelOwner on the order,
-         identical to the web order flow.
-      ===================================================== */
       case "add": {
         const { service, link, quantity } = req.body;
 
@@ -191,8 +167,8 @@ export const apiV2 = async (req, res) => {
           });
         }
 
-        // ✅ FIX: Resolve correct charge with full commission chain
         const {
+          providerRate,
           finalCharge,
           resellerOwnerId,
           resellerCommission,
@@ -207,10 +183,9 @@ export const apiV2 = async (req, res) => {
           return res.json({ error: "Insufficient balance" });
         }
 
-        // ✅ FIX: Generate customOrderId to match web order flow
         const customOrderId = await getNextOrderId();
 
-        // Deduct balance
+        // ─── DEDUCT END-USER WALLET ───────────────────────────────────────
         wallet.transactions.push({
           type: "Order",
           amount: -finalCharge,
@@ -222,13 +197,44 @@ export const apiV2 = async (req, res) => {
         wallet.balance = calculateBalance(wallet.transactions);
         await wallet.save();
 
-        // Fetch provider profile before creating order so we can stamp providerApiUrl
+        // ─── DEDUCT BASE COST FROM CP OWNER ──────────────────────────────
+        // If CP owner can't cover cost: skip provider call, leave order pending.
+        // End-user is already charged — their order just waits. No error returned.
+        const baseCharge = Number(((qty / 1000) * providerRate).toFixed(4));
+        let cpOwnerInsufficientFunds = false;
+
+        if (childPanelOwnerId && baseCharge > 0) {
+          const cpOwnerWallet = await Wallet.findOne({ user: childPanelOwnerId });
+
+          if (cpOwnerWallet) {
+            const cpOwnerBalance = calculateBalance(cpOwnerWallet.transactions);
+
+            if (cpOwnerBalance < baseCharge) {
+              cpOwnerInsufficientFunds = true;
+            } else {
+              cpOwnerWallet.transactions.push({
+                type: "Order",
+                amount: -baseCharge,
+                status: "Completed",
+                note: `CP end-user API order cost #${customOrderId}`,
+                createdAt: new Date(),
+              });
+              cpOwnerWallet.balance = calculateBalance(cpOwnerWallet.transactions);
+              await cpOwnerWallet.save();
+
+              await User.findByIdAndUpdate(childPanelOwnerId, {
+                balance: cpOwnerWallet.balance,
+              });
+            }
+          }
+        }
+
+        // ─── FETCH PROVIDER PROFILE ───────────────────────────────────────
         const providerProfile = await ProviderProfile.findById(
           selectedService.providerProfileId
         );
 
-        // ✅ FIX: Stamp resellerOwner + childPanelOwner so commission
-        // tracking, dashboards, and billing all work correctly
+        // ─── CREATE ORDER ─────────────────────────────────────────────────
         const order = await Order.create({
           userId: user._id,
           customOrderId,
@@ -241,104 +247,10 @@ export const apiV2 = async (req, res) => {
           rate: Number(selectedService.rate || 0),
           isCharged: true,
 
-          // ─── DEDUCT BASE COST FROM CP OWNER ──────────────────────────────────
-// If CP owner can't cover cost: skip provider call, leave order pending.
-// End-user is already charged — their order just waits. No error returned.
-let cpOwnerInsufficientFunds = false;
-const providerRate = Number(selectedService.rate || 0);
-const baseCharge = Number(((qty / 1000) * providerRate).toFixed(4));
-
-if (childPanelOwnerId && baseCharge > 0) {
-  const cpOwnerWallet = await Wallet.findOne({ user: childPanelOwnerId });
-
-  if (cpOwnerWallet) {
-    const cpOwnerBalance = calculateBalance(cpOwnerWallet.transactions);
-
-    if (cpOwnerBalance < baseCharge) {
-      cpOwnerInsufficientFunds = true;
-    } else {
-      cpOwnerWallet.transactions.push({
-        type: "Order",
-        amount: -baseCharge,
-        status: "Completed",
-        note: `CP end-user API order cost #${customOrderId}`,
-        createdAt: new Date(),
-      });
-      cpOwnerWallet.balance = calculateBalance(cpOwnerWallet.transactions);
-      await cpOwnerWallet.save();
-
-      // Keep User.balance in sync
-      await User.findByIdAndUpdate(childPanelOwnerId, {
-        balance: cpOwnerWallet.balance,
-      });
-    }
-  }
-}
-
-if (cpOwnerInsufficientFunds) {
-  // Order sits as pending — no provider call, no error to the API caller
-  order.status = "pending";
-  order.providerStatus = "pending";
-  order.errorMessage = "CP owner insufficient funds — provider call skipped";
-  await order.save();
-} else if (providerProfile?.apiUrl && providerProfile?.apiKey) {
-  try {
-    const payload = {
-      key: providerProfile.apiKey,
-      action: "add",
-      service: selectedService.providerServiceId,
-      link,
-      quantity: qty,
-    };
-
-    const providerRes = await axios.post(providerProfile.apiUrl, payload, {
-      timeout: 15000,
-    });
-
-    if (providerRes?.data?.order) {
-      order.providerOrderId = providerRes.data.order;
-      order.providerStatus = "processing";
-      order.status = "processing";
-    } else {
-      order.providerStatus = "processing";
-      order.status = "processing";
-    }
-
-    order.providerResponse = providerRes.data;
-    await order.save();
-
-  } catch (providerErr) {
-    // Refund end-user on provider failure
-    wallet.transactions.push({
-      type: "Refund",
-      amount: finalCharge,
-      status: "Completed",
-      note: `Refund - Provider failed #${customOrderId}`,
-      reference: order._id,
-      createdAt: new Date(),
-    });
-    wallet.balance = calculateBalance(wallet.transactions);
-    await wallet.save();
-
-    order.status = "failed";
-    order.providerStatus = "failed";
-    order.refundProcessed = true;
-    await order.save();
-
-    return res.json({ error: "Provider failed. Your balance has been refunded." });
-  }
-}
-
-return res.json({
-  order: order.customOrderId,
-});
-
-          // Reseller
           resellerOwner: resellerOwnerId,
           resellerCommission,
           earningsCredited: false,
 
-          // Child panel
           childPanelOwner: childPanelOwnerId,
           childPanelCommission,
           childPanelEarningsCredited: false,
@@ -347,7 +259,6 @@ return res.json({
           providerProfileId: selectedService.providerProfileId,
           provider: selectedService.provider,
           providerServiceId: selectedService.providerServiceId,
-          // ✅ FIX: Stamp providerApiUrl so sync jobs and status checks work
           providerApiUrl: providerProfile?.apiUrl || "",
 
           cancelAllowed: selectedService.cancelAllowed,
@@ -356,7 +267,15 @@ return res.json({
           customRefillDays: selectedService.customRefillDays,
         });
 
-        if (providerProfile?.apiUrl && providerProfile?.apiKey) {
+        // ─── PROVIDER CALL ────────────────────────────────────────────────
+        // Skip entirely if CP owner has insufficient funds.
+        // Order stays "pending" — no error shown to the API caller.
+        if (cpOwnerInsufficientFunds) {
+          order.status = "pending";
+          order.providerStatus = "pending";
+          order.errorMessage = "CP owner insufficient funds — provider call skipped";
+          await order.save();
+        } else if (providerProfile?.apiUrl && providerProfile?.apiKey) {
           try {
             const payload = {
               key: providerProfile.apiKey,
@@ -375,17 +294,15 @@ return res.json({
               order.providerStatus = "processing";
               order.status = "processing";
             } else {
-              // Provider responded but returned no order ID — still mark processing
               order.providerStatus = "processing";
               order.status = "processing";
             }
 
             order.providerResponse = providerRes.data;
-            // ✅ FIX: Always save after provider call, not only when order ID returned
             await order.save();
 
           } catch (providerErr) {
-            // Refund on provider failure
+            // Refund end-user on provider failure
             wallet.transactions.push({
               type: "Refund",
               amount: finalCharge,
@@ -406,29 +323,19 @@ return res.json({
           }
         }
 
-        // ✅ FIX: Return customOrderId so status checks work correctly
-        return res.json({
-          order: order.customOrderId,
-        });
+        return res.json({ order: order.customOrderId });
       }
 
-      /* =====================================================
-         📊 ORDER STATUS (SINGLE + MULTIPLE)
-      ===================================================== */
       case "status": {
 
-        // 🔹 MULTIPLE
         if (req.body.orders) {
           const ids = req.body.orders.toString().split(",").map((id) => id.trim());
-
           const orders = await Order.find(buildMultiOrderQuery(user._id, ids));
-
           const response = {};
 
           ids.forEach((id) => {
             const order = orders.find(
-              (o) =>
-                o.customOrderId?.toString() === id || o.orderId === id
+              (o) => o.customOrderId?.toString() === id || o.orderId === id
             );
 
             if (!order) {
@@ -447,7 +354,6 @@ return res.json({
           return res.json(response);
         }
 
-        // 🔹 SINGLE
         if (!req.body.order) {
           return res.json({ error: "Order ID required" });
         }
@@ -469,9 +375,6 @@ return res.json({
         });
       }
 
-      /* =====================================================
-         🔄 REFILL (SINGLE + MULTIPLE)
-      ===================================================== */
       case "refill": {
 
         const processRefill = async (id) => {
@@ -496,7 +399,6 @@ return res.json({
           return order.refillId || order.customOrderId || order.orderId;
         };
 
-        // 🔹 MULTIPLE
         if (req.body.orders) {
           const ids = req.body.orders.toString().split(",").map((id) => id.trim());
           const results = [];
@@ -509,7 +411,6 @@ return res.json({
           return res.json(results);
         }
 
-        // 🔹 SINGLE
         if (!req.body.order) {
           return res.json({ error: "Order ID required" });
         }
@@ -523,9 +424,6 @@ return res.json({
         return res.json({ refill: result });
       }
 
-      /* =====================================================
-         📋 REFILL STATUS (SINGLE + MULTIPLE)
-      ===================================================== */
       case "refill_status": {
 
         const getRefillStatus = async (refillId) => {
@@ -548,7 +446,6 @@ return res.json({
           return formatRefillStatus(order.refillStatus);
         };
 
-        // 🔹 MULTIPLE
         if (req.body.refills) {
           const ids = req.body.refills.toString().split(",").map((id) => id.trim());
           const results = [];
@@ -561,7 +458,6 @@ return res.json({
           return res.json(results);
         }
 
-        // 🔹 SINGLE
         if (!req.body.refill) {
           return res.json({ error: "Refill ID required" });
         }
@@ -575,9 +471,6 @@ return res.json({
         return res.json({ status });
       }
 
-      /* =====================================================
-         ❌ CANCEL (MULTIPLE)
-      ===================================================== */
       case "cancel": {
         if (!req.body.orders) {
           return res.json({ error: "Order IDs required" });
@@ -616,9 +509,6 @@ return res.json({
         return res.json(results);
       }
 
-      /* =====================================================
-         💰 BALANCE
-      ===================================================== */
       case "balance": {
         const wallet = await Wallet.findOne({ user: user._id });
 
@@ -638,9 +528,6 @@ return res.json({
   }
 };
 
-/* =====================================================
-   🔄 STATUS FORMATTERS
-===================================================== */
 const formatStatus = (status) => {
   const map = {
     pending: "Pending",

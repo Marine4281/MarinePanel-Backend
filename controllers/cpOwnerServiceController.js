@@ -52,17 +52,31 @@ export const getCPServices = async (req, res) => {
       .lean();
 
     const withFinal = services.map((s) => {
-      const costRate  = Number(s.rate || 0);
-      const finalRate = costRate + (costRate * commission) / 100;
-      return {
-        ...s,
-        cpCommission: commission,
-        adminCommission,
-        finalRate,
-      };
-    });
+  const costRate  = Number(s.rate || 0);
+  const finalRate = costRate + (costRate * commission) / 100;
+  return {
+    ...s,
+    cpCommission: commission,
+    adminCommission,
+    finalRate,
+  };
+});
 
-    res.json(withFinal);
+const categoryMaxId = {};
+withFinal.forEach((s) => {
+  const cat = s.category || "Uncategorized";
+  if (categoryMaxId[cat] === undefined || s.serviceId > categoryMaxId[cat]) {
+    categoryMaxId[cat] = s.serviceId;
+  }
+});
+
+const sorted = withFinal.slice().sort((a, b) => {
+  const catDiff = categoryMaxId[b.category] - categoryMaxId[a.category];
+  if (catDiff !== 0) return catDiff;
+  return (a.serviceId ?? 0) - (b.serviceId ?? 0);
+});
+
+res.json(sorted);
   } catch (err) {
     console.error("CP GET SERVICES ERROR:", err);
     res.status(500).json({ message: "Failed to fetch services" });
@@ -87,18 +101,33 @@ export const getCPPlatformServices = async (req, res) => {
       .lean();
 
     const priced = services.map((s) => {
-      const providerRate = Number(s.rate || 0);
-      const systemRate   = providerRate + (providerRate * adminCommission) / 100;
-      return {
-        ...s,
-        providerRate,
-        systemRate,
-        rate: systemRate,
-        adminCommission,
-      };
-    });
+    const priced = services.map((s) => {
+  const providerRate = Number(s.rate || 0);
+  const systemRate   = providerRate + (providerRate * adminCommission) / 100;
+  return {
+    ...s,
+    providerRate,
+    systemRate,
+    rate: systemRate,
+    adminCommission,
+  };
+});
 
-    res.json(priced);
+const categoryMaxId = {};
+priced.forEach((s) => {
+  const cat = s.category || "Uncategorized";
+  if (categoryMaxId[cat] === undefined || s.serviceId > categoryMaxId[cat]) {
+    categoryMaxId[cat] = s.serviceId;
+  }
+});
+
+const sorted = priced.slice().sort((a, b) => {
+  const catDiff = categoryMaxId[b.category] - categoryMaxId[a.category];
+  if (catDiff !== 0) return catDiff;
+  return (a.serviceId ?? 0) - (b.serviceId ?? 0);
+});
+
+res.json(sorted);
   } catch (err) {
     console.error("CP GET PLATFORM SERVICES ERROR:", err);
     res.status(500).json({ message: "Failed to fetch platform services" });

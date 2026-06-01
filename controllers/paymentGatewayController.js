@@ -582,105 +582,6 @@ export const adminRotateWebhookToken = async (req, res) => {
 
 // ─── CP OWNER: GET GATEWAYS ──────────────────────────────────────────
 // CP owner only sees platform gateways where visibleToCp=true + their own
-export const getCpGateways = async (req, res) => {
-  try {
-    const [platform, own] = await Promise.all([
-      PaymentGateway.find({ owner: null, visibleToCp: true, adminHidden: false })
-        .populate("providerProfile", "providerType name"),
-      PaymentGateway.find({ owner: req.user._id })
-        .populate("providerProfile", "providerType name"),
-    ]);
-
-    res.json({ gateways: [...platform, ...own].map(safeGateway) });
-  } catch (err) {
-    res.status(500).json({ message: "Failed to fetch gateways" });
-  }
-};
-
-export const createCpGateway = async (req, res) => {
-  try {
-    const {
-      name, description, paymentMode,
-      providerProfile, binanceId, paymentInstructions,
-      processingCurrency, processingCurrencySymbol,
-      exchangeRate, feeType, feePercentage, feeFixed,
-      minDeposit, cpNote, isVisible,
-    } = req.body;
-
-    if (!name) return res.status(400).json({ message: "name is required" });
-
-    const webhookToken = `wh_${crypto.randomBytes(24).toString("hex")}`;
-
-    const gw = await PaymentGateway.create({
-      owner:                    req.user._id,
-      name,
-      description:              description              || "",
-      paymentMode:              paymentMode              || "hosted",
-      providerProfile:          providerProfile          || null,
-      binanceId:                binanceId                || "",
-      paymentInstructions:      paymentInstructions      || "",
-      processingCurrency:       processingCurrency       || "USD",
-      processingCurrencySymbol: processingCurrencySymbol || "$",
-      exchangeRate:             exchangeRate             || 1,
-      feeType:                  feeType                  || "none",
-      feePercentage:            feePercentage            || 0,
-      feeFixed:                 feeFixed                 || 0,
-      minDeposit:               minDeposit               || 0,
-      cpNote:                   cpNote                   || "",
-      isVisible:                isVisible !== false,
-      visibleToCp:              false,
-      webhookToken,
-    });
-
-    res.status(201).json({ message: "Gateway created", gateway: safeGateway(gw) });
-  } catch (err) {
-    res.status(500).json({ message: "Failed to create gateway" });
-  }
-};
-
-export const updateCpGateway = async (req, res) => {
-  try {
-    const gw = await PaymentGateway.findOne({ _id: req.params.id, owner: req.user._id });
-    if (!gw) return res.status(404).json({ message: "Gateway not found" });
-
-    const allowed = [
-      "name", "description", "paymentMode",
-      "binanceId", "paymentInstructions",
-      "processingCurrency", "processingCurrencySymbol", "exchangeRate",
-      "feeType", "feePercentage", "feeFixed", "minDeposit",
-      "cpNote", "isActive", "isVisible",
-    ];
-
-    allowed.forEach((f) => { if (req.body[f] !== undefined) gw[f] = req.body[f]; });
-    await gw.save();
-
-    res.json({ message: "Gateway updated", gateway: safeGateway(gw) });
-  } catch (err) {
-    res.status(500).json({ message: "Failed to update gateway" });
-  }
-};
-
-export const deleteCpGateway = async (req, res) => {
-  try {
-    const gw = await PaymentGateway.findOneAndDelete({ _id: req.params.id, owner: req.user._id });
-    if (!gw) return res.status(404).json({ message: "Gateway not found" });
-    res.json({ message: "Gateway deleted" });
-  } catch (err) {
-    res.status(500).json({ message: "Failed to delete gateway" });
-  }
-};
-
-export const rotateCpWebhookToken = async (req, res) => {
-  try {
-    const gw = await PaymentGateway.findOne({ _id: req.params.id, owner: req.user._id });
-    if (!gw) return res.status(404).json({ message: "Gateway not found" });
-    gw.webhookToken = `wh_${crypto.randomBytes(24).toString("hex")}`;
-    await gw.save();
-    res.json({ message: "Token rotated", webhookToken: gw.webhookToken });
-  } catch (err) {
-    res.status(500).json({ message: "Failed to rotate token" });
-  }
-};
 // ─── CP OWNER: GET AVAILABLE PLATFORM PROVIDERS ──────────────────────
 // CP owner sees only providers admin marked visibleToCp=true
 // Used when CP owner is creating their own gateway — they pick a provider
@@ -702,7 +603,23 @@ export const getCpAvailableProviders = async (req, res) => {
 // Returns:
 // 1. Platform gateways where visibleToCp=true (read-only, can connect)
 // 2. CP owner's own gateways
+export const getCpGateways = async (req, res) => {
+  try {
+    const [platformGateways, ownGateways] = await Promise.all([
+      PaymentGateway.find({ owner: null, visibleToCp: true, adminHidden: false })
+        .populate("providerProfile", "providerType name"),
+      PaymentGateway.find({ owner: req.user._id })
+        .populate("providerProfile", "providerType name"),
+    ]);
 
+    res.json({
+      platformGateways: platformGateways.map(safeGateway),
+      ownGateways:      ownGateways.map(safeGateway),
+    });
+  } catch (err) {
+    res.status(500).json({ message: "Failed to fetch gateways" });
+  }
+};
 
 // ─── CP OWNER: CONNECT PLATFORM GATEWAY ─────────────────────────────
 // CP owner connects to one of admin's platform gateways

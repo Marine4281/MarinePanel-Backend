@@ -241,6 +241,98 @@ export const apiV2 = async (req, res) => {
           rate: Number(selectedService.rate || 0),
           isCharged: true,
 
+          // ─── DEDUCT BASE COST FROM CP OWNER ──────────────────────────────────
+// If CP owner can't cover cost: skip provider call, leave order pending.
+// End-user is already charged — their order just waits. No error returned.
+let cpOwnerInsufficientFunds = false;
+const providerRate = Number(selectedService.rate || 0);
+const baseCharge = Number(((qty / 1000) * providerRate).toFixed(4));
+
+if (childPanelOwnerId && baseCharge > 0) {
+  const cpOwnerWallet = await Wallet.findOne({ user: childPanelOwnerId });
+
+  if (cpOwnerWallet) {
+    const cpOwnerBalance = calculateBalance(cpOwnerWallet.transactions);
+
+    if (cpOwnerBalance < baseCharge) {
+      cpOwnerInsufficientFunds = true;
+    } else {
+      cpOwnerWallet.transactions.push({
+        type: "Order",
+        amount: -baseCharge,
+        status: "Completed",
+        note: `CP end-user API order cost #${customOrderId}`,
+        createdAt: new Date(),
+      });
+      cpOwnerWallet.balance = calculateBalance(cpOwnerWallet.transactions);
+      await cpOwnerWallet.save();
+
+      // Keep User.balance in sync
+      await User.findByIdAndUpdate(childPanelOwnerId, {
+        balance: cpOwnerWallet.balance,
+      });
+    }
+  }
+}
+
+if (cpOwnerInsufficientFunds) {
+  // Order sits as pending — no provider call, no error to the API caller
+  order.status = "pending";
+  order.providerStatus = "pending";
+  order.errorMessage = "CP owner insufficient funds — provider call skipped";
+  await order.save();
+} else if (providerProfile?.apiUrl && providerProfile?.apiKey) {
+  try {
+    const payload = {
+      key: providerProfile.apiKey,
+      action: "add",
+      service: selectedService.providerServiceId,
+      link,
+      quantity: qty,
+    };
+
+    const providerRes = await axios.post(providerProfile.apiUrl, payload, {
+      timeout: 15000,
+    });
+
+    if (providerRes?.data?.order) {
+      order.providerOrderId = providerRes.data.order;
+      order.providerStatus = "processing";
+      order.status = "processing";
+    } else {
+      order.providerStatus = "processing";
+      order.status = "processing";
+    }
+
+    order.providerResponse = providerRes.data;
+    await order.save();
+
+  } catch (providerErr) {
+    // Refund end-user on provider failure
+    wallet.transactions.push({
+      type: "Refund",
+      amount: finalCharge,
+      status: "Completed",
+      note: `Refund - Provider failed #${customOrderId}`,
+      reference: order._id,
+      createdAt: new Date(),
+    });
+    wallet.balance = calculateBalance(wallet.transactions);
+    await wallet.save();
+
+    order.status = "failed";
+    order.providerStatus = "failed";
+    order.refundProcessed = true;
+    await order.save();
+
+    return res.json({ error: "Provider failed. Your balance has been refunded." });
+  }
+}
+
+return res.json({
+  order: order.customOrderId,
+});
+
           // Reseller
           resellerOwner: resellerOwnerId,
           resellerCommission,

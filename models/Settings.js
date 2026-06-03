@@ -1,75 +1,203 @@
 // models/Settings.js
-const mongoose = require("mongoose");
+import mongoose from "mongoose";
 
-const badgeTierSchema = new mongoose.Schema({
-  name:         { type: String, required: true },
-  minReferrals: { type: Number, required: true },
-  badgeImage:   { type: String },
-  color:        { type: String },
-}, { _id: true });
+const settingsSchema = new mongoose.Schema(
+  {
+    // Admin commission percentage
+    commission: {
+      type: Number,
+      default: 50, // 50%
+    },
 
-const announcementSchema = new mongoose.Schema({
-  text:      { type: String, required: true },
-  isActive:  { type: Boolean, default: true },
-  createdAt: { type: Date, default: Date.now },
-}, { _id: true });
+    // Platform total revenue
+    totalRevenue: {
+      type: Number,
+      default: 0,
+    },
+    categoryCommissions: {
+      type: Map,
+      of: Number,
+      default: {},
+     },
 
-const pollOptionSchema = new mongoose.Schema({
-  text:  { type: String, required: true },
-  votes: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
-}, { _id: true });
+    // Reseller activation fee
+    resellerActivationFee: {
+      type: Number,
+      default: 25,
+    },
 
-const pollSchema = new mongoose.Schema({
-  question:  { type: String, required: true },
-  options:   [pollOptionSchema],
-  isActive:  { type: Boolean, default: true },
-  expiresAt: { type: Date },
-  createdAt: { type: Date, default: Date.now },
-}, { _id: true });
+    // Minimum reseller withdraw amount
+    resellerWithdrawMin: {
+      type: Number,
+      default: 10,
+    },
 
-const settingsSchema = new mongoose.Schema({
-  // FEES — set by admin, no defaults
-  platformFeePct:   { type: Number },
-  offerwallFeePct:  { type: Number },
-  withdrawalFeePct: { type: Number },
-  minWithdrawal:    { type: Number },
-  withdrawalDays:   { type: Number },
-  signupBonus:      { type: Number },
+    /*
+    --------------------------------
+    Support Links
+    --------------------------------
+    */
+    supportWhatsapp: {
+      type: String,
+      default: "",
+      trim: true,
+      validate: {
+        validator: function (v) {
+          if (!v) return true;
+          const cleaned = v.replace(/\D/g, "");
+          return cleaned.length >= 7 && cleaned.length <= 15;
+        },
+        message: "Invalid WhatsApp number",
+      },
+    },
 
-  // DAILY CHECK-IN — set by admin
-  dailyCheckInEnabled: { type: Boolean },
-  dailyCheckInAmount:  { type: Number },
+    supportTelegram: {
+      type: String,
+      default: "",
+      trim: true,
+      validate: {
+        validator: function (v) {
+          if (!v) return true;
+          return typeof v === "string";
+        },
+      },
+    },
 
-  // REFERRAL — set by admin
-  referralCommissionPct:   { type: Number },
-  referralSystemCutPct:    { type: Number },
-  referralTasksToActivate: { type: Number },
+    supportWhatsappChannel: {
+      type: String,
+      default: "",
+      trim: true,
+      validate: {
+        validator: function (v) {
+          if (!v) return true;
+          return v.startsWith("http");
+        },
+        message: "Channel must be a valid link",
+      },
+    },
 
-  // BADGES — admin adds/edits/removes tiers
-  badgeTiers: { type: [badgeTierSchema], default: [] },
+    // Platform domain used for reseller subdomains
+    platformDomain: {
+      type: String,
+      default: "marinepanel.online",
+    },
 
-  // CAMPAIGNS — set by admin
-  autoApproveDays: { type: Number },
-  minPayGlobal:    { type: Number },
-  categoryMinimums: { type: Map, of: Number, default: {} },
+    /*
+    ================================================================
+    CHILD PANEL SYSTEM
+    ================================================================
+    */
 
-  // ANNOUNCEMENTS — admin posts these
-  announcements: { type: [announcementSchema], default: [] },
+    /*
+    Default activation fee charged to a user who wants to open
+    a child panel. Admin can override per child panel individually.
+    */
+    childPanelActivationFee: {
+      type: Number,
+      default: 100,
+    },
 
-  // POLLS — admin creates these
-  polls: { type: [pollSchema], default: [] },
+    /*
+    Default billing mode for all new child panels.
+    Admin can override per child panel individually.
+    monthly   = flat fee every month
+    per_order = fee per order processed on their panel
+    both      = monthly flat + per order combined
+    */
+    childPanelBillingMode: {
+      type: String,
+      enum: ["monthly", "per_order", "both"],
+      default: "monthly",
+    },
 
-  // MAINTENANCE — admin toggles
-  maintenanceMode:    { type: Boolean },
-  maintenanceMessage: { type: String },
+    // Default monthly fee for new child panels
+    childPanelMonthlyFee: {
+      type: Number,
+      default: 20,
+    },
 
-}, { timestamps: true });
+    // Default per-order fee for new child panels
+    childPanelPerOrderFee: {
+      type: Number,
+      default: 0,
+    },
 
-// Singleton — one settings document ever
-settingsSchema.statics.getSingleton = async function () {
-  let s = await this.findOne();
-  if (!s) s = await this.create({});
-  return s;
-};
+    // Default minimum withdrawal for child panel wallets
+    childPanelWithdrawMin: {
+      type: Number,
+      default: 10,
+    },
 
-module.exports = mongoose.model("Settings", settingsSchema);
+    // Default minimum deposit when child panel uses platform gateway
+    childPanelMinDeposit: {
+      type: Number,
+      default: 5,
+    },
+
+    childPanelMonthlyTiers: {
+  type: [
+    {
+      minOrders: { type: Number, required: true, min: 0 },
+      maxOrders: { type: Number, default: null }, // null = unlimited
+      fee:       { type: Number, required: true, min: 0 },
+    },
+  ],
+  default: [],
+},
+
+/*
+How many days between each billing cycle (global default).
+Admin can override per individual child panel.
+Examples: 1, 7, 14, 30, 45, 60, 90
+*/
+childPanelBillingIntervalDays: {
+  type: Number,
+  default: 30,
+  min: 1,
+},
+    /*
+    --------------------------------
+    CHILD PANEL OFFER / PROMO SYSTEM
+    Admin can flip this on to show a discounted activation price
+    on the child panel activation page with a badge.
+    --------------------------------
+    */
+
+    // Is there an active offer right now?
+    childPanelOfferActive: {
+      type: Boolean,
+      default: false,
+    },
+
+    // Label shown on the offer badge e.g. "Starter Offer", "Launch Deal"
+    childPanelOfferLabel: {
+      type: String,
+      default: "Special Offer",
+      trim: true,
+    },
+
+    // Discounted activation fee during the offer
+    childPanelOfferActivationFee: {
+      type: Number,
+      default: 2,
+    },
+
+    // Discounted monthly fee during the offer (0 = free during offer)
+    childPanelOfferMonthlyFee: {
+      type: Number,
+      default: 0,
+    },
+
+    // When the offer expires — null means no expiry
+    childPanelOfferExpiresAt: {
+      type: Date,
+      default: null,
+    },
+  },
+  {
+    timestamps: true,
+  }
+);
+
+export default mongoose.models.Settings ||
+  mongoose.model("Settings", settingsSchema);

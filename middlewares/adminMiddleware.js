@@ -1,16 +1,28 @@
 import User from "../models/User.js";
 
-// Check if logged-in user is admin
+/*
+----------------------------------------------------------------
+ADMIN ONLY
+----------------------------------------------------------------
+*/
 export const adminOnly = async (req, res, next) => {
   try {
     const user = await User.findById(req.user.id);
+
     if (!user || !user.isAdmin) {
-      return res.status(403).json({ message: "Access denied. Admins only." });
+      return res.status(403).json({
+        message: "Access denied. Admins only.",
+      });
     }
+
+    req.user = user;
     next();
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: "Server error" });
+    console.error("adminOnly error:", error);
+
+    return res.status(500).json({
+      message: "Server error",
+    });
   }
 };
 
@@ -34,20 +46,34 @@ export const childPanelOnly = async (req, res, next) => {
     if (!user.childPanelIsActive) {
       return res.status(403).json({
         code: "PANEL_SUSPENDED",
-        message: user.childPanelSuspendReason || "Your panel has been suspended. Contact support.",
+        message:
+          user.childPanelSuspendReason ||
+          "Your panel has been suspended. Contact support.",
       });
     }
 
-    if (user.childPanelNextBilledAt && new Date() > new Date(user.childPanelNextBilledAt)) {
+    if (
+      user.childPanelNextBilledAt &&
+      new Date() > new Date(user.childPanelNextBilledAt)
+    ) {
       return res.status(403).json({
         code: "SUBSCRIPTION_EXPIRED",
-        message: "Your subscription has expired. Please contact the platform admin to renew your plan.",
+        message:
+          "Your subscription has expired. Please contact the platform admin to renew your plan.",
         expiredAt: user.childPanelNextBilledAt,
       });
     }
 
     req.user = user;
     next();
+  } catch (error) {
+    console.error("childPanelOnly error:", error);
+
+    return res.status(500).json({
+      message: "Server error",
+    });
+  }
+};
 
 /*
 ----------------------------------------------------------------
@@ -62,18 +88,43 @@ export const childPanelOrAdmin = async (req, res, next) => {
     const user = await User.findById(req.user.id);
 
     if (!user) {
-      return res.status(403).json({ message: "Access denied." });
+      return res.status(403).json({
+        message: "Access denied.",
+      });
     }
 
-    if (user.isAdmin) return next();
+    // Main platform admin
+    if (user.isAdmin) {
+      req.user = user;
+      return next();
+    }
 
-    if (user.isChildPanel && user.childPanelIsActive) return next();
+    // Active child panel owner
+    if (user.isChildPanel && user.childPanelIsActive) {
+      if (
+        user.childPanelNextBilledAt &&
+        new Date() > new Date(user.childPanelNextBilledAt)
+      ) {
+        return res.status(403).json({
+          code: "SUBSCRIPTION_EXPIRED",
+          message:
+            "Your subscription has expired. Please contact the platform admin to renew your plan.",
+          expiredAt: user.childPanelNextBilledAt,
+        });
+      }
+
+      req.user = user;
+      return next();
+    }
 
     return res.status(403).json({
       message: "Access denied. Admins or child panel owners only.",
     });
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: "Server error" });
+    console.error("childPanelOrAdmin error:", error);
+
+    return res.status(500).json({
+      message: "Server error",
+    });
   }
 };

@@ -31,15 +31,23 @@ export const childPanelOnly = async (req, res, next) => {
       });
     }
 
-    // ← remove the childPanelIsActive block that was here
+    if (!user.childPanelIsActive) {
+      return res.status(403).json({
+        code: "PANEL_SUSPENDED",
+        message: user.childPanelSuspendReason || "Your panel has been suspended. Contact support.",
+      });
+    }
+
+    if (user.childPanelNextBilledAt && new Date() > new Date(user.childPanelNextBilledAt)) {
+      return res.status(403).json({
+        code: "SUBSCRIPTION_EXPIRED",
+        message: "Your subscription has expired. Please contact the platform admin to renew your plan.",
+        expiredAt: user.childPanelNextBilledAt,
+      });
+    }
 
     req.user = user;
     next();
-  } catch (err) {
-    console.error("childPanelOnly error:", err);
-    res.status(500).json({ message: "Server error" });
-  }
-};
 
 /*
 ----------------------------------------------------------------

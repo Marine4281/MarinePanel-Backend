@@ -107,8 +107,17 @@ export const apiV2 = async (req, res) => {
     switch (action) {
 
       case "services": {
-        const services = await Service.find({ status: true });
-
+  let serviceQuery = { status: true, cpOwner: null };
+  if (user.childPanelOwner) {
+    serviceQuery = {
+      status: true,
+      $or: [
+        { cpOwner: user.childPanelOwner },
+        { cpOwner: null, availableToChildPanels: true },
+      ],
+    };
+  }
+  const services = await Service.find(serviceQuery);
         const settings = await Settings.findOne().lean();
         const adminRate = Number(settings?.commission || 0);
 

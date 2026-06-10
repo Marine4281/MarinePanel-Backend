@@ -23,20 +23,18 @@ export const resolveProviderProfile = async ({ req, serviceData }) => {
 
   if (req.childPanel) {
     if (serviceData.cpOwner) {
+      // CP's own service — use the CP's own provider profile directly.
       const cpProviderProfile = await ProviderProfile.findOne({
         _id: serviceData.providerProfileId,
         cpOwner: req.childPanel._id,
       });
       if (cpProviderProfile) effectiveProviderProfile = cpProviderProfile;
     } else {
-      const cpPlatformProfile = await ProviderProfile.findOne({
-        cpOwner: req.childPanel._id,
-      }).sort({ createdAt: 1 });
-
-      if (cpPlatformProfile) {
-        effectiveProviderProfile = cpPlatformProfile;
-        routeThroughMainPlatformApi = true;
-      }
+      // Platform service used by a CP end-user.
+      // Use the platform's own provider profile directly — do NOT call the
+      // platform's HTTP API endpoint, that would create a duplicate order.
+      effectiveProviderProfile = providerProfile;
+      routeThroughMainPlatformApi = false;
     }
   }
 

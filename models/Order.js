@@ -111,6 +111,7 @@ const orderSchema = new mongoose.Schema(
       type: Number,
       default: 0,
     },
+    
 
     /* ===============================
        🎁 FREE ORDER SYSTEM
@@ -143,6 +144,11 @@ const orderSchema = new mongoose.Schema(
       type: Boolean,
       default: false,
       index: true,
+    },
+
+    cpOwnerCharge: {
+      type: Number,
+      default: 0,
     },
 
     /* ===============================

@@ -12,6 +12,7 @@ export const calculateOrderPricing = async ({
   const providerRate = Number(serviceData.rate || 0);
 
   let finalRate;
+  let systemCharge;
   let resellerCommission = 0;
   let childPanelCommission = 0;
 
@@ -22,6 +23,9 @@ export const calculateOrderPricing = async ({
     const cpCommissionRate = Number(cpOwner?.childPanelCommissionRate || 0);
 
     finalRate = providerRate + (providerRate * cpCommissionRate) / 100;
+
+    // CP's own service — no platform layer between CP and provider
+    systemCharge = (qty / 1000) * providerRate;
 
     if (cpOwner && cpCommissionRate > 0) {
       childPanelCommission = (qty / 1000) * (finalRate - providerRate);
@@ -59,6 +63,9 @@ export const calculateOrderPricing = async ({
     const systemRate = providerRate + (providerRate * adminRate) / 100;
     finalRate = systemRate;
 
+    // Platform sell rate × qty — what the platform charges the CP owner
+    systemCharge = (qty / 1000) * systemRate;
+
     if (user.resellerOwner) {
       const reseller = await User.findById(user.resellerOwner);
       const resellerRate = Number(reseller?.resellerCommissionRate || 0);
@@ -84,6 +91,7 @@ export const calculateOrderPricing = async ({
   return {
     finalCharge,
     baseCharge,
+    systemCharge,
     finalRate,
     resellerCommission,
     childPanelCommission,

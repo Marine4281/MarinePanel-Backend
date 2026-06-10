@@ -605,3 +605,91 @@ export const getCPDeletedSync = async (req, res) => {
     res.status(500).json({ message: "Failed to check deleted services" });
   }
 };
+// ──────────────────────────────────────────────
+// IMPORT PLATFORM SERVICES
+// POST /api/cp/services/import-platform
+// Body: { serviceIds: [mongoId, ...] }
+// Clones selected main-platform services into the CP's catalog.
+// ──────────────────────────────────────────────
+export const importCPPlatformServices = async (req, res) => {
+  try {
+    const { serviceIds } = req.body;
+    if (!Array.isArray(serviceIds) || !serviceIds.length) {
+      return res.status(400).json({ message: "No serviceIds provided" });
+    }
+
+    const settings = await Settings.findOne().lean();
+    const adminCommission = Number(settings?.commission ?? 0);
+
+    // Fetch only valid, published, available platform services
+    const sources = await Service.find({
+      _id: { $in: serviceIds },
+      status: true,
+      availableToChildPanels: true,
+      cpOwner: null,
+    }).lean();
+
+    if (!sources.length) {
+      return res.status(404).json({ message: "No eligible platform services found" });
+    }
+
+    // Avoid duplicating services the CP already has (match by source _id stored in providerServiceId)
+    const existingRefs = await Service.find({
+      cpOwner: req.user._id,
+      provider: "platform",
+    })
+      .select("providerServiceId")
+      .lean();
+
+    const alreadyImported = new Set(existingRefs.map((s) => s.providerServiceId));
+
+    const toImport = sources.filter((s) => !alreadyImported.has(String(s._id)));
+
+    if (!toImport.length) {
+      return res.json({ message: "All selected services are already enabled", imported: 0 });
+    }
+
+    const created = [];
+    for (const src of toImport) {
+      const serviceId = await getNextServiceId();
+      const providerRate = Number(src.rate || 0);
+      const systemRate = providerRate + (providerRate * adminCommission) / 100;
+
+      const svc = await Service.create({
+        serviceId,
+        name: src.name,
+        category: src.category,
+        platform: src.platform,
+        description: src.description || "",
+        rate: systemRate,           // CP's cost = platform rate + admin commission
+        lastSyncedRate: systemRate,
+        previousRate: systemRate,
+        min: src.min,
+        max: src.max,
+        status: true,
+        isFree: false,
+        freeQuantity: 0,
+        cooldownHours: 0,
+        refillAllowed: Boolean(src.refillAllowed),
+        cancelAllowed: Boolean(src.cancelAllowed),
+        refillPolicy: src.refillPolicy || "none",
+        customRefillDays: src.customRefillDays ?? null,
+        isDefault: false,
+        isDefaultCategoryGlobal: false,
+        isDefaultCategoryPlatform: false,
+        cpOwner: req.user._id,
+        provider: "platform",
+        // Store the source service _id so we can dedup on re-import
+        providerServiceId: String(src._id),
+        providerProfileId: null,
+        availableToChildPanels: false,
+      });
+      created.push(svc);
+    }
+
+    res.status(201).json({ message: `${created.length} service(s) enabled`, imported: created.length });
+  } catch (err) {
+    console.error("CP IMPORT PLATFORM SERVICES ERROR:", err);
+    res.status(500).json({ message: "Failed to enable platform services" });
+  }
+};

@@ -682,7 +682,7 @@ export const importCPPlatformServices = async (req, res) => {
         providerProfileId: req.user._id, 
         // Store the source service _id so we can dedup on re-import
         providerServiceId: String(src._id),
-        providerProfileId: null,
+        
         availableToChildPanels: false,
       });
       created.push(svc);

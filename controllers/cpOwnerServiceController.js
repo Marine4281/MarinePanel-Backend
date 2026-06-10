@@ -679,6 +679,7 @@ export const importCPPlatformServices = async (req, res) => {
         isDefaultCategoryPlatform: false,
         cpOwner: req.user._id,
         provider: "platform",
+        providerProfileId: req.user._id, 
         // Store the source service _id so we can dedup on re-import
         providerServiceId: String(src._id),
         providerProfileId: null,

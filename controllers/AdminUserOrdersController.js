@@ -244,17 +244,27 @@ export const getUserOrders = async (req, res) => {
       Order.countDocuments(query),
     ]);
 
-    // ✅ Collapse stamped CP orders to show CP owner as the display user
+    // Collapse stamped CP orders: show CP owner as the display user,
+    // and show what the platform actually charged them (cpOwnerCharge)
+    // rather than what the CP charged their end-user (charge).
     const formattedOrders = orders.map((order) => {
-      const displayUser =
-        order.childPanelOwner && order.childPanelOwner._id
-          ? order.childPanelOwner
-          : order.userId;
+      const isCPOrder = !!(order.childPanelOwner && order.childPanelOwner._id);
+
+      const displayUser = isCPOrder
+        ? order.childPanelOwner
+        : order.userId;
 
       return {
         ...order,
-        isChildPanelOrder: !!(order.childPanelOwner && order.childPanelOwner._id),
+        isChildPanelOrder: isCPOrder,
         userId: displayUser,
+        // Admin sees the platform-layer charge (what CP owner paid us),
+        // not the end-user charge (what CP charged their own customer).
+        charge: isCPOrder
+          ? (order.cpOwnerCharge ?? order.charge)
+          : order.charge,
+        // Preserve the original end-user charge in case the frontend needs it
+        endUserCharge: order.charge,
       };
     });
 
@@ -316,9 +326,6 @@ export const updateOrderStatus = async (req, res) => {
         message: "Completed order cannot be modified",
       });
     }
-
-    // ✅ REMOVED OLD BLOCK
-    // partial now allowed even with 0 delivered
 
     order.status = status;
 

@@ -43,6 +43,8 @@ export const getAllUsers = async (req, res) => {
 
     const baseFilter = {
   scope: "platform",
+  childPanelOwner: { $in: [null, undefined] },
+  isChildPanel: { $ne: true },
 };
 
     const query = search

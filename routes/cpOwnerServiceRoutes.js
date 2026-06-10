@@ -15,6 +15,7 @@ import {
   syncCPServiceRate,
   syncAllCPRates,
   getCPDeletedSync,
+  importCPPlatformServices,
 } from "../controllers/cpOwnerServiceController.js";
 
 import {
@@ -57,5 +58,8 @@ router.patch("/:id/sync-rate", syncCPServiceRate);
 
 // Per-service commission override
 router.patch("/:id/commission", setCPServiceCommission);
+
+//importCPPlatformServices
+router.post("/import-platform", importCPPlatformServices);
 
 export default router;

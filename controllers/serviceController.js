@@ -129,10 +129,16 @@ export const getServicesPublic = async (req, res) => {
 
       // When mode is "both", own services take priority over platform services
       // with the same name — deduplicate keeping the own version.
+      // Normalize aggressively: lowercase, collapse whitespace, strip non-ASCII
+      // to catch invisible unicode / extra spaces that fool a plain .trim().
       if (serviceMode === "both") {
         const seen = new Set();
         services = services.filter((s) => {
-          const key = s.name.toLowerCase().trim();
+          const key = s.name
+            .toLowerCase()
+            .replace(/\s+/g, " ")
+            .replace(/[^\x20-\x7E]/g, "")
+            .trim();
           if (seen.has(key)) return false;
           seen.add(key);
           return true;

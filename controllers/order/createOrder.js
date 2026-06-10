@@ -84,6 +84,7 @@ export const createOrder = async (req, res) => {
     let isFreeOrder = false;
     let finalCharge = 0;
     let baseCharge = 0;
+    let systemCharge = 0;
     let resellerCommission = 0;
     let childPanelCommission = 0;
 
@@ -129,6 +130,7 @@ export const createOrder = async (req, res) => {
 
       finalCharge = pricing.finalCharge;
       baseCharge = pricing.baseCharge;
+      systemCharge = pricing.systemCharge ?? pricing.baseCharge;
       resellerCommission = pricing.resellerCommission;
       childPanelCommission = pricing.childPanelCommission;
 
@@ -202,12 +204,16 @@ export const createOrder = async (req, res) => {
       if (cpOwnerWalletForPaid) {
         const cpOwnerCurrentBalance = calculateBalance(cpOwnerWalletForPaid.transactions);
 
-        if (cpOwnerCurrentBalance < baseCharge) {
+        // Deduct systemCharge (platform rate) when routing through platform API,
+        // otherwise deduct baseCharge (raw provider cost) for CP's own providers.
+        const cpOwnerDeduction = routeThroughMainPlatformApi ? systemCharge : baseCharge;
+
+        if (cpOwnerCurrentBalance < cpOwnerDeduction) {
           cpOwnerInsufficientFunds = true;
         } else {
           cpOwnerWalletForPaid.transactions.push({
             type: "Order",
-            amount: -Number(baseCharge),
+            amount: -Number(cpOwnerDeduction),
             status: "Completed",
             note: `CP end-user order cost #${customOrderId}`,
             createdAt: new Date(),
@@ -243,15 +249,23 @@ export const createOrder = async (req, res) => {
       link,
       quantity: qty,
       charge: finalCharge,
+      cpOwnerCharge: routeThroughMainPlatformApi ? systemCharge : baseCharge,
       adminProfit: isFreeOrder ? 0 : Number((finalCharge - baseCharge).toFixed(4)),
       status: "pending",
       isFreeOrder,
       earningsCredited: false,
       isCharged: !isFreeOrder,
 
-      provider: serviceData.provider,
+      // ─── PROVIDER FIELDS ───────────────────────────────────────────────
+      // When routing via the platform API, store the platform-layer identity:
+      //   provider       → "Marine Panel" (not the upstream like "Nice")
+      //   providerServiceId → platform's numeric serviceId (e.g. 1255)
+      // This keeps admin-visible fields consistent with what was actually called.
+      provider: routeThroughMainPlatformApi ? "Marine Panel" : serviceData.provider,
       providerApiUrl: effectiveProviderProfile.apiUrl,
-      providerServiceId: serviceData.providerServiceId,
+      providerServiceId: routeThroughMainPlatformApi
+        ? String(serviceData.serviceId)
+        : serviceData.providerServiceId,
       providerProfileId: effectiveProviderProfile._id,
 
       cancelAllowed: serviceData.cancelAllowed,
@@ -279,10 +293,13 @@ export const createOrder = async (req, res) => {
     } else {
       try {
         if (routeThroughMainPlatformApi) {
+          // Call the platform's own API endpoint.
+          // Use serviceData.serviceId (the platform's numeric ID, e.g. 1255)
+          // NOT serviceData.providerServiceId (the upstream provider's ID, e.g. 1247).
           const payload = new URLSearchParams();
           payload.append("key", effectiveProviderProfile.apiKey);
           payload.append("action", "add");
-          payload.append("service", serviceData.providerServiceId);
+          payload.append("service", serviceData.serviceId);
           payload.append("link", link);
 
           if (isCustomCommentsOrder) {

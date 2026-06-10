@@ -159,14 +159,32 @@ export const apiV2 = async (req, res) => {
           return res.json({ error: "Missing required fields" });
         }
 
-        const selectedService = await Service.findOne({
-          serviceId: service,
-          status: true,
-        });
+        let selectedService;
+if (user.childPanelOwner) {
+  selectedService = await Service.findOne({
+    serviceId: service,
+    status: true,
+    cpOwner: user.childPanelOwner,
+  });
+  if (!selectedService) {
+    selectedService = await Service.findOne({
+      serviceId: service,
+      status: true,
+      cpOwner: null,
+      availableToChildPanels: true,
+    });
+  }
+} else {
+  selectedService = await Service.findOne({
+    serviceId: service,
+    status: true,
+    cpOwner: null,
+  });
+}
 
-        if (!selectedService) {
-          return res.json({ error: "Service not found" });
-        }
+if (!selectedService) {
+  return res.json({ error: "Service not found" });
+}
 
         const qty = Number(quantity);
 

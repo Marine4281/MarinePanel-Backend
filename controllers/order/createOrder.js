@@ -243,7 +243,7 @@ export const createOrder = async (req, res) => {
       childPanelPerOrderFee,
 
       category: serviceData.category,
-      service,
+      service: serviceData.name,
       serviceId: serviceData.serviceId || serviceData._id.toString(),
       rate: Number(serviceData.rate || 0),
       link,

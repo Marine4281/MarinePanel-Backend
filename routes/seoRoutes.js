@@ -2,7 +2,7 @@
 
 import express from "express";
 import { protect }             from "../middlewares/authMiddleware.js";
-import { isAdmin }             from "../middlewares/adminMiddleware.js";
+import { adminOnly }             from "../middlewares/adminMiddleware.js";
 import { detectResellerDomain } from "../middlewares/resellerDomainMiddleware.js";
 import { detectChildPanelDomain } from "../middlewares/childPanelMiddleware.js";
 import {
@@ -38,12 +38,12 @@ router.get("/public", detectResellerDomain, detectChildPanelDomain, getPublicSeo
 router.get("/gallery", getLogoGallery);
 
 // ── ADMIN ───────────────────────────────────────────────────────
-router.get(   "/admin",                   protect, isAdmin, getAdminSeo);
-router.patch( "/admin",                   protect, isAdmin, updateAdminSeo);
-router.post(  "/admin/logo",              protect, isAdmin, uploadGallery.single("image"),   uploadMainLogo);
-router.post(  "/admin/seo-image",         protect, isAdmin, uploadSeoImage.single("image"),  uploadAdminSeoImage);
-router.post(  "/admin/gallery",           protect, isAdmin, uploadGallery.single("image"),   uploadToGallery);
-router.delete("/admin/gallery/:id",       protect, isAdmin, deleteFromGallery);
+router.get(   "/admin",                   protect, adminOnly, getAdminSeo);
+router.patch( "/admin",                   protect, adminOnly, updateAdminSeo);
+router.post(  "/admin/logo",              protect, adminOnly, uploadGallery.single("image"),   uploadMainLogo);
+router.post(  "/admin/seo-image",         protect, adminOnly, uploadSeoImage.single("image"),  uploadAdminSeoImage);
+router.post(  "/admin/gallery",           protect, adminOnly, uploadGallery.single("image"),   uploadToGallery);
+router.delete("/admin/gallery/:id",       protect, adminOnly, deleteFromGallery);
 
 // ── RESELLER ─────────────────────────────────────────────────────
 router.patch("/reseller",                 protect, updateResellerSeo);

@@ -6,34 +6,26 @@ import {
   getResellerSettings,
   updateResellerSettings,
 } from "../controllers/AdminSettingsController.js";
-
+import {
+  getMaintenanceSettings,
+  updateMaintenanceSettings,
+} from "../controllers/maintenanceController.js";
 import { protect } from "../middlewares/authMiddleware.js";
 
 const router = express.Router();
 
-router.use(protect); // only authenticated admins can access
+router.use(protect);
 
-/*
---------------------------------
-Commission Settings
---------------------------------
-*/
 router.get("/commission", getCommission);
 router.put("/commission", updateCommission);
 
-/*
---------------------------------
-Reseller Platform Settings
---------------------------------
-*/
 router.get("/reseller", getResellerSettings);
 router.put("/reseller", updateResellerSettings);
 
-/*
---------------------------------
-Reset Revenue
---------------------------------
-*/
 router.post("/reset-revenue", resetRevenue);
+
+// Maintenance
+router.get("/maintenance", getMaintenanceSettings);
+router.put("/maintenance", updateMaintenanceSettings);
 
 export default router;

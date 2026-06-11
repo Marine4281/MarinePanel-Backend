@@ -1,4 +1,4 @@
-// routes/seoRoutes.js  (NEW FILE)
+// routes/seoRoutes.js
 
 import express from "express";
 import { protect }             from "../middlewares/authMiddleware.js";

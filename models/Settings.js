@@ -182,6 +182,47 @@ childPanelBillingIntervalDays: {
       default: 2,
     },
 
+    /*
+    ================================================================
+    MAINTENANCE MODE
+    ================================================================
+    */
+
+    // --- Total Shutdown ---
+    maintenanceTotalShutdown: {
+      enabled: { type: Boolean, default: false },
+      title: { type: String, default: "We're Under Maintenance" },
+      message: {
+        type: String,
+        default: "Our platform is currently undergoing scheduled maintenance. We'll be back shortly!",
+      },
+      // who is affected: "everyone" | "cp_and_users" | "resellers_and_users" | "platform_users"
+      affects: { type: String, default: "everyone" },
+      // emails/roles that bypass maintenance
+      exempt: { type: [String], default: [] }, // e.g. admin emails
+      exemptRoles: {
+        type: [String],
+        enum: ["admin", "cpOwner", "reseller", "user"],
+        default: [],
+      },
+    },
+
+    // --- No Orders Mode ---
+    maintenanceNoOrders: {
+      enabled: { type: Boolean, default: false },
+      message: {
+        type: String,
+        default: "Order placement is temporarily disabled. Please check back later.",
+      },
+      affects: { type: String, default: "everyone" },
+      exempt: { type: [String], default: [] },
+      exemptRoles: {
+        type: [String],
+        enum: ["admin", "cpOwner", "reseller", "user"],
+        default: [],
+      },
+    },
+
     // Discounted monthly fee during the offer (0 = free during offer)
     childPanelOfferMonthlyFee: {
       type: Number,

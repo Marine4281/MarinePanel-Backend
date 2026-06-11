@@ -413,3 +413,16 @@ export const uploadCpOwnerSeoImage = async (req, res) => {
     res.status(500).json({ message: "Upload failed" });
   }
 };
+
+// ====================================================================
+// RESELLER — get reseller SEO (for loading the form)
+// ====================================================================
+export const getResellerSeo = async (req, res) => {
+  try {
+    if (!req.user?.isReseller) return res.status(403).json({ message: "Access denied" });
+    const user = await User.findById(req.user._id).lean();
+    res.json({ seo: user?.resellerSeo || {} });
+  } catch (err) {
+    res.status(500).json({ message: "Failed to fetch SEO" });
+  }
+};

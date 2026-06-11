@@ -152,6 +152,17 @@ const userSchema = new mongoose.Schema(
       trim: true,
     },
 
+    logoPublicId: {
+  type: String,
+  default: "",
+},
+
+// ADD after childPanelLogo field (~line 335):
+childPanelLogoPublicId: {
+  type: String,
+  default: "",
+},
+
     themeColor: {
       type: String,
       default: "#ff6b00",
@@ -479,6 +490,7 @@ childPanelBillingIntervalDays: {
       type: Number,
       default: 10,
     },
+    
 
     /*
     Payment gateway mode:

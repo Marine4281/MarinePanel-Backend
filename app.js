@@ -8,6 +8,7 @@ import rateLimit from "express-rate-limit";
 import cookieParser from "cookie-parser";
 
 // Routes
+import seoRoutes from "./routes/seoRoutes.js";
 import authRoutes from "./routes/authRoutes.js";
 import serviceRoutes from "./routes/serviceRoutes.js";
 import adminServiceRoutes from "./routes/adminServiceRoutes.js";
@@ -224,6 +225,7 @@ app.use("/api/maintenance", maintenanceRoutes);
 ================================================= */
 app.use("/api/reseller", resellerRoutes);
 app.use("/api/branding", brandingRoutes);
+app.use("/api/seo", seoRoutes);
 app.use("/api/reseller-guides", resellerGuideRoutes);
 app.use("/api/reseller/services", resellerServiceRoutes);
 app.use("/api/end-user", endUserRoutes);

@@ -223,6 +223,40 @@ childPanelBillingIntervalDays: {
       },
     },
 
+    // ================================================================
+// LOGO GALLERY (Admin managed — resellers & CP owners pick from here)
+// ================================================================
+logoGallery: {
+  type: [
+    {
+      url:       { type: String, required: true },
+      publicId:  { type: String, required: true }, // Cloudinary public_id for deletion
+      label:     { type: String, default: "" },     // Optional friendly name
+      uploadedAt:{ type: Date,   default: Date.now },
+    },
+  ],
+  default: [],
+},
+
+// ================================================================
+// MAIN PANEL SEO (Hardcoded brand = "MarinePanel" — but SEO is editable)
+// ================================================================
+seo: {
+  title:       { type: String, default: "Marine Panel – #1 Cheap & Fast SMM Panel" },
+  description: { type: String, default: "Buy Instagram followers, TikTok views and YouTube subscribers at the best prices. Trusted SMM reseller panel with instant delivery." },
+  keywords:    { type: String, default: "cheap smm panel, best smm panel, smm reseller panel, instagram followers panel" },
+  ogImage:     { type: String, default: "" }, // Cloudinary URL
+  twitterCard: { type: String, default: "summary_large_image", enum: ["summary", "summary_large_image"] },
+  canonical:   { type: String, default: "https://marinepanel.online/" },
+  favicon:     { type: String, default: "" }, // Cloudinary URL
+  // Schema.org org social links
+  schemaOrg: {
+    whatsapp:   { type: String, default: "" },
+    telegram:   { type: String, default: "" },
+    instagram:  { type: String, default: "" },
+  },
+},
+
     // Discounted monthly fee during the offer (0 = free during offer)
     childPanelOfferMonthlyFee: {
       type: Number,

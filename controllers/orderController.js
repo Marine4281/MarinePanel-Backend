@@ -19,5 +19,4 @@ export {
   reverseResellerCommission,
   creditChildPanelCommission,
   reverseChildPanelCommission,
-  creditResellerComm,
 } from "./order/helpers/commissions.js";

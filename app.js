@@ -27,7 +27,6 @@ import apiV2Routes from "./routes/apiV2Routes.js";
 import supportRoutes from "./routes/supportRoutes.js";
 import maintenanceRoutes from "./routes/maintenanceRoutes.js";
 
-
 // Reseller Routes
 import resellerRoutes from "./routes/resellerRoutes.js";
 import { detectResellerDomain } from "./middlewares/resellerDomainMiddleware.js";
@@ -50,7 +49,6 @@ import adminWithdrawalRoutes from "./routes/adminWithdrawalRoutes.js";
 import childPanelGuideRoutes, { adminGuideRouter as cpGuideAdminRoutes }
   from "./routes/childPanelGuideRoutes.js";
 import adminSyncRoutes from "./routes/adminSyncRoutes.js";
-
 
 // Child Panel Routes
 import childPanelRoutes from "./routes/childPanelRoutes.js";
@@ -80,13 +78,8 @@ const withLastSeen = [authMiddleware, updateLastSeen];
 const adminStack = [authMiddleware, updateLastSeen, adminOnly];
 
 /* =================================================
-   CHILD PANEL DOMAIN CACHE
-   Loaded once on startup, refreshed when a child
-   panel is activated or their domain is updated.
-   Avoids a DB hit on every single CORS preflight.
+   DOMAIN HELPERS
 ================================================= */
-const allowedChildDomains = new Set();
-
 const normalizeDomain = (raw) =>
   raw
     .replace(/^https?:\/\//, "")
@@ -94,6 +87,11 @@ const normalizeDomain = (raw) =>
     .split("/")[0]
     .toLowerCase()
     .trim();
+
+/* =================================================
+   CHILD PANEL DOMAIN CACHE
+================================================= */
+const allowedChildDomains = new Set();
 
 const loadChildDomains = async () => {
   try {
@@ -119,17 +117,66 @@ const loadChildDomains = async () => {
   }
 };
 
-
-// Call after DB connects — safe even if it fails,
-// domains will just be rechecked on next server start
 loadChildDomains().catch((err) =>
   console.error("Domain load failed:", err.message)
 );
 
-// Export so childPanelAdminController can refresh the cache
-// when a panel is activated or its domain is updated
 export const refreshChildDomains = async () => {
   await loadChildDomains();
+};
+
+/* =================================================
+   RESELLER DOMAIN CACHE
+================================================= */
+const allowedResellerDomains = new Set();
+
+const loadResellerDomains = async () => {
+  try {
+    const { default: User } = await import("./models/User.js");
+
+    const resellers = await User.find({
+      isReseller: true,
+      resellerDomain: { $ne: null },
+    }).select("resellerDomain");
+
+    allowedResellerDomains.clear();
+
+    resellers.forEach((r) => {
+      if (r.resellerDomain) {
+        allowedResellerDomains.add(normalizeDomain(r.resellerDomain));
+      }
+    });
+
+    console.log(`✅ Reseller domains loaded: ${allowedResellerDomains.size}`);
+  } catch (err) {
+    console.error("❌ Failed to load reseller domains:", err.message);
+  }
+};
+
+loadResellerDomains().catch((err) =>
+  console.error("Reseller domain load failed:", err.message)
+);
+
+export const refreshResellerDomains = async () => {
+  await loadResellerDomains();
+};
+
+/* =================================================
+   COMBINED ALLOWED ORIGINS CHECK
+   Used by both Express CORS and Socket.IO
+================================================= */
+export const isAllowedOrigin = (origin) => {
+  if (!origin) return true;
+  const clean = normalizeDomain(origin);
+  return (
+    clean === "marinepanel.online" ||
+    clean === "marinecash.online" ||
+    clean.endsWith(".marinepanel.online") ||
+    clean.endsWith(".marinecash.online") ||
+    /\.vercel\.app$/.test(clean) ||
+    allowedChildDomains.has(clean) ||
+    allowedResellerDomains.has(clean)
+  );
 };
 
 /* =================================================
@@ -142,29 +189,15 @@ app.set("trust proxy", 1);
 /* Security */
 app.use(helmet());
 
-
-
 /* =================================================
    CORS
-   Sync callback — no await needed because we use
-   the in-memory Set, not a DB query per request.
 ================================================= */
 const corsOptions = {
   origin: (origin, callback) => {
-    if (!origin) return callback(null, true);
-
-    const clean = normalizeDomain(origin);
-
-    if (
-      clean === "marinepanel.online" ||
-      clean.endsWith(".marinepanel.online") ||
-      /\.vercel\.app$/.test(clean) ||
-      allowedChildDomains.has(clean)
-    ) {
+    if (isAllowedOrigin(origin)) {
       return callback(null, true);
     }
-
-    console.log("🚫 Blocked by CORS:", clean);
+    console.log("🚫 Blocked by CORS:", origin);
     return callback(new Error("Not allowed by CORS"));
   },
   credentials: true,
@@ -186,14 +219,10 @@ app.get("/", (req, res) => {
 });
 
 /* CORS preflight — must use same corsOptions */
-app.options(/./, cors(corsOptions));
+app.options(/.*/, cors(corsOptions));
 
 /* =================================================
    DOMAIN & SCOPE DETECTION
-   Order matters:
-   1. detectResellerDomain   — is this a reseller domain?
-   2. detectChildPanelDomain — is this a child panel domain?
-   3. attachScope            — sets req.scope for user isolation
 ================================================= */
 app.use(detectResellerDomain);
 app.use(detectChildPanelDomain);
@@ -236,7 +265,7 @@ app.use("/api/cp/orders", authMiddleware, cpOwnerOnly, updateLastSeen, cpOwnerOr
 app.use("/api/cp/resellers", authMiddleware, cpOwnerOnly, updateLastSeen, cpOwnerResellerRoutes);
 app.use("/api/cp/providers", authMiddleware, cpOwnerOnly, updateLastSeen, cpOwnerProviderRoutes);
 app.use("/api/cp/settings", authMiddleware, cpOwnerOnly, updateLastSeen, cpOwnerSettingsRoutes);
-app.use("/api/cp/services",authMiddleware, cpOwnerOnly, updateLastSeen, cpOwnerServiceRoutes);
+app.use("/api/cp/services", authMiddleware, cpOwnerOnly, updateLastSeen, cpOwnerServiceRoutes);
 app.use("/api/cp/withdrawals", authMiddleware, childPanelOnly, updateLastSeen, cpOwnerWithdrawalRoutes);
 app.use("/api/child-panel/guides", childPanelGuideRoutes);
 app.use("/api/cp/financial", authMiddleware, cpOwnerOnly, updateLastSeen, cpOwnerFinancialRoutes);
@@ -261,8 +290,8 @@ app.use("/api/category-meta", categoryMetaRoutes);
 app.use("/api/admin/financial", authMiddleware, adminOnly, financialRoutes);
 app.use("/api/admin/withdrawals", authMiddleware, adminOnly, adminWithdrawalRoutes);
 app.use("/api", paymentGatewayRoutes);
-app.use("/api/child-panel",             childPanelGuideRoutes);   // → /api/child-panel/guides
-app.use("/api/admin/child-panel-guides", cpGuideAdminRoutes); 
+app.use("/api/child-panel", childPanelGuideRoutes);
+app.use("/api/admin/child-panel-guides", cpGuideAdminRoutes);
 app.use("/api/admin/sync", adminSyncRoutes);
 
 export default app;

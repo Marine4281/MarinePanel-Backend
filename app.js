@@ -49,6 +49,8 @@ import paymentGatewayRoutes from "./routes/paymentGatewayRoutes.js";
 import adminWithdrawalRoutes from "./routes/adminWithdrawalRoutes.js";
 import childPanelGuideRoutes, { adminGuideRouter as cpGuideAdminRoutes }
   from "./routes/childPanelGuideRoutes.js";
+import adminSyncRoutes from "./routes/adminSyncRoutes.js";
+
 
 // Child Panel Routes
 import childPanelRoutes from "./routes/childPanelRoutes.js";
@@ -261,5 +263,6 @@ app.use("/api/admin/withdrawals", authMiddleware, adminOnly, adminWithdrawalRout
 app.use("/api", paymentGatewayRoutes);
 app.use("/api/child-panel",             childPanelGuideRoutes);   // → /api/child-panel/guides
 app.use("/api/admin/child-panel-guides", cpGuideAdminRoutes); 
+app.use("/api/admin/sync", adminSyncRoutes);
 
 export default app;

@@ -6,6 +6,7 @@ import Settings from "../models/Settings.js";
 import ProviderProfile from "../models/ProviderProfile.js";
 import axios from "axios";
 import { getNextOrderId } from "../utils/orderId.js";
+import { formatProviderStatusDisplay } from "../utils/providerStatusMapper.js";
 
 const calculateBalance = (transactions = []) =>
   transactions.reduce((acc, t) => acc + (t.amount || 0), 0);
@@ -371,7 +372,7 @@ if (!selectedService) {
               response[id] = {
                 charge: order.charge,
                 start_count: 0,
-                status: formatStatus(order.status),
+                status: formatProviderStatusDisplay(order),
                 remains: order.quantity - (order.quantityDelivered || 0),
                 currency: "USD",
               };
@@ -396,7 +397,7 @@ if (!selectedService) {
         return res.json({
           charge: order.charge,
           start_count: 0,
-          status: formatStatus(order.status),
+          status: formatProviderStatusDisplay(order),
           remains: order.quantity - (order.quantityDelivered || 0),
           currency: "USD",
         });

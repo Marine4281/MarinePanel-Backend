@@ -10,7 +10,6 @@ import { creditResellerCommission, reverseResellerCommission } from "../controll
 const calculateBalance = (transactions = []) =>
   transactions.reduce((acc, t) => acc + (t.amount || 0), 0);
 
-// Orders stuck pending/processing for more than 72 hours get auto-paused
 const ORDER_TIMEOUT_MS = 72 * 60 * 60 * 1000;
 
 export const syncProviderOrders = async (io) => {
@@ -130,8 +129,18 @@ export const syncProviderOrders = async (io) => {
             rawStatus.toLowerCase().replace(/\s+/g, "").trim()
           );
 
-          if (providerOrder.remains == 0 && mappedStatus === "processing") {
-            mappedStatus = "completed";
+          /* ================================================================
+             🛡️ PROVIDER STATUS GUARD
+             Only mark "completed" when the provider EXPLICITLY says so.
+             DO NOT auto-flip to "completed" just because remains == 0 while
+             the provider still reports "In progress" or "Processing".
+             Some providers zero out remains before they flip to "Completed".
+             We wait for that explicit confirmation.
+          ================================================================ */
+          const providerExplicitlyComplete = mappedStatus === "completed";
+          if (providerOrder.remains == 0 && !providerExplicitlyComplete) {
+            // Remains is 0 but provider hasn't confirmed completion yet.
+            // Keep the current mapped status (e.g. "processing") — do NOT override.
           }
 
           const delivered = calculateDelivered(order.quantity, providerOrder.remains);
@@ -146,7 +155,12 @@ export const syncProviderOrders = async (io) => {
             statusChanged = true;
           }
 
-          order.providerStatus = String(providerOrder.status || "").toLowerCase();
+          // Always store the raw provider status for accurate display
+          const newProviderStatus = String(providerOrder.status || "").toLowerCase();
+          if (order.providerStatus !== newProviderStatus) {
+            order.providerStatus = newProviderStatus;
+            statusChanged = true;
+          }
 
           if (statusChanged) await order.save();
         }
@@ -209,6 +223,7 @@ export const syncProviderOrders = async (io) => {
           io.to(order.userId.toString()).emit("orderUpdated", {
             orderId: order._id,
             status: order.status,
+            providerStatus: order.providerStatus,
             delivered: order.quantityDelivered,
             total: order.quantity,
             refundProcessed: order.refundProcessed,

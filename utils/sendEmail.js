@@ -4,24 +4,42 @@ import { Resend } from "resend";
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 
-// sendEmail({ to, subject, text, resetLink })
-const sendEmail = async ({ to, subject, text, resetLink }) => {
+const DEFAULT_BRAND = {
+  brandName: "Marine Panel",
+  themeColor: "#2563eb",
+  logo: null,
+  domain: "marinepanel.online",
+};
+
+// sendEmail({ to, subject, text, resetLink, brand })
+const sendEmail = async ({ to, subject, text, resetLink, brand }) => {
   try {
+    const b = {
+      brandName: brand?.brandName || DEFAULT_BRAND.brandName,
+      themeColor: brand?.themeColor || DEFAULT_BRAND.themeColor,
+      logo: brand?.logo || null,
+      domain: brand?.domain || DEFAULT_BRAND.domain,
+    };
+
     // Plain text fallback
     const plainText =
       text ||
       `
 Hello,
 
-You requested a password reset for your Marine Panel account.
+You requested a password reset for your ${b.brandName} account.
 
 Reset your password here:
 ${resetLink}
 
 If you did not request this, please ignore this email.
 
-- Marine Panel Team
+- ${b.brandName} Team
 `;
+
+    const logoBlock = b.logo
+      ? `<img src="${b.logo}" alt="${b.brandName}" style="max-height:40px;margin-bottom:8px;" />`
+      : `<h1 style="color:#ffffff;margin:0;font-size:28px;">${b.brandName}</h1>`;
 
     // Professional HTML Email
     const html = `
@@ -41,11 +59,9 @@ If you did not request this, please ignore this email.
 
           <!-- Header -->
           <tr>
-            <td align="center" style="background:#111827;padding:35px 20px;">
-              <h1 style="color:#ffffff;margin:0;font-size:28px;">
-                Marine Panel
-              </h1>
-              <p style="color:#d1d5db;margin-top:8px;font-size:14px;">
+            <td align="center" style="background:${b.themeColor};padding:35px 20px;">
+              ${logoBlock}
+              <p style="color:#ffffff;opacity:0.85;margin-top:8px;font-size:14px;">
                 Secure Account Services
               </p>
             </td>
@@ -61,7 +77,7 @@ If you did not request this, please ignore this email.
 
               <p style="font-size:16px;line-height:1.7;color:#4b5563;">
                 We received a request to reset the password for your
-                Marine Panel account.
+                ${b.brandName} account.
               </p>
 
               <p style="font-size:16px;line-height:1.7;color:#4b5563;">
@@ -71,7 +87,7 @@ If you did not request this, please ignore this email.
               <!-- Button -->
               <table cellpadding="0" cellspacing="0" style="margin:30px 0;">
                 <tr>
-                  <td align="center" bgcolor="#2563eb" style="border-radius:10px;">
+                  <td align="center" bgcolor="${b.themeColor}" style="border-radius:10px;">
                     <a
                       href="${resetLink}"
                       style="
@@ -93,7 +109,7 @@ If you did not request this, please ignore this email.
                 If the button above does not work, copy and paste this link into your browser:
               </p>
 
-              <p style="word-break:break-all;font-size:14px;color:#2563eb;">
+              <p style="word-break:break-all;font-size:14px;color:${b.themeColor};">
                 ${resetLink}
               </p>
 
@@ -112,11 +128,11 @@ If you did not request this, please ignore this email.
             <td align="center" style="background:#f9fafb;padding:25px;">
 
               <p style="margin:0;font-size:13px;color:#6b7280;">
-                © ${new Date().getFullYear()} Marine Panel. All rights reserved.
+                © ${new Date().getFullYear()} ${b.brandName}. All rights reserved.
               </p>
 
               <p style="margin-top:8px;font-size:12px;color:#9ca3af;">
-                marinepanel.online
+                ${b.domain}
               </p>
 
             </td>
@@ -134,7 +150,7 @@ If you did not request this, please ignore this email.
 
     // Send email
     const data = await resend.emails.send({
-      from: "Marine Panel <noreply@marinepanel.online>",
+      from: `${b.brandName} <noreply@marinepanel.online>`,
       to,
       subject: subject || "Reset Your Password",
       text: plainText,

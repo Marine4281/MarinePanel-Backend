@@ -4,6 +4,8 @@ import Order from "../models/Order.js";
 import Wallet from "../models/Wallet.js";
 import User from "../models/User.js";
 import logCpAdminAction from "../utils/logCpAdminAction.js";
+import { formatProviderStatusDisplay } from "../utils/providerStatusMapper.js";
+
 import {
   creditChildPanelCommission,
   reverseChildPanelCommission,
@@ -36,16 +38,12 @@ const formatOrder = (order) => {
     childPanelCommission: order.childPanelCommission || 0,
     status: order.status,
     providerStatus: order.providerStatus,
+    displayStatus: formatProviderStatusDisplay(order),   // ← NEW
     createdAt: order.createdAt,
     refundProcessed: order.refundProcessed || false,
     placedViaChildPanel: order.placedViaChildPanel || false,
     user: isPopulated
-      ? {
-          _id: u._id,
-          email: u.email,
-          username: u.email?.split("@")[0] || "",
-          balance: u.balance || 0,
-        }
+      ? { _id: u._id, email: u.email, username: u.email?.split("@")[0] || "", balance: u.balance || 0 }
       : { _id: u?._id || null, email: "Unknown", username: "", balance: 0 },
   };
 };

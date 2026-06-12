@@ -1,10 +1,10 @@
 import mongoose from "mongoose";
 import dotenv from "dotenv";
-import app from "./app.js";
+import app, { isAllowedOrigin } from "./app.js";
 import http from "http";
 import { Server } from "socket.io";
 
-/* ✅ NEW: CRON JOBS */
+/* CRON JOBS */
 import { startOrderSyncJob } from "./jobs/orderSyncJob.js";
 import { startRefillSyncJob } from "./jobs/refillSyncJob.js";
 
@@ -31,15 +31,9 @@ const server = http.createServer(app);
 export const io = new Server(server, {
   cors: {
     origin: (origin, callback) => {
-      if (!origin) return callback(null, true);
-
-      if (
-        origin.includes("marinepanel.online") ||
-        origin.includes(".vercel.app")
-      ) {
+      if (isAllowedOrigin(origin)) {
         return callback(null, true);
       }
-
       console.log("🚫 Blocked by Socket.IO CORS:", origin);
       callback(new Error("Not allowed by CORS"));
     },
@@ -57,7 +51,6 @@ app.set("io", io);
 io.on("connection", (socket) => {
   console.log("🔌 New client connected:", socket.id);
 
-  // user joins personal room
   socket.on("join_user_room", (userId) => {
     socket.join(userId);
   });
@@ -68,10 +61,10 @@ io.on("connection", (socket) => {
 });
 
 /* ========================================
-   ⏱️ START CRON JOBS (PRODUCTION SAFE)
+   ⏱️ START CRON JOBS
 ======================================== */
-startOrderSyncJob(io);     // 🔄 Order status sync (every 1 min)
-startRefillSyncJob();      // 🔄 Refill status sync (every 2 min)
+startOrderSyncJob(io);
+startRefillSyncJob();
 
 /* ========================================
    🚀 START SERVER

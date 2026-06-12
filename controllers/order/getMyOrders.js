@@ -1,4 +1,5 @@
 import Order from "../../models/Order.js";
+import { formatProviderStatusDisplay } from "../../utils/providerStatusMapper.js";
 
 export const getMyOrders = async (req, res) => {
   try {
@@ -19,24 +20,12 @@ export const getMyOrders = async (req, res) => {
       const cleanSearch = search.replace("#", "").trim();
 
       const orConditions = [
-        {
-          service: {
-            $regex: cleanSearch,
-            $options: "i",
-          },
-        },
-        {
-          link: {
-            $regex: cleanSearch,
-            $options: "i",
-          },
-        },
+        { service: { $regex: cleanSearch, $options: "i" } },
+        { link: { $regex: cleanSearch, $options: "i" } },
       ];
 
       if (!isNaN(cleanSearch)) {
-        orConditions.push({
-          customOrderId: Number(cleanSearch),
-        });
+        orConditions.push({ customOrderId: Number(cleanSearch) });
       }
 
       query.$or = orConditions;
@@ -48,15 +37,10 @@ export const getMyOrders = async (req, res) => {
 
     if (fromDate || toDate) {
       query.createdAt = {};
-
-      if (fromDate) {
-        query.createdAt.$gte = new Date(fromDate);
-      }
-
+      if (fromDate) query.createdAt.$gte = new Date(fromDate);
       if (toDate) {
         const end = new Date(toDate);
         end.setHours(23, 59, 59, 999);
-
         query.createdAt.$lte = end;
       }
     }
@@ -65,15 +49,22 @@ export const getMyOrders = async (req, res) => {
     const limitNum = Math.max(1, Number(limit));
     const skip = (pageNum - 1) * limitNum;
 
-    const [orders, total] = await Promise.all([
+    const [ordersRaw, total] = await Promise.all([
       Order.find(query)
         .sort({ createdAt: -1 })
         .skip(skip)
         .limit(limitNum)
         .lean(),
-
       Order.countDocuments(query),
     ]);
+
+    // Attach displayStatus so the frontend always shows the accurate
+    // provider-facing status (e.g. "In progress") rather than the
+    // internal system status (e.g. "processing").
+    const orders = ordersRaw.map((order) => ({
+      ...order,
+      displayStatus: formatProviderStatusDisplay(order),
+    }));
 
     res.json({
       orders,
@@ -81,9 +72,6 @@ export const getMyOrders = async (req, res) => {
     });
   } catch (error) {
     console.error("GET MY ORDERS ERROR:", error);
-
-    res.status(500).json({
-      message: "Failed to fetch orders",
-    });
+    res.status(500).json({ message: "Failed to fetch orders" });
   }
 };

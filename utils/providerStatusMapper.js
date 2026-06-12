@@ -63,3 +63,39 @@ export const calculateDelivered = (totalQuantity, remains) => {
 
   return delivered;
 };
+
+// ===============================================
+// FORMAT STATUS FOR API RESPONSES (status action)
+// Uses the RAW provider status (order.providerStatus) so API
+// users see exactly what the provider reports — e.g. "In progress"
+// even if remains is 0 and our internal order.status was
+// auto-flipped to "completed" for commission/refund purposes.
+// Falls back to the internal order.status if no provider
+// status has been synced yet (e.g. order never reached provider).
+// ===============================================
+export const formatProviderStatusDisplay = (order) => {
+  const raw = normalizeStatus(order.providerStatus);
+
+  if (raw) {
+    if (raw.includes("complete")) return "Completed";
+    if (raw.includes("partial")) return "Partial";
+    if (raw.includes("in progress") || raw.includes("inprogress")) return "In progress";
+    if (raw.includes("process")) return "Processing";
+    if (raw.includes("pending")) return "Pending";
+    if (raw.includes("cancel")) return "Canceled";
+    if (raw.includes("refund")) return "Refunded";
+    if (raw.includes("fail") || raw.includes("error")) return "Failed";
+  }
+
+  // No provider status synced yet — fall back to internal status
+  const fallbackMap = {
+    pending: "Pending",
+    processing: "Processing",
+    completed: "Completed",
+    partial: "Partial",
+    cancelled: "Canceled",
+    failed: "Failed",
+    refunded: "Refunded",
+  };
+  return fallbackMap[order.status] || "Pending";
+};

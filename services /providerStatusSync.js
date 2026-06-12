@@ -1,43 +1,63 @@
 // services/providerStatusSync.js
+
 import Order from "../models/Order.js";
 import ProviderProfile from "../models/ProviderProfile.js";
 import Wallet from "../models/Wallet.js";
 import axios from "axios";
-import {
-  mapProviderStatus,
-  calculateDelivered,
-} from "../utils/providerStatusMapper.js";
-import {
-  creditResellerCommission,
-  reverseResellerCommission,
-} from "../controllers/orderController.js";
+import { mapProviderStatus, calculateDelivered } from "../utils/providerStatusMapper.js";
+import { creditResellerCommission, reverseResellerCommission } from "../controllers/orderController.js";
 
-// 🔥 SAME helper used everywhere
 const calculateBalance = (transactions = []) =>
   transactions.reduce((acc, t) => acc + (t.amount || 0), 0);
 
-// ===============================================
-// 🔄 SYNC PROVIDER ORDER STATUSES (PRODUCTION SAFE)
-// ===============================================
+// Orders stuck pending/processing for more than 72 hours get auto-paused
+const ORDER_TIMEOUT_MS = 72 * 60 * 60 * 1000;
+
 export const syncProviderOrders = async (io) => {
   try {
-    // ✅ FIX: Also pick up partial/failed orders that were never refunded.
-    // Previously only "pending" and "processing" were queried, so once an
-    // order transitioned to partial/failed it was permanently excluded from
-    // the sync and the refund block never ran again.
+    /* ============================================================
+       ⏱️ STEP 1: AUTO-TIMEOUT orders stuck > 72h
+    ============================================================ */
+    const orderCutoff = new Date(Date.now() - ORDER_TIMEOUT_MS);
+
+    const timedOut = await Order.updateMany(
+      {
+        status: { $in: ["pending", "processing"] },
+        providerOrderId: { $ne: "" },
+        syncPaused: { $ne: true },
+        syncTimedOut: { $ne: true },
+        createdAt: { $lte: orderCutoff },
+      },
+      {
+        $set: {
+          syncPaused: true,
+          syncTimedOut: true,
+          syncTimedOutAt: new Date(),
+          syncAdminNote: "Auto-paused: stuck > 72h",
+        },
+      }
+    );
+
+    if (timedOut.modifiedCount > 0) {
+      console.log(`⏱️ Auto-timed-out ${timedOut.modifiedCount} stuck order(s)`);
+    }
+
+    /* ============================================================
+       🔍 STEP 2: FETCH ACTIVE (non-paused) orders
+    ============================================================ */
     const activeOrders = await Order.find({
       $or: [
-        // Normal in-flight orders
         {
           status: { $in: ["pending", "processing"] },
           providerOrderId: { $ne: "" },
+          syncPaused: { $ne: true },
         },
-        // Charged orders that ended partial/failed but were never refunded
         {
           status: { $in: ["partial", "failed"] },
           isCharged: true,
           refundProcessed: false,
           isFreeOrder: { $ne: true },
+          syncPaused: { $ne: true },
         },
       ],
     });
@@ -50,7 +70,6 @@ export const syncProviderOrders = async (io) => {
     console.log(`🔄 Checking ${activeOrders.length} active orders...`);
 
     const grouped = {};
-
     for (const order of activeOrders) {
       const key = order.provider;
       if (!grouped[key]) grouped[key] = [];
@@ -59,12 +78,12 @@ export const syncProviderOrders = async (io) => {
 
     for (const providerName of Object.keys(grouped)) {
       const orders = grouped[providerName];
-
       const sampleOrder = orders[0];
+
       const profile = sampleOrder.providerProfileId
         ? await ProviderProfile.findById(sampleOrder.providerProfileId)
         : await ProviderProfile.findOne({ name: providerName, cpOwner: null });
-      
+
       if (!profile?.apiUrl || !profile?.apiKey) {
         console.warn("⚠ Missing provider profile:", providerName);
         continue;
@@ -81,19 +100,12 @@ export const syncProviderOrders = async (io) => {
         try {
           const response = await axios.post(
             profile.apiUrl,
-            {
-              key: profile.apiKey,
-              action: "status",
-              orders: orderIds,
-            },
+            { key: profile.apiKey, action: "status", orders: orderIds },
             { timeout: 15000 }
           );
           providerData = response.data;
         } catch (err) {
-          console.error(
-            "❌ Provider status fetch error:",
-            err.response?.data || err.message
-          );
+          console.error("❌ Provider status fetch error:", err.response?.data || err.message);
           continue;
         }
       }
@@ -101,9 +113,6 @@ export const syncProviderOrders = async (io) => {
       for (const order of orders) {
         const providerOrder = providerData[order.providerOrderId];
 
-        // ✅ FIX: For partial/failed orders re-queued only for refund,
-        // there may be no fresh provider data — that is fine. We still
-        // fall through to the refund block using the status already on the order.
         const isRefundRetry =
           ["partial", "failed"].includes(order.status) &&
           order.isCharged &&
@@ -113,15 +122,10 @@ export const syncProviderOrders = async (io) => {
           if (!providerOrder || providerOrder.error) continue;
         }
 
-        // -----------------------------------------------
-        // STATUS + QUANTITY UPDATE
-        // (only when provider returned fresh data)
-        // -----------------------------------------------
-        let mappedStatus = order.status; // default to stored status
+        let mappedStatus = order.status;
 
         if (providerOrder && !providerOrder.error) {
           const rawStatus = providerOrder.status || "";
-
           mappedStatus = mapProviderStatus(
             rawStatus.toLowerCase().replace(/\s+/g, "").trim()
           );
@@ -130,18 +134,13 @@ export const syncProviderOrders = async (io) => {
             mappedStatus = "completed";
           }
 
-          const delivered = calculateDelivered(
-            order.quantity,
-            providerOrder.remains
-          );
-
+          const delivered = calculateDelivered(order.quantity, providerOrder.remains);
           let statusChanged = false;
 
           if (order.status !== mappedStatus) {
             order.status = mappedStatus;
             statusChanged = true;
           }
-
           if (order.quantityDelivered !== delivered) {
             order.quantityDelivered = delivered;
             statusChanged = true;
@@ -149,91 +148,52 @@ export const syncProviderOrders = async (io) => {
 
           order.providerStatus = String(providerOrder.status || "").toLowerCase();
 
-          if (statusChanged) {
-            await order.save();
-          }
+          if (statusChanged) await order.save();
         }
 
-        // ===============================================
-        // 💰 REFUND LOGIC (FIXED & SAFE)
-        // ===============================================
-        if (
-          !order.isFreeOrder &&
-          order.isCharged &&
-          !order.refundProcessed 
-        ) {
+        // ── REFUND ──────────────────────────────────────────────
+        if (!order.isFreeOrder && order.isCharged && !order.refundProcessed) {
           let wallet = await Wallet.findOne({ user: order.userId });
-
           if (!wallet) {
-            wallet = await Wallet.create({
-              user: order.userId,
-              balance: 0,
-              transactions: [],
-            });
+            wallet = await Wallet.create({ user: order.userId, balance: 0, transactions: [] });
           }
 
-          // 🔍 prevent duplicate refunds
           const alreadyRefunded = wallet.transactions.some(
-            (t) =>
-              t.type === "Refund" &&
-              t.reference?.toString() === order._id.toString()
+            (t) => t.type === "Refund" && t.reference?.toString() === order._id.toString()
           );
 
           if (!alreadyRefunded) {
-
-            // ================= FAILED =================
             if (mappedStatus === "failed") {
               wallet.transactions.push({
-                type: "Refund",
-                amount: order.charge,
-                status: "Completed",
+                type: "Refund", amount: order.charge, status: "Completed",
                 note: `Refund for failed order ${order.orderId}`,
-                reference: order._id,
-                createdAt: new Date(),
+                reference: order._id, createdAt: new Date(),
               });
-
               wallet.balance = calculateBalance(wallet.transactions);
               order.refundProcessed = true;
-
               await wallet.save();
               await reverseResellerCommission(order);
               await order.save();
             }
 
-            // ================= PARTIAL =================
             if (mappedStatus === "partial") {
-              // ✅ FIX: Fall back to stored quantityDelivered when provider
-              // returns remains=0 on a partial, or when this is a refund retry
-              // with no fresh provider data, so the refund is never skipped.
-              const remaining =
-                providerOrder && !providerOrder.error
-                  ? Number(providerOrder.remains) || 0
-                  : order.quantity - (order.quantityDelivered || 0);
+              const remaining = providerOrder && !providerOrder.error
+                ? Number(providerOrder.remains) || 0
+                : order.quantity - (order.quantityDelivered || 0);
 
               if (remaining > 0) {
-                let refundAmount =
-                  (remaining / order.quantity) * order.charge;
-
-                refundAmount = Number(refundAmount.toFixed(4));
-
+                let refundAmount = Number(((remaining / order.quantity) * order.charge).toFixed(4));
                 wallet.transactions.push({
-                  type: "Refund",
-                  amount: refundAmount,
-                  status: "Completed",
+                  type: "Refund", amount: refundAmount, status: "Completed",
                   note: `Partial refund for order ${order.orderId} (${remaining} undelivered)`,
-                  reference: order._id,
-                  createdAt: new Date(),
+                  reference: order._id, createdAt: new Date(),
                 });
-
                 wallet.balance = calculateBalance(wallet.transactions);
                 order.refundProcessed = true;
-
                 await wallet.save();
                 await reverseResellerCommission(order);
                 await order.save();
               } else {
-                // Provider marked partial but claims 0 remaining —
-                // nothing to refund. Mark processed so we stop retrying.
                 order.refundProcessed = true;
                 await order.save();
               }
@@ -241,16 +201,10 @@ export const syncProviderOrders = async (io) => {
           }
         }
 
-        // ===============================================
-        // 💰 RESELLER COMMISSION
-        // ===============================================
         if (order.status === "completed") {
           await creditResellerCommission(order);
         }
 
-        // ===============================================
-        // 🔥 REAL-TIME UPDATE
-        // ===============================================
         if (io) {
           io.to(order.userId.toString()).emit("orderUpdated", {
             orderId: order._id,

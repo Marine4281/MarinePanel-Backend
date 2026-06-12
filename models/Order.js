@@ -259,7 +259,7 @@ const orderSchema = new mongoose.Schema(
 
     refillStatus: {
       type: String,
-      enum: ["none", "pending", "processing", "completed", "rejected"],
+      enum: ["none", "pending", "processing", "completed", "rejected" , "timed_out", "stopped"],
       default: "none",
     },
 
@@ -292,6 +292,23 @@ const orderSchema = new mongoose.Schema(
       type: Object,
       default: null,
     },
+
+    // ── REFILL additions ──────────────────────────────
+refillCompletedAt:  { type: Date, default: null },
+refillRejectedAt:   { type: Date, default: null },
+refillTimedOut:     { type: Boolean, default: false, index: true },
+refillTimedOutAt:   { type: Date, default: null },
+refillAdminNote:    { type: String, default: "" },
+refillResponse:     { type: Object, default: null },
+// change enum to add timed_out + stopped:
+// refillStatus enum: ["none","pending","processing","completed","rejected","timed_out","stopped"]
+
+// ── ORDER sync control (new) ──────────────────────
+syncPaused:         { type: Boolean, default: false, index: true },
+syncPausedAt:       { type: Date, default: null },
+syncTimedOut:       { type: Boolean, default: false, index: true },
+syncTimedOutAt:     { type: Date, default: null },
+syncAdminNote:      { type: String, default: "" },
 
     /* ===============================
        ❌ ERROR

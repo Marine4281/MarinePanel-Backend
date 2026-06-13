@@ -206,12 +206,6 @@ export const forgotPassword = async (req, res) => {
   try {
     const { email } = req.body;
 
-    /*
-    SCOPE ISOLATION
-    Password reset only works within the same panel scope.
-    A reset link triggered from Child Panel A will not reset
-    an account that exists on Child Panel B or the main platform.
-    */
     const scope = req.scope || "platform";
 
     const user = await User.findOne({
@@ -219,27 +213,27 @@ export const forgotPassword = async (req, res) => {
       scope,
     });
 
-    // Always return the same message whether user exists or not
-    // to avoid revealing which panels an email is registered on
+    // Return a structured response: success=false when not found
+    // We reveal "no account" only within the same scope — not cross-panel.
+    // This is safe: the user is already on the panel they're trying to reset on.
     if (!user) {
-      return res.json({ message: "Password reset link sent to email" });
+      return res.status(404).json({
+        notFound: true,
+        message: "No account found with that email on this panel.",
+      });
     }
 
     const resetToken = crypto.randomBytes(32).toString("hex");
-
     user.resetPasswordToken = resetToken;
     user.resetPasswordExpire = Date.now() + 3600000;
-
     await user.save();
 
-    /*
-    Build reset URL using the current panel's domain so the
-    reset link takes the user back to the correct panel.
-    */
-    const panelDomain =
-      req.childPanel
-        ? req.brand?.domain
-        : process.env.FRONTEND_URL;
+    // Build reset URL using the current panel's domain
+    const panelDomain = req.childPanel
+      ? req.brand?.domain
+      : req.reseller
+      ? req.brand?.domain
+      : process.env.FRONTEND_URL;
 
     const resetUrl = `${panelDomain}/reset-password/${resetToken}`;
 

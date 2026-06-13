@@ -5,7 +5,9 @@ export const resolveChildPanelData = async (user) => {
   let childPanelOwnerId = null;
   let childPanelPerOrderFee = 0;
 
-  if (user.childPanelOwner) {
+  // CP owners themselves are not end-users of any child panel.
+  // Only look up childPanelOwner for non-CP-owner users.
+  if (user.childPanelOwner && !user.isChildPanel) {
     const cpOwner = await User.findById(user.childPanelOwner);
 
     if (cpOwner && cpOwner.isChildPanel && cpOwner.childPanelIsActive) {

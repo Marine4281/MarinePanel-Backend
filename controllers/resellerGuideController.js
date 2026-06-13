@@ -1,45 +1,63 @@
-//controllers/resellerGuideController.js
+// controllers/resellerGuideController.js
 
 import ResellerGuide from "../models/ResellerGuide.js";
+import User from "../models/User.js";
 
 /*
 --------------------------------
-Get Guides (Public)
+Get Guides (Public + Auth-aware)
 --------------------------------
-Supports:
-- /reseller-guides                          → admin guides (cpOwner: null)
-- /reseller-guides?placement=activation
-- /reseller-guides?placement=dashboard
-- /reseller-guides?cpOwnerId=xxx            → CP owner's guides for their resellers
+Resolution order for cpOwner scope:
+  1. Explicit ?cpOwnerId=xxx query param (legacy / admin use)
+  2. Logged-in reseller's user.childPanelOwner (auto — CP reseller)
+  3. req.childPanel from domain middleware (CP domain request)
+  4. null → main platform admin guides
 --------------------------------
 */
 export const getResellerGuides = async (req, res) => {
   try {
     const { placement, cpOwnerId } = req.query;
 
-    // Scope: if cpOwnerId provided show that CP's guides, else show admin guides
-    let filter = {
+    let resolvedCpOwnerId = cpOwnerId || null;
+
+    // Auto-resolve from authenticated user
+    if (!resolvedCpOwnerId && req.user) {
+      const user = await User.findById(req.user._id).select("childPanelOwner resellerOwner").lean();
+
+      if (user?.childPanelOwner) {
+        // Direct CP reseller
+        resolvedCpOwnerId = user.childPanelOwner.toString();
+      } else if (user?.resellerOwner) {
+        // End-user under a CP reseller — resolve the reseller's CP owner
+        const resellerUser = await User.findById(user.resellerOwner)
+          .select("childPanelOwner")
+          .lean();
+        if (resellerUser?.childPanelOwner) {
+          resolvedCpOwnerId = resellerUser.childPanelOwner.toString();
+        }
+      }
+    }
+
+    // Also try domain middleware (unauthenticated CP domain request)
+    if (!resolvedCpOwnerId && req.childPanel) {
+      resolvedCpOwnerId = req.childPanel._id.toString();
+    }
+
+    const filter = {
       visible: true,
-      cpOwner: cpOwnerId ? cpOwnerId : null,
+      cpOwner: resolvedCpOwnerId || null,
     };
 
     if (placement === "activation") {
-      filter.$or = [
-        { placement: "activation" },
-        { placement: "both" },
-      ];
+      filter.$or = [{ placement: "activation" }, { placement: "both" }];
     }
 
     if (placement === "dashboard") {
-      filter.$or = [
-        { placement: "dashboard" },
-        { placement: "both" },
-      ];
+      filter.$or = [{ placement: "dashboard" }, { placement: "both" }];
     }
 
     const guides = await ResellerGuide.find(filter).sort({ order: 1 });
     res.json(guides);
-
   } catch (error) {
     console.error("Get guides error:", error);
     res.status(500).json({ message: "Failed to load guides" });
@@ -86,7 +104,7 @@ export const createGuide = async (req, res) => {
       order: order || 0,
       visible: visible ?? true,
       placement: placement || "activation",
-      cpOwner: null, // admin guides always null
+      cpOwner: null,
     });
 
     res.json(guide);
@@ -118,7 +136,7 @@ export const updateGuide = async (req, res) => {
     if (placement !== undefined) updatedData.placement = placement;
 
     const guide = await ResellerGuide.findOneAndUpdate(
-      { _id: req.params.id, cpOwner: null }, // admin can only edit their own
+      { _id: req.params.id, cpOwner: null },
       updatedData,
       { new: true, runValidators: true }
     );
@@ -140,7 +158,7 @@ export const deleteGuide = async (req, res) => {
   try {
     const guide = await ResellerGuide.findOneAndDelete({
       _id: req.params.id,
-      cpOwner: null, // admin can only delete their own
+      cpOwner: null,
     });
 
     if (!guide) return res.status(404).json({ message: "Guide not found" });

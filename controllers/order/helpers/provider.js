@@ -6,9 +6,8 @@ export const resolveProviderProfile = async ({ req, serviceData }) => {
     serviceData.providerProfileId
   );
 
-  // Fallback: providerProfileId is stale (e.g. after a re-sync or reseller
-  // name override mutated the service doc). Try matching by provider name
-  // against the main-platform profiles (cpOwner: null).
+  // Fallback: stale providerProfileId — try matching by provider name
+  // against main-platform profiles (cpOwner: null).
   if (!providerProfile && serviceData.provider && serviceData.provider !== "manual") {
     providerProfile = await ProviderProfile.findOne({
       name: serviceData.provider,
@@ -21,7 +20,18 @@ export const resolveProviderProfile = async ({ req, serviceData }) => {
   let effectiveProviderProfile = providerProfile;
   let routeThroughMainPlatformApi = false;
 
-  if (req.childPanel) {
+  // req.childPanel is set in two cases:
+  //   a) An end-user on a CP domain  (req.childPanel !== req.user)
+  //   b) The CP owner managing their panel via cpOwnerOnly (req.childPanel === req.user)
+  //
+  // Case (b) must be treated as a normal user order — no CP routing at all.
+  // Only apply CP-specific logic for case (a).
+  const isEndUserOnCpDomain =
+    req.childPanel &&
+    req.user &&
+    req.childPanel._id.toString() !== req.user._id.toString();
+
+  if (isEndUserOnCpDomain) {
     if (serviceData.cpOwner) {
       // CP's own service — use the CP's own provider profile directly.
       const cpProviderProfile = await ProviderProfile.findOne({
@@ -31,8 +41,7 @@ export const resolveProviderProfile = async ({ req, serviceData }) => {
       if (cpProviderProfile) effectiveProviderProfile = cpProviderProfile;
     } else {
       // Platform service used by a CP end-user.
-      // Use the platform's own provider profile directly — do NOT call the
-      // platform's HTTP API endpoint, that would create a duplicate order.
+      // Call the provider directly — do NOT call the platform's HTTP API.
       effectiveProviderProfile = providerProfile;
       routeThroughMainPlatformApi = false;
     }

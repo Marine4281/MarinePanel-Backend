@@ -94,14 +94,19 @@ export const cpDeleteCategory = async (req, res) => {
 
 export const createTicket = async (req, res) => {
   try {
-    const { title, description, scope = "main", panelOwner, file } = req.body;
+    const { title, description, file } = req.body;
     if (!title?.trim() || !description?.trim())
       return res.status(400).json({ message: "Title and description required." });
+
+    // Derive scope and panelOwner from middleware — never trust the frontend for these.
+    // req.childPanel is set by detectChildPanelDomain when the request comes from a CP domain.
+    const scope      = req.childPanel ? "childPanel" : "main";
+    const panelOwner = req.childPanel ? req.childPanel._id : null;
 
     const ticket = await SupportTicket.create({
       user: req.user._id,
       scope,
-      panelOwner: panelOwner || null,
+      panelOwner,
       title: title.trim(),
       messages: [{
         sender: "user",

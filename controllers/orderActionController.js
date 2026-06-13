@@ -9,9 +9,20 @@ import { callProvider } from "../utils/providerApi.js";
 ========================================================= */
 const getProvider = async (order) => {
   if (!order.providerProfileId) return null;
-
   const provider = await ProviderProfile.findById(order.providerProfileId);
   return provider || null;
+};
+
+/* =========================================================
+   🔧 HELPER: OWNERSHIP CHECK
+   Covers both regular users and CP end-users whose orders
+   are stored under userId = cpOwner but endUserId = them.
+========================================================= */
+const isOrderOwner = (order, userId) => {
+  const uid = userId.toString();
+  if (order.userId.toString() === uid) return true;
+  if (order.endUserId && order.endUserId.toString() === uid) return true;
+  return false;
 };
 
 /* =========================================================
@@ -27,7 +38,7 @@ export const cancelOrder = async (req, res) => {
       return res.status(404).json({ message: "Order not found" });
     }
 
-    if (order.userId.toString() !== req.user._id.toString()) {
+    if (!isOrderOwner(order, req.user._id)) {
       return res.status(403).json({ message: "Unauthorized" });
     }
 
@@ -53,7 +64,6 @@ export const cancelOrder = async (req, res) => {
       });
     }
 
-    // ✅ Ensure valid provider order ID
     const providerOrderId = String(order.providerOrderId || "").trim();
 
     if (!providerOrderId) {
@@ -62,13 +72,11 @@ export const cancelOrder = async (req, res) => {
       });
     }
 
-    // 🔥 Send cancel request (ONE-TIME action)
     const response = await callProvider(provider, {
       action: "cancel",
       orders: providerOrderId,
     });
 
-    // 🔥 Normalize response safely
     const cancelResult =
       response?.[0]?.cancel ??
       response?.cancel ??
@@ -76,18 +84,15 @@ export const cancelOrder = async (req, res) => {
 
     const isSuccess = cancelResult === 1 || cancelResult === true;
 
-    // ✅ FINAL STATE (no fake pending/processing)
     order.cancelRequested = true;
     order.cancelRequestedAt = new Date();
     order.cancelStatus = isSuccess ? "success" : "failed";
     order.cancelProcessed = true;
 
-    // ✅ If success → reflect immediately in system
     if (isSuccess) {
       order.status = "cancelled";
     }
 
-    // Store raw provider response for debugging/audit
     order.cancelResponse = response;
 
     await order.save();
@@ -102,7 +107,6 @@ export const cancelOrder = async (req, res) => {
 
   } catch (error) {
     console.error("Cancel Order Error:", error);
-
     res.status(500).json({
       message: "Cancel request failed",
       error: error.message,
@@ -119,15 +123,11 @@ export const refillOrder = async (req, res) => {
 
     const order = await Order.findById(orderId);
 
-    /* =========================================================
-       ❌ VALIDATIONS
-    ========================================================= */
-
     if (!order) {
       return res.status(404).json({ message: "Order not found" });
     }
 
-    if (order.userId.toString() !== req.user._id.toString()) {
+    if (!isOrderOwner(order, req.user._id)) {
       return res.status(403).json({ message: "Unauthorized" });
     }
 
@@ -154,7 +154,7 @@ export const refillOrder = async (req, res) => {
     }
 
     /* =========================================================
-       🔥 REFILL EXPIRY POLICY (NEW - CRITICAL)
+       🔥 REFILL EXPIRY POLICY
     ========================================================= */
 
     const orderAgeDays =
@@ -218,7 +218,7 @@ export const refillOrder = async (req, res) => {
     });
 
     /* =========================================================
-       🔥 SAFE REFILL ID EXTRACTION (PRODUCTION SAFE)
+       🔥 SAFE REFILL ID EXTRACTION
     ========================================================= */
 
     let refillId =
@@ -226,7 +226,6 @@ export const refillOrder = async (req, res) => {
       response?.data?.refill ||
       (Array.isArray(response) ? response?.[0]?.refill : null);
 
-    // normalize to string
     if (refillId !== null && refillId !== undefined) {
       refillId = String(refillId);
     }
@@ -244,19 +243,12 @@ export const refillOrder = async (req, res) => {
 
     order.refillRequested = true;
     order.refillRequestedAt = new Date();
-
     order.refillStatus = "pending";
     order.refillProcessed = false;
-
     order.refillId = refillId;
-
     order.refillResponse = response;
 
     await order.save();
-
-    /* =========================================================
-       ✅ RESPONSE
-    ========================================================= */
 
     res.json({
       message: "Refill request sent successfully",
@@ -266,7 +258,6 @@ export const refillOrder = async (req, res) => {
 
   } catch (error) {
     console.error("Refill Order Error:", error);
-
     res.status(500).json({
       message: "Refill request failed",
       error: error.message,

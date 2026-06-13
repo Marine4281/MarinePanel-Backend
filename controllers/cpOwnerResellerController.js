@@ -26,24 +26,36 @@ const calculateBalance = (transactions = []) =>
 
 export const getCPResellers = async (req, res) => {
   try {
-    const page = Number(req.query.page) || 1;
-    const limit = Number(req.query.limit) || 20;
-    const skip = (page - 1) * limit;
+    const page   = Number(req.query.page)  || 1;
+    const limit  = Number(req.query.limit) || 20;
+    const skip   = (page - 1) * limit;
+    const search = req.query.search?.trim();
+    const status = req.query.status; // "active" | "suspended"
+
+    // Build the match filter
+    const matchFilter = {
+      isReseller: true,
+      childPanelOwner: req.user._id,
+    };
+
+    if (search) {
+      matchFilter.$or = [
+        { email: { $regex: search, $options: "i" } },
+        { brandName: { $regex: search, $options: "i" } },
+      ];
+    }
+
+    if (status === "active")    matchFilter.isSuspended = false;
+    if (status === "suspended") matchFilter.isSuspended = true;
 
     const resellers = await User.aggregate([
-      // Scope — only resellers under this child panel
-      { $match: { isReseller: true, childPanelOwner: req.user._id } },
-
+      { $match: matchFilter },
       {
         $lookup: {
           from: "users",
           let: { resellerId: "$_id" },
           pipeline: [
-            {
-              $match: {
-                $expr: { $eq: ["$resellerOwner", "$$resellerId"] },
-              },
-            },
+            { $match: { $expr: { $eq: ["$resellerOwner", "$$resellerId"] } } },
             { $count: "count" },
           ],
           as: "usersCount",
@@ -54,17 +66,12 @@ export const getCPResellers = async (req, res) => {
           from: "orders",
           let: { resellerId: "$_id" },
           pipeline: [
-            {
-              $match: {
-                $expr: { $eq: ["$resellerOwner", "$$resellerId"] },
-              },
-            },
+            { $match: { $expr: { $eq: ["$resellerOwner", "$$resellerId"] } } },
             { $count: "count" },
           ],
           as: "ordersCount",
         },
       },
-
       {
         $project: {
           email: 1,
@@ -76,34 +83,21 @@ export const getCPResellers = async (req, res) => {
           resellerWallet: 1,
           isSuspended: 1,
           createdAt: 1,
-          usersCount: {
-            $ifNull: [{ $arrayElemAt: ["$usersCount.count", 0] }, 0],
-          },
-          ordersCount: {
-            $ifNull: [{ $arrayElemAt: ["$ordersCount.count", 0] }, 0],
-          },
+          usersCount: { $ifNull: [{ $arrayElemAt: ["$usersCount.count", 0] }, 0] },
+          ordersCount: { $ifNull: [{ $arrayElemAt: ["$ordersCount.count", 0] }, 0] },
         },
       },
-
       { $sort: { createdAt: -1 } },
       { $skip: skip },
       { $limit: limit },
     ]);
 
-    const total = await User.countDocuments({
-      isReseller: true,
-      childPanelOwner: req.user._id,
-    });
+    const total = await User.countDocuments(matchFilter);
 
     res.json({
       success: true,
       data: resellers,
-      pagination: {
-        page,
-        limit,
-        total,
-        pages: Math.ceil(total / limit),
-      },
+      pagination: { page, limit, total, pages: Math.ceil(total / limit) },
     });
   } catch (error) {
     console.error("CP GET ALL RESELLERS ERROR:", error);

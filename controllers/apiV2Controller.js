@@ -1,3 +1,5 @@
+// controllers/apiV2Controller.js
+
 import User from "../models/User.js";
 import Service from "../models/Service.js";
 import Order from "../models/Order.js";
@@ -11,15 +13,26 @@ import { formatProviderStatusDisplay } from "../utils/providerStatusMapper.js";
 const calculateBalance = (transactions = []) =>
   transactions.reduce((acc, t) => acc + (t.amount || 0), 0);
 
+/* =========================================================
+   ORDER QUERY HELPERS
+   CP end-users' orders are stored under userId = cpOwner.
+   So we match on BOTH userId and endUserId.
+========================================================= */
 const buildOrderQuery = (userId, rawId) => {
   const str = rawId?.toString().trim();
   const num = !isNaN(str) && str !== "" ? Number(str) : null;
 
-  return {
-    userId,
+  const idMatch = {
     $or: [
       ...(num !== null ? [{ customOrderId: num }] : []),
       { orderId: str },
+    ],
+  };
+
+  return {
+    $and: [
+      { $or: [{ userId }, { endUserId: userId }] },
+      idMatch,
     ],
   };
 };
@@ -28,11 +41,17 @@ const buildMultiOrderQuery = (userId, rawIds) => {
   const numericIds = rawIds.filter((id) => !isNaN(id) && id !== "").map(Number);
   const stringIds = rawIds;
 
-  return {
-    userId,
+  const idMatch = {
     $or: [
       ...(numericIds.length ? [{ customOrderId: { $in: numericIds } }] : []),
       { orderId: { $in: stringIds } },
+    ],
+  };
+
+  return {
+    $and: [
+      { $or: [{ userId }, { endUserId: userId }] },
+      idMatch,
     ],
   };
 };
@@ -66,7 +85,8 @@ const resolveRateAndOwnership = async (user, selectedService, qty) => {
   let childPanelCommission = 0;
   let childPanelPerOrderFee = 0;
 
-  if (user.childPanelOwner) {
+  // CP owners placing orders themselves are NOT end-users of any panel
+  if (user.childPanelOwner && !user.isChildPanel) {
     const cpOwner = await User.findById(user.childPanelOwner);
     if (cpOwner && cpOwner.isChildPanel && cpOwner.childPanelIsActive) {
       childPanelOwnerId = cpOwner._id;
@@ -108,17 +128,17 @@ export const apiV2 = async (req, res) => {
     switch (action) {
 
       case "services": {
-  let serviceQuery = { status: true, cpOwner: null };
-  if (user.childPanelOwner) {
-    serviceQuery = {
-      status: true,
-      $or: [
-        { cpOwner: user.childPanelOwner },
-        { cpOwner: null, availableToChildPanels: true },
-      ],
-    };
-  }
-  const services = await Service.find(serviceQuery);
+        let serviceQuery = { status: true, cpOwner: null };
+        if (user.childPanelOwner && !user.isChildPanel) {
+          serviceQuery = {
+            status: true,
+            $or: [
+              { cpOwner: user.childPanelOwner },
+              { cpOwner: null, availableToChildPanels: true },
+            ],
+          };
+        }
+        const services = await Service.find(serviceQuery);
         const settings = await Settings.findOne().lean();
         const adminRate = Number(settings?.commission || 0);
 
@@ -160,32 +180,52 @@ export const apiV2 = async (req, res) => {
           return res.json({ error: "Missing required fields" });
         }
 
+        // ─── RESOLVE SERVICE ──────────────────────────────────────────────
         let selectedService;
-if (user.childPanelOwner) {
-  selectedService = await Service.findOne({
-    serviceId: service,
-    status: true,
-    cpOwner: user.childPanelOwner,
-  });
-  if (!selectedService) {
-    selectedService = await Service.findOne({
-      serviceId: service,
-      status: true,
-      cpOwner: null,
-      availableToChildPanels: true,
-    });
-  }
-} else {
-  selectedService = await Service.findOne({
-    serviceId: service,
-    status: true,
-    cpOwner: null,
-  });
-}
+        if (user.childPanelOwner && !user.isChildPanel) {
+          // CP end-user: try CP's own service first, then platform service
+          selectedService = await Service.findOne({
+            serviceId: service,
+            status: true,
+            cpOwner: user.childPanelOwner,
+          });
+          if (!selectedService) {
+            selectedService = await Service.findOne({
+              serviceId: service,
+              status: true,
+              cpOwner: null,
+              availableToChildPanels: true,
+            });
+          }
+        } else {
+          selectedService = await Service.findOne({
+            serviceId: service,
+            status: true,
+            cpOwner: null,
+          });
+        }
 
-if (!selectedService) {
-  return res.json({ error: "Service not found" });
-}
+        if (!selectedService) {
+          return res.json({ error: "Service not found" });
+        }
+
+        // ─── RESOLVE PROVIDER PROFILE EARLY ──────────────────────────────
+        // Do this BEFORE charging anyone so we can bail out cleanly.
+        let providerProfile = await ProviderProfile.findById(
+          selectedService.providerProfileId
+        );
+
+        // Fallback: try matching by provider name on main-platform profiles
+        if (!providerProfile && selectedService.provider && selectedService.provider !== "manual") {
+          providerProfile = await ProviderProfile.findOne({
+            name: selectedService.provider,
+            cpOwner: null,
+          });
+        }
+
+        if (!providerProfile || !providerProfile.apiUrl || !providerProfile.apiKey) {
+          return res.json({ error: "Service provider not configured" });
+        }
 
         const qty = Number(quantity);
 
@@ -211,6 +251,19 @@ if (!selectedService) {
           return res.json({ error: "Insufficient balance" });
         }
 
+        // ─── CHECK CP OWNER FUNDS BEFORE CHARGING ANYONE ─────────────────
+        const baseCharge = Number(((qty / 1000) * providerRate).toFixed(4));
+        let cpOwnerWallet = null;
+
+        if (childPanelOwnerId && baseCharge > 0) {
+          cpOwnerWallet = await Wallet.findOne({ user: childPanelOwnerId });
+          const cpOwnerBalance = cpOwnerWallet ? calculateBalance(cpOwnerWallet.transactions) : 0;
+
+          if (cpOwnerBalance < baseCharge) {
+            return res.json({ error: "Service temporarily unavailable" });
+          }
+        }
+
         const customOrderId = await getNextOrderId();
 
         // ─── DEDUCT END-USER WALLET ───────────────────────────────────────
@@ -221,152 +274,128 @@ if (!selectedService) {
           note: `API Order - #${customOrderId}`,
           createdAt: new Date(),
         });
-
         wallet.balance = calculateBalance(wallet.transactions);
         await wallet.save();
 
         // ─── DEDUCT BASE COST FROM CP OWNER ──────────────────────────────
-        // If CP owner can't cover cost: skip provider call, leave order pending.
-        // End-user is already charged — their order just waits. No error returned.
-        const baseCharge = Number(((qty / 1000) * providerRate).toFixed(4));
-        let cpOwnerInsufficientFunds = false;
+        if (cpOwnerWallet && baseCharge > 0) {
+          cpOwnerWallet.transactions.push({
+            type: "Order",
+            amount: -baseCharge,
+            status: "Completed",
+            note: `CP end-user API order cost #${customOrderId}`,
+            createdAt: new Date(),
+          });
+          cpOwnerWallet.balance = calculateBalance(cpOwnerWallet.transactions);
+          await cpOwnerWallet.save();
 
-        if (childPanelOwnerId && baseCharge > 0) {
-          const cpOwnerWallet = await Wallet.findOne({ user: childPanelOwnerId });
-
-          if (cpOwnerWallet) {
-            const cpOwnerBalance = calculateBalance(cpOwnerWallet.transactions);
-
-            if (cpOwnerBalance < baseCharge) {
-              cpOwnerInsufficientFunds = true;
-            } else {
-              cpOwnerWallet.transactions.push({
-                type: "Order",
-                amount: -baseCharge,
-                status: "Completed",
-                note: `CP end-user API order cost #${customOrderId}`,
-                createdAt: new Date(),
-              });
-              cpOwnerWallet.balance = calculateBalance(cpOwnerWallet.transactions);
-              await cpOwnerWallet.save();
-
-              await User.findByIdAndUpdate(childPanelOwnerId, {
-                balance: cpOwnerWallet.balance,
-              });
-            }
-          }
+          await User.findByIdAndUpdate(childPanelOwnerId, {
+            balance: cpOwnerWallet.balance,
+          });
         }
 
-  
-        // ─── FETCH PROVIDER PROFILE ───────────────────────────────────────
-const providerProfile = await ProviderProfile.findById(
-  selectedService.providerProfileId
-);
+        // ─── IDENTITY: CP end-users appear as the CP owner to the platform ─
+        const isCpEndUser = !!childPanelOwnerId && !user.isChildPanel;
+        const orderUserId = isCpEndUser ? childPanelOwnerId : user._id;
+        const endUserId = isCpEndUser ? user._id : null;
 
-// A CP owner using the API is a regular user — no CP routing.
-// A CP end-user using the CP's imported API key: childPanelOwner is set on user.
-const isCpEndUser = !!childPanelOwnerId && !user.isChildPanel;
+        // ─── CREATE ORDER ─────────────────────────────────────────────────
+        const order = await Order.create({
+          userId: orderUserId,
+          endUserId,
+          customOrderId,
+          category: selectedService.category,
+          service: selectedService.name,
+          serviceId: selectedService.serviceId,
+          link,
+          quantity: qty,
+          charge: finalCharge,
+          rate: Number(selectedService.rate || 0),
+          isCharged: true,
 
-// Determine the effective userId for the order record.
-// CP end-users' orders are stored under the CP owner's userId.
-const orderUserId = isCpEndUser ? childPanelOwnerId : user._id;
-const endUserId   = isCpEndUser ? user._id : null;
+          resellerOwner: resellerOwnerId,
+          resellerCommission,
+          earningsCredited: false,
 
-// ─── CREATE ORDER ─────────────────────────────────────────────────
-const order = await Order.create({
-  userId: orderUserId,        // ← CP owner's id (or user's own id)
-  endUserId,                  // ← actual end-user id, null for owner
-  customOrderId,
-  category: selectedService.category,
-  service: selectedService.name,
-  serviceId: selectedService.serviceId,
-  link,
-  quantity: qty,
-  charge: finalCharge,
-  rate: Number(selectedService.rate || 0),
-  isCharged: true,
+          childPanelOwner: childPanelOwnerId,
+          childPanelCommission,
+          childPanelEarningsCredited: false,
+          childPanelPerOrderFee,
 
-  resellerOwner: resellerOwnerId,
-  resellerCommission,
-  earningsCredited: false,
+          providerProfileId: providerProfile._id,
+          provider: selectedService.provider,
+          providerServiceId: selectedService.providerServiceId,
+          providerApiUrl: providerProfile.apiUrl,
 
-  childPanelOwner: childPanelOwnerId,
-  childPanelCommission,
-  childPanelEarningsCredited: false,
-  childPanelPerOrderFee,
+          cancelAllowed: selectedService.cancelAllowed,
+          refillAllowed: selectedService.refillAllowed,
+          refillPolicy: selectedService.refillPolicy,
+          customRefillDays: selectedService.customRefillDays,
+        });
 
-  providerProfileId: selectedService.providerProfileId,
-  provider: selectedService.provider,
-  providerServiceId: selectedService.providerServiceId,
-  providerApiUrl: providerProfile?.apiUrl || "",
+        // ─── CALL PROVIDER ────────────────────────────────────────────────
+        try {
+          const payload = {
+            key: providerProfile.apiKey,
+            action: "add",
+            service: selectedService.providerServiceId,
+            link,
+            quantity: qty,
+          };
 
-  cancelAllowed: selectedService.cancelAllowed,
-  refillAllowed: selectedService.refillAllowed,
-  refillPolicy: selectedService.refillPolicy,
-  customRefillDays: selectedService.customRefillDays,
-});
+          const providerRes = await axios.post(providerProfile.apiUrl, payload, {
+            timeout: 15000,
+          });
 
-        // ─── PROVIDER CALL ────────────────────────────────────────────────
-        // Skip entirely if CP owner has insufficient funds.
-        // Order stays "pending" — no error shown to the API caller.
-        if (cpOwnerInsufficientFunds) {
-          order.status = "pending";
-          order.providerStatus = "pending";
-          order.errorMessage = "CP owner insufficient funds — provider call skipped";
+          if (providerRes?.data?.order) {
+            order.providerOrderId = providerRes.data.order;
+          }
+
+          order.providerStatus = "processing";
+          order.status = "processing";
+          order.providerResponse = providerRes.data;
           await order.save();
-        } else if (providerProfile?.apiUrl && providerProfile?.apiKey) {
-          try {
-            const payload = {
-              key: providerProfile.apiKey,
-              action: "add",
-              service: selectedService.providerServiceId,
-              link,
-              quantity: qty,
-            };
 
-            const providerRes = await axios.post(providerProfile.apiUrl, payload, {
-              timeout: 15000,
-            });
+        } catch (providerErr) {
+          console.error("Provider call failed:", providerErr.message);
 
-            if (providerRes?.data?.order) {
-              order.providerOrderId = providerRes.data.order;
-              order.providerStatus = "processing";
-              order.status = "processing";
-            } else {
-              order.providerStatus = "processing";
-              order.status = "processing";
-            }
+          // Refund end-user
+          wallet.transactions.push({
+            type: "Refund",
+            amount: finalCharge,
+            status: "Completed",
+            note: `Refund - Provider failed #${customOrderId}`,
+            reference: order._id,
+            createdAt: new Date(),
+          });
+          wallet.balance = calculateBalance(wallet.transactions);
+          await wallet.save();
 
-            order.providerResponse = providerRes.data;
-            await order.save();
-
-          } catch (providerErr) {
-            // Refund end-user on provider failure
-            wallet.transactions.push({
+          // Refund CP owner base cost if applicable
+          if (cpOwnerWallet && baseCharge > 0) {
+            cpOwnerWallet.transactions.push({
               type: "Refund",
-              amount: finalCharge,
+              amount: baseCharge,
               status: "Completed",
               note: `Refund - Provider failed #${customOrderId}`,
-              reference: order._id,
               createdAt: new Date(),
             });
-            wallet.balance = calculateBalance(wallet.transactions);
-            await wallet.save();
-
-            order.status = "failed";
-            order.providerStatus = "failed";
-            order.refundProcessed = true;
-            await order.save();
-
-            return res.json({ error: "Provider failed. Your balance has been refunded." });
+            cpOwnerWallet.balance = calculateBalance(cpOwnerWallet.transactions);
+            await cpOwnerWallet.save();
           }
+
+          order.status = "failed";
+          order.providerStatus = "failed";
+          order.refundProcessed = true;
+          await order.save();
+
+          return res.json({ error: "Provider failed. Your balance has been refunded." });
         }
 
         return res.json({ order: order.customOrderId });
       }
 
       case "status": {
-
         if (req.body.orders) {
           const ids = req.body.orders.toString().split(",").map((id) => id.trim());
           const orders = await Order.find(buildMultiOrderQuery(user._id, ids));
@@ -415,7 +444,6 @@ const order = await Order.create({
       }
 
       case "refill": {
-
         const processRefill = async (id) => {
           const order = await Order.findOne(buildOrderQuery(user._id, id));
 
@@ -464,17 +492,20 @@ const order = await Order.create({
       }
 
       case "refill_status": {
-
         const getRefillStatus = async (refillId) => {
           const str = refillId?.toString().trim();
           const num = !isNaN(str) && str !== "" ? Number(str) : null;
 
           const order = await Order.findOne({
-            userId: user._id,
-            $or: [
-              { refillId: str },
-              ...(num !== null ? [{ customOrderId: num }] : []),
-              { orderId: str },
+            $and: [
+              { $or: [{ userId: user._id }, { endUserId: user._id }] },
+              {
+                $or: [
+                  { refillId: str },
+                  ...(num !== null ? [{ customOrderId: num }] : []),
+                  { orderId: str },
+                ],
+              },
             ],
           });
 

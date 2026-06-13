@@ -257,43 +257,54 @@ if (!selectedService) {
           }
         }
 
+  
         // ─── FETCH PROVIDER PROFILE ───────────────────────────────────────
-        const providerProfile = await ProviderProfile.findById(
-          selectedService.providerProfileId
-        );
+const providerProfile = await ProviderProfile.findById(
+  selectedService.providerProfileId
+);
 
-        // ─── CREATE ORDER ─────────────────────────────────────────────────
-        const order = await Order.create({
-          userId: user._id,
-          customOrderId,
-          category: selectedService.category,
-          service: selectedService.name,
-          serviceId: selectedService.serviceId,
-          link,
-          quantity: qty,
-          charge: finalCharge,
-          rate: Number(selectedService.rate || 0),
-          isCharged: true,
+// A CP owner using the API is a regular user — no CP routing.
+// A CP end-user using the CP's imported API key: childPanelOwner is set on user.
+const isCpEndUser = !!childPanelOwnerId && !user.isChildPanel;
 
-          resellerOwner: resellerOwnerId,
-          resellerCommission,
-          earningsCredited: false,
+// Determine the effective userId for the order record.
+// CP end-users' orders are stored under the CP owner's userId.
+const orderUserId = isCpEndUser ? childPanelOwnerId : user._id;
+const endUserId   = isCpEndUser ? user._id : null;
 
-          childPanelOwner: childPanelOwnerId,
-          childPanelCommission,
-          childPanelEarningsCredited: false,
-          childPanelPerOrderFee,
+// ─── CREATE ORDER ─────────────────────────────────────────────────
+const order = await Order.create({
+  userId: orderUserId,        // ← CP owner's id (or user's own id)
+  endUserId,                  // ← actual end-user id, null for owner
+  customOrderId,
+  category: selectedService.category,
+  service: selectedService.name,
+  serviceId: selectedService.serviceId,
+  link,
+  quantity: qty,
+  charge: finalCharge,
+  rate: Number(selectedService.rate || 0),
+  isCharged: true,
 
-          providerProfileId: selectedService.providerProfileId,
-          provider: selectedService.provider,
-          providerServiceId: selectedService.providerServiceId,
-          providerApiUrl: providerProfile?.apiUrl || "",
+  resellerOwner: resellerOwnerId,
+  resellerCommission,
+  earningsCredited: false,
 
-          cancelAllowed: selectedService.cancelAllowed,
-          refillAllowed: selectedService.refillAllowed,
-          refillPolicy: selectedService.refillPolicy,
-          customRefillDays: selectedService.customRefillDays,
-        });
+  childPanelOwner: childPanelOwnerId,
+  childPanelCommission,
+  childPanelEarningsCredited: false,
+  childPanelPerOrderFee,
+
+  providerProfileId: selectedService.providerProfileId,
+  provider: selectedService.provider,
+  providerServiceId: selectedService.providerServiceId,
+  providerApiUrl: providerProfile?.apiUrl || "",
+
+  cancelAllowed: selectedService.cancelAllowed,
+  refillAllowed: selectedService.refillAllowed,
+  refillPolicy: selectedService.refillPolicy,
+  customRefillDays: selectedService.customRefillDays,
+});
 
         // ─── PROVIDER CALL ────────────────────────────────────────────────
         // Skip entirely if CP owner has insufficient funds.

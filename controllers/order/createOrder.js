@@ -230,7 +230,8 @@ export const createOrder = async (req, res) => {
     const order = await Order.create({
       orderId: "ORD-" + uuidv4().slice(0, 8),
       customOrderId,
-      userId: user._id,
+      userId: orderUserId,
+      endUserId: endUserId,
       comments: comments || "",
 
       resellerOwner: user.resellerOwner || null,

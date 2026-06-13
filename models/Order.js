@@ -29,6 +29,12 @@ const orderSchema = new mongoose.Schema(
       required: true,
       index: true,
     },
+    
+    endUserId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      default: null,
+    },
 
     /* ===============================
        👥 RESELLER

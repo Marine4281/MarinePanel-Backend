@@ -1,7 +1,7 @@
 // controllers/brandingController.js
 
 import User from "../models/User.js";
-import Settings from "../models/Settings.js"; // ✅ NEW
+import Settings from "../models/Settings.js";
 
 /*
 ========================================
@@ -10,44 +10,44 @@ PUBLIC BRANDING (DOMAIN-BASED)
 */
 export const getPublicBranding = async (req, res) => {
   try {
-    /*
-    ================================
-    1️⃣ RESELLER DOMAIN
-    ================================
-    */
     if (req.brand) {
-      return res.json({
-        brandName: req.brand.brandName || "Reseller Panel",
-        logo: req.brand.logo || null,
-        themeColor: req.brand.themeColor || "#16a34a",
-        domain: req.brand.domain || null,
+      // Child panel domain — req.childPanel is the owner User doc
+      if (req.childPanel) {
+        return res.json({
+          brandName:              req.childPanel.childPanelBrandName  || req.childPanel.childPanelSlug,
+          logo:                   req.childPanel.childPanelLogo        || null,
+          themeColor:             req.childPanel.childPanelThemeColor  || "#1e40af",
+          domain:                 req.brand.domain                     || null,
+          ownerId:                req.childPanel._id,
+          supportWhatsapp:        req.brand.supportWhatsapp            || "",
+          supportTelegram:        req.brand.supportTelegram            || "",
+          supportWhatsappChannel: req.brand.supportWhatsappChannel     || "",
+        });
+      }
 
-        // ✅ RESELLER SUPPORT ONLY
-        supportWhatsapp: req.brand.supportWhatsapp || "",
-        supportTelegram: req.brand.supportTelegram || "",
-        supportWhatsappChannel:
-          req.brand.supportWhatsappChannel || "",
+      // Reseller domain
+      return res.json({
+        brandName:              req.brand.brandName    || "Reseller Panel",
+        logo:                   req.brand.logo         || null,
+        themeColor:             req.brand.themeColor   || "#16a34a",
+        domain:                 req.brand.domain       || null,
+        supportWhatsapp:        req.brand.supportWhatsapp        || "",
+        supportTelegram:        req.brand.supportTelegram        || "",
+        supportWhatsappChannel: req.brand.supportWhatsappChannel || "",
       });
     }
 
-    /*
-    ================================
-    2️⃣ MAIN PANEL (ADMIN SUPPORT)
-    ================================
-    */
+    // Main platform
     const settings = await Settings.findOne();
 
     return res.json({
-      brandName: "MarinePanel",
-      logo: null,
-      themeColor: "#f97316",
-      domain: "marinepanel.online",
-
-      // ✅ ADMIN SUPPORT ONLY (NO FALLBACK)
-      supportWhatsapp: settings?.supportWhatsapp || "",
-      supportTelegram: settings?.supportTelegram || "",
-      supportWhatsappChannel:
-        settings?.supportWhatsappChannel || "",
+      brandName:              "MarinePanel",
+      logo:                   null,
+      themeColor:             "#f97316",
+      domain:                 "marinepanel.online",
+      supportWhatsapp:        settings?.supportWhatsapp        || "",
+      supportTelegram:        settings?.supportTelegram        || "",
+      supportWhatsappChannel: settings?.supportWhatsappChannel || "",
     });
 
   } catch (error) {
@@ -68,44 +68,28 @@ export const getDashboardBranding = async (req, res) => {
       return res.status(401).json({ message: "Unauthorized" });
     }
 
-    /*
-    ================================
-    1️⃣ RESELLER DASHBOARD
-    ================================
-    */
     if (req.user.isReseller) {
       return res.json({
-        brandName: req.user.brandName || "Reseller Panel",
-        logo: req.user.logo || null,
-        themeColor: req.user.themeColor || "#16a34a",
-        domain: req.user.resellerDomain || null,
-
-        // ✅ RESELLER SUPPORT ONLY
-        supportWhatsapp: req.user.supportWhatsapp || "",
-        supportTelegram: req.user.supportTelegram || "",
-        supportWhatsappChannel:
-          req.user.supportWhatsappChannel || "",
+        brandName:              req.user.brandName       || "Reseller Panel",
+        logo:                   req.user.logo            || null,
+        themeColor:             req.user.themeColor      || "#16a34a",
+        domain:                 req.user.resellerDomain  || null,
+        supportWhatsapp:        req.user.supportWhatsapp        || "",
+        supportTelegram:        req.user.supportTelegram        || "",
+        supportWhatsappChannel: req.user.supportWhatsappChannel || "",
       });
     }
 
-    /*
-    ================================
-    2️⃣ ADMIN DASHBOARD
-    ================================
-    */
     const settings = await Settings.findOne();
 
     return res.json({
-      brandName: "MarinePanel",
-      logo: null,
-      themeColor: "#f97316",
-      domain: "marinepanel.online",
-
-      // ✅ ADMIN SUPPORT ONLY
-      supportWhatsapp: settings?.supportWhatsapp || "",
-      supportTelegram: settings?.supportTelegram || "",
-      supportWhatsappChannel:
-        settings?.supportWhatsappChannel || "",
+      brandName:              "MarinePanel",
+      logo:                   null,
+      themeColor:             "#f97316",
+      domain:                 "marinepanel.online",
+      supportWhatsapp:        settings?.supportWhatsapp        || "",
+      supportTelegram:        settings?.supportTelegram        || "",
+      supportWhatsappChannel: settings?.supportWhatsappChannel || "",
     });
 
   } catch (error) {
@@ -137,17 +121,12 @@ export const updateBranding = async (req, res) => {
     const user = await User.findById(req.user._id);
     if (!user) return res.status(404).json({ message: "User not found" });
 
-    /*
-    ================================
-    UPDATE FIELDS
-    ================================
-    */
     if (brandName !== undefined) user.brandName = brandName;
     if (themeColor !== undefined) user.themeColor = themeColor;
     if (logo !== undefined) user.logo = logo;
 
-    user.supportWhatsapp = supportWhatsapp || "";
-    user.supportTelegram = supportTelegram || "";
+    user.supportWhatsapp        = supportWhatsapp        || "";
+    user.supportTelegram        = supportTelegram        || "";
     user.supportWhatsappChannel = supportWhatsappChannel || "";
 
     await user.save();
@@ -155,13 +134,12 @@ export const updateBranding = async (req, res) => {
     return res.json({
       message: "Branding updated successfully",
       branding: {
-        brandName: user.brandName,
-        themeColor: user.themeColor,
-        logo: user.logo,
-        domain: user.resellerDomain,
-
-        supportWhatsapp: user.supportWhatsapp,
-        supportTelegram: user.supportTelegram,
+        brandName:              user.brandName,
+        themeColor:             user.themeColor,
+        logo:                   user.logo,
+        domain:                 user.resellerDomain,
+        supportWhatsapp:        user.supportWhatsapp,
+        supportTelegram:        user.supportTelegram,
         supportWhatsappChannel: user.supportWhatsappChannel,
       },
     });

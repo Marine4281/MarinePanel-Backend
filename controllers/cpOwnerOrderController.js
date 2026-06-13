@@ -42,6 +42,7 @@ const formatOrder = (order) => {
     createdAt: order.createdAt,
     refundProcessed: order.refundProcessed || false,
     placedViaChildPanel: order.placedViaChildPanel || false,
+    isOwnOrder: !order.endUserId,
     user: isPopulated
       ? { _id: u._id, email: u.email, username: u.email?.split("@")[0] || "", balance: u.balance || 0 }
       : { _id: u?._id || null, email: "Unknown", username: "", balance: 0 },
@@ -155,6 +156,7 @@ export const getCPOrders = async (req, res) => {
 
     const [ordersRaw, total] = await Promise.all([
       Order.find(orderQuery)
+        .populate({ path: "endUserId", select: "email balance" })
         .populate({ path: "userId", select: "email balance" })
         .sort({ createdAt: -1 })
         .skip((pageNum - 1) * limitNum)

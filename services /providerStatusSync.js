@@ -12,6 +12,20 @@ const calculateBalance = (transactions = []) =>
 
 const ORDER_TIMEOUT_MS = 72 * 60 * 60 * 1000;
 
+/* ============================================================
+   HELPER: Get the wallet that was actually charged for this order.
+   For CP end-user orders, endUserId holds the real payer.
+   For all other orders, userId is the payer.
+============================================================ */
+const getPayerWallet = async (order) => {
+  const payerId = order.endUserId || order.userId;
+  let wallet = await Wallet.findOne({ user: payerId });
+  if (!wallet) {
+    wallet = await Wallet.create({ user: payerId, balance: 0, transactions: [] });
+  }
+  return wallet;
+};
+
 export const syncProviderOrders = async (io) => {
   try {
     /* ============================================================
@@ -129,18 +143,9 @@ export const syncProviderOrders = async (io) => {
             rawStatus.toLowerCase().replace(/\s+/g, "").trim()
           );
 
-          /* ================================================================
-             🛡️ PROVIDER STATUS GUARD
-             Only mark "completed" when the provider EXPLICITLY says so.
-             DO NOT auto-flip to "completed" just because remains == 0 while
-             the provider still reports "In progress" or "Processing".
-             Some providers zero out remains before they flip to "Completed".
-             We wait for that explicit confirmation.
-          ================================================================ */
           const providerExplicitlyComplete = mappedStatus === "completed";
           if (providerOrder.remains == 0 && !providerExplicitlyComplete) {
-            // Remains is 0 but provider hasn't confirmed completion yet.
-            // Keep the current mapped status (e.g. "processing") — do NOT override.
+            // Keep current mapped status — provider hasn't confirmed yet
           }
 
           const delivered = calculateDelivered(order.quantity, providerOrder.remains);
@@ -155,7 +160,6 @@ export const syncProviderOrders = async (io) => {
             statusChanged = true;
           }
 
-          // Always store the raw provider status for accurate display
           const newProviderStatus = String(providerOrder.status || "").toLowerCase();
           if (order.providerStatus !== newProviderStatus) {
             order.providerStatus = newProviderStatus;
@@ -166,11 +170,9 @@ export const syncProviderOrders = async (io) => {
         }
 
         // ── REFUND ──────────────────────────────────────────────
+        // Always refund the actual payer: endUserId (CP end-user) or userId (everyone else)
         if (!order.isFreeOrder && order.isCharged && !order.refundProcessed) {
-          let wallet = await Wallet.findOne({ user: order.userId });
-          if (!wallet) {
-            wallet = await Wallet.create({ user: order.userId, balance: 0, transactions: [] });
-          }
+          const wallet = await getPayerWallet(order);
 
           const alreadyRefunded = wallet.transactions.some(
             (t) => t.type === "Refund" && t.reference?.toString() === order._id.toString()
@@ -179,9 +181,12 @@ export const syncProviderOrders = async (io) => {
           if (!alreadyRefunded) {
             if (mappedStatus === "failed") {
               wallet.transactions.push({
-                type: "Refund", amount: order.charge, status: "Completed",
+                type: "Refund",
+                amount: order.charge,
+                status: "Completed",
                 note: `Refund for failed order ${order.orderId}`,
-                reference: order._id, createdAt: new Date(),
+                reference: order._id,
+                createdAt: new Date(),
               });
               wallet.balance = calculateBalance(wallet.transactions);
               order.refundProcessed = true;
@@ -191,16 +196,22 @@ export const syncProviderOrders = async (io) => {
             }
 
             if (mappedStatus === "partial") {
-              const remaining = providerOrder && !providerOrder.error
-                ? Number(providerOrder.remains) || 0
-                : order.quantity - (order.quantityDelivered || 0);
+              const remaining =
+                providerOrder && !providerOrder.error
+                  ? Number(providerOrder.remains) || 0
+                  : order.quantity - (order.quantityDelivered || 0);
 
               if (remaining > 0) {
-                let refundAmount = Number(((remaining / order.quantity) * order.charge).toFixed(4));
+                const refundAmount = Number(
+                  ((remaining / order.quantity) * order.charge).toFixed(4)
+                );
                 wallet.transactions.push({
-                  type: "Refund", amount: refundAmount, status: "Completed",
+                  type: "Refund",
+                  amount: refundAmount,
+                  status: "Completed",
                   note: `Partial refund for order ${order.orderId} (${remaining} undelivered)`,
-                  reference: order._id, createdAt: new Date(),
+                  reference: order._id,
+                  createdAt: new Date(),
                 });
                 wallet.balance = calculateBalance(wallet.transactions);
                 order.refundProcessed = true;
@@ -219,8 +230,13 @@ export const syncProviderOrders = async (io) => {
           await creditResellerCommission(order);
         }
 
+        // Emit to the real user who can see this order in their UI
+        // For CP end-user orders: notify the end-user (endUserId)
+        // For all others: notify userId
+        const notifyUserId = order.endUserId || order.userId;
+
         if (io) {
-          io.to(order.userId.toString()).emit("orderUpdated", {
+          io.to(notifyUserId.toString()).emit("orderUpdated", {
             orderId: order._id,
             status: order.status,
             providerStatus: order.providerStatus,

@@ -33,7 +33,46 @@ const calculateBalance = (transactions) => {
 };
 
 /* ================================================
+   GET ACTIVATION FEE
+   - On a CP domain: returns the CP's custom fee + CP's domain
+   - On main platform: returns global Settings fee
+================================================ */
+
+export const getActivationFee = async (req, res) => {
+  try {
+    // req.childPanel is set by detectChildPanelDomain middleware
+    // when the request comes from a child panel domain
+    if (req.childPanel) {
+      const cpOwner = req.childPanel;
+      const cpDomain =
+        cpOwner.childPanelDomain ||
+        `${cpOwner.childPanelSlug}.marinepanel.online`;
+
+      return res.json({
+        fee: cpOwner.childPanelResellerActivationFee ?? 25,
+        platformDomain: cpDomain,
+        isChildPanel: true,
+        cpOwnerId: cpOwner._id,
+      });
+    }
+
+    // Main platform
+    const settings = await Settings.findOne().lean();
+    return res.json({
+      fee: settings?.resellerActivationFee || 25,
+      platformDomain: settings?.platformDomain || "marinepanel.online",
+      isChildPanel: false,
+    });
+  } catch (error) {
+    res.status(500).json({ message: "Failed to fetch fee" });
+  }
+};
+
+/* ================================================
    ACTIVATE RESELLER
+   - On main platform: stamps no childPanelOwner, uses global fee
+   - On CP domain: stamps childPanelOwner, uses CP's fee,
+     credits fee to CP's wallet, subdomain under CP's domain
 ================================================ */
 
 export const activateReseller = async (req, res) => {
@@ -46,7 +85,6 @@ export const activateReseller = async (req, res) => {
     }
 
     const user = await User.findById(userId);
-
     if (!user) return res.status(404).json({ message: "User not found" });
 
     if (user.isSuspended) {
@@ -64,23 +102,36 @@ export const activateReseller = async (req, res) => {
       return res.status(400).json({ message: "Brand already taken" });
     }
 
-    const settings = await Settings.findOne().lean();
+    // ── Determine if this is a CP activation ──────────────────────────
+    const cpOwner = req.childPanel || null;
+    const isCP = !!cpOwner;
 
-    const activationFee = settings?.resellerActivationFee || 25;
-    const platformDomain = settings?.platformDomain || "marinepanel.online";
+    let activationFee;
+    let platformDomain;
 
+    if (isCP) {
+      activationFee = cpOwner.childPanelResellerActivationFee ?? 25;
+      platformDomain =
+        cpOwner.childPanelDomain ||
+        `${cpOwner.childPanelSlug}.marinepanel.online`;
+    } else {
+      const settings = await Settings.findOne().lean();
+      activationFee = settings?.resellerActivationFee || 25;
+      platformDomain = settings?.platformDomain || "marinepanel.online";
+    }
+
+    // ── Wallet check ──────────────────────────────────────────────────
     const wallet = await Wallet.findOne({ user: user._id });
-
     if (!wallet) {
       return res.status(404).json({ message: "Wallet not found" });
     }
-
     if (wallet.balance < activationFee) {
       return res.status(400).json({
         message: `You need $${activationFee} to activate reseller`,
       });
     }
 
+    // ── Build domain ──────────────────────────────────────────────────
     let finalDomain = "";
 
     if (domainType === "subdomain") {
@@ -97,6 +148,8 @@ export const activateReseller = async (req, res) => {
         return res.status(400).json({ message: "Custom domain required" });
       }
 
+      // On a CP domain, prevent custom domains that point elsewhere
+      // (they must still be unique globally)
       const cleanDomain = normalizeDomain(customDomain);
 
       const exists = await User.findOne({ resellerDomain: cleanDomain });
@@ -107,8 +160,7 @@ export const activateReseller = async (req, res) => {
       finalDomain = cleanDomain;
     }
 
-    /* ===== ACTIVATE ===== */
-
+    // ── Activate ──────────────────────────────────────────────────────
     user.isReseller = true;
     user.brandName = brandName;
     user.brandSlug = slug;
@@ -116,34 +168,54 @@ export const activateReseller = async (req, res) => {
     user.themeColor = "#16a34a";
     user.resellerActivatedAt = new Date();
 
-    /* ===== WALLET DEDUCTION ===== */
+    // Stamp the child panel owner — this is the key field that scopes
+    // this reseller to the CP and appears in all CP owner queries
+    if (isCP) {
+      user.childPanelOwner = cpOwner._id;
+    }
 
+    // ── Deduct fee from reseller's wallet ─────────────────────────────
     wallet.transactions.push({
-      type: "RPA Fee", // (your naming kept same, but this is RSP fee)
-      amount: -Number(activationFee), // ✅ MUST be negative
+      type: "RPA Fee",
+      amount: -Number(activationFee),
       status: "Completed",
-      note: "Reseller activation fee",
+      note: isCP
+        ? `Reseller activation fee — ${cpOwner.childPanelBrandName || "Child Panel"}`
+        : "Reseller activation fee",
       reference: `RSP-${user._id}`,
-      createdAt: new Date(), // ✅ fixed field
+      createdAt: new Date(),
     });
-
-    // ✅ ALWAYS recalculate
     wallet.balance = calculateBalance(wallet.transactions);
 
-    await wallet.save();
-    await user.save();
+    await Promise.all([wallet.save(), user.save()]);
+    await User.findByIdAndUpdate(user._id, { balance: wallet.balance });
 
-    // ✅ sync user balance (important)
-    await User.findByIdAndUpdate(user._id, {
-      balance: wallet.balance,
-    });
+    // ── Credit fee to CP owner's wallet (if CP activation) ───────────
+    if (isCP && activationFee > 0) {
+      const cpWallet = await Wallet.findOne({ user: cpOwner._id });
+      if (cpWallet) {
+        cpWallet.transactions.push({
+          type: "Reseller Activation Fee",
+          amount: Number(activationFee),
+          status: "Completed",
+          note: `Activation fee from reseller ${user.email}`,
+          reference: `RSP-ACT-${user._id}`,
+          createdAt: new Date(),
+        });
+        cpWallet.balance = calculateBalance(cpWallet.transactions);
+        await cpWallet.save();
+        await User.findByIdAndUpdate(cpOwner._id, {
+          balance: cpWallet.balance,
+          childPanelWallet: cpWallet.balance,
+        });
+      }
+    }
 
     res.json({
       message: "Reseller activated successfully",
       domain: finalDomain,
       remainingBalance: wallet.balance,
     });
-
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: "Activation failed" });
@@ -151,24 +223,7 @@ export const activateReseller = async (req, res) => {
 };
 
 /* ================================================
-   GET ACTIVATION FEE
-================================================ */
-
-export const getActivationFee = async (req, res) => {
-  try {
-    const settings = await Settings.findOne().lean();
-
-    res.json({
-      fee: settings?.resellerActivationFee || 25,
-      platformDomain: settings?.platformDomain || "marinepanel.online",
-    });
-  } catch (error) {
-    res.status(500).json({ message: "Failed to fetch fee" });
-  }
-};
-
-/* ================================================
-   DASHBOARD (UNCHANGED)
+   DASHBOARD (unchanged)
 ================================================ */
 
 export const getResellerDashboard = async (req, res) => {
@@ -190,7 +245,6 @@ export const getResellerDashboard = async (req, res) => {
       if (order.status === "completed") {
         totalRevenue += Number(order.charge || 0);
       }
-
       if (order.earningsCredited) {
         earnings += Number(order.resellerCommission || 0);
       }
@@ -205,24 +259,20 @@ export const getResellerDashboard = async (req, res) => {
       domain: user?.resellerDomain,
       brandName: user?.brandName,
     });
-
   } catch (error) {
     res.status(500).json({ message: "Dashboard failed" });
   }
 };
 
 /* ================================================
-   USERS (UNCHANGED)
+   USERS (unchanged)
 ================================================ */
 
 export const getResellerUsers = async (req, res) => {
   try {
-    const users = await User.find({
-      resellerOwner: req.user._id,
-    })
+    const users = await User.find({ resellerOwner: req.user._id })
       .select("-password")
       .lean();
-
     res.json(users);
   } catch {
     res.status(500).json({ message: "Failed" });
@@ -230,14 +280,13 @@ export const getResellerUsers = async (req, res) => {
 };
 
 /* ================================================
-   ORDERS (UNCHANGED)
+   ORDERS (unchanged)
 ================================================ */
+
 export const getResellerOrders = async (req, res) => {
   try {
-    const orders = await Order.find({
-      resellerOwner: req.user._id,
-    })
-      .populate("userId", "email phone") // ✅ 🔥 THIS FIXES EVERYTHING
+    const orders = await Order.find({ resellerOwner: req.user._id })
+      .populate("userId", "email phone")
       .sort({ createdAt: -1 })
       .lean();
 
@@ -256,9 +305,8 @@ export const getResellerOrders = async (req, res) => {
   }
 };
 
-
 /* ================================================
-   WITHDRAW (FIXED)
+   WITHDRAW (unchanged)
 ================================================ */
 
 export const withdrawResellerFunds = async (req, res) => {
@@ -279,53 +327,43 @@ export const withdrawResellerFunds = async (req, res) => {
     }
 
     const wallet = await Wallet.findOne({ user: req.user._id });
-
     if (!wallet || wallet.balance < amount) {
-      return res.status(400).json({
-        message: "Insufficient balance",
-      });
+      return res.status(400).json({ message: "Insufficient balance" });
     }
 
-    // ✅ Correct transaction-based deduction
     wallet.transactions.push({
       type: "Withdrawal",
-      amount: -Number(amount), // ✅ MUST be negative
+      amount: -Number(amount),
       status: "Completed",
       note: "Reseller withdrawal",
       createdAt: new Date(),
     });
-
     wallet.balance = calculateBalance(wallet.transactions);
-
     await wallet.save();
 
     res.json({
       message: "Withdrawal successful",
       remainingBalance: wallet.balance,
     });
-
   } catch (error) {
     res.status(500).json({ message: "Withdraw failed" });
   }
 };
-// ================================================
-// SWITCH DOMAIN (FINAL CLEAN)
-// ================================================
+
+/* ================================================
+   SWITCH DOMAIN (unchanged)
+================================================ */
 
 export const switchResellerDomain = async (req, res) => {
   try {
     const userId = req.user._id;
     const { domainType, customDomain } = req.body;
 
-    // ✅ Validate domain type
     if (!["custom", "subdomain"].includes(domainType)) {
-      return res.status(400).json({
-        message: "Invalid domain type",
-      });
+      return res.status(400).json({ message: "Invalid domain type" });
     }
 
     const user = await User.findById(userId);
-
     if (!user || !user.isReseller) {
       return res.status(403).json({ message: "Not authorized" });
     }
@@ -335,91 +373,46 @@ export const switchResellerDomain = async (req, res) => {
 
     let finalDomain = "";
 
-    /*
-    ============================
-    SWITCH TO SUBDOMAIN
-    ============================
-    */
     if (domainType === "subdomain") {
       if (!user.brandSlug) {
-        return res.status(400).json({
-          message: "Brand slug missing",
-        });
+        return res.status(400).json({ message: "Brand slug missing" });
       }
-
       finalDomain = `${user.brandSlug}.${platformDomain}`;
-
       const exists = await User.findOne({
         resellerDomain: finalDomain,
         _id: { $ne: user._id },
       });
-
       if (exists) {
-        return res.status(400).json({
-          message: "Subdomain already in use",
-        });
+        return res.status(400).json({ message: "Subdomain already in use" });
       }
     }
 
-    /*
-    ============================
-    SWITCH TO CUSTOM DOMAIN
-    ============================
-    */
     if (domainType === "custom") {
       if (!customDomain) {
-        return res.status(400).json({
-          message: "Custom domain required",
-        });
+        return res.status(400).json({ message: "Custom domain required" });
       }
-
       const cleanDomain = normalizeDomain(customDomain);
-
       const exists = await User.findOne({
         resellerDomain: cleanDomain,
         _id: { $ne: user._id },
       });
-
       if (exists) {
-        return res.status(400).json({
-          message: "Domain already in use",
-        });
+        return res.status(400).json({ message: "Domain already in use" });
       }
-
       finalDomain = cleanDomain;
     }
 
-    /*
-    ============================
-    PREVENT SAME DOMAIN
-    ============================
-    */
     if (user.resellerDomain === finalDomain) {
-      return res.status(400).json({
-        message: "You are already using this domain",
-      });
+      return res.status(400).json({ message: "You are already using this domain" });
     }
 
-    /*
-    ============================
-    SAVE
-    ============================
-    */
     user.domainType = domainType;
     user.resellerDomain = finalDomain;
-
     await user.save();
 
-    res.json({
-      message: "Domain switched successfully",
-      domain: finalDomain,
-      domainType,
-    });
-
+    res.json({ message: "Domain switched successfully", domain: finalDomain, domainType });
   } catch (error) {
     console.error(error);
-    res.status(500).json({
-      message: "Failed to switch domain",
-    });
+    res.status(500).json({ message: "Failed to switch domain" });
   }
 };

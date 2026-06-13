@@ -16,16 +16,15 @@ const processRefund = async ({
   customAmount = 0,
 }) => {
   if (!order) return;
-
   if (order.isFreeOrder) return;
-
   if (order.refundProcessed) return;
-
   if (!order.isCharged) return;
 
-  const wallet = await Wallet.findOne({
-    user: order.userId,
-  });
+  // For CP end-user orders, endUserId is the actual payer.
+  // For all other orders, userId is the payer.
+  const payerId = order.endUserId || order.userId;
+
+  const wallet = await Wallet.findOne({ user: payerId });
 
   if (!wallet) return;
 
@@ -61,7 +60,6 @@ const processRefund = async ({
   // CUSTOM REFUND
   else if (refundType === "custom") {
     refundAmount = Number(customAmount || 0);
-
     if (refundAmount <= 0) return;
   }
 
@@ -78,7 +76,6 @@ const processRefund = async ({
     createdAt: new Date(),
   });
 
-  // safe recalc
   wallet.balance = wallet.transactions.reduce(
     (acc, t) => acc + (Number(t.amount) || 0),
     0
@@ -87,16 +84,14 @@ const processRefund = async ({
   await wallet.save();
 
   order.refundProcessed = true;
-
   await order.save();
 
-  // reverse reseller commission
   await reverseResellerCommission(order);
 
   return {
     refundAmount,
     walletBalance: wallet.balance,
-    walletUserId: wallet.user,
+    walletUserId: payerId,
   };
 };
 

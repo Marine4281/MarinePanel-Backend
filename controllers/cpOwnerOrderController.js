@@ -292,14 +292,30 @@ export const updateCPOrderStatus = async (req, res) => {
     await order.save();
 
     const io = req.app.get("io");
-    if (io) {
-      io.emit("order:update", formatOrder(order));
-      if (refundData)
-        io.emit("wallet:update", {
-          userId: refundData.walletUserId,
-          balance: refundData.walletBalance,
-        });
-    }
+if (io) {
+  // Notify CP dashboard (listens on "order:update")
+  io.emit("order:update", formatOrder(order));
+
+  // Notify the end-user's orders page (listens on "orderUpdated" in their room)
+  const notifyUserId = order.endUserId?._id || order.endUserId || order.userId?._id || order.userId;
+  if (notifyUserId) {
+    io.to(notifyUserId.toString()).emit("orderUpdated", {
+      orderId: order._id,
+      status: order.status,
+      providerStatus: order.providerStatus || order.status,
+      delivered: order.quantityDelivered,
+      total: order.quantity,
+      refundProcessed: order.refundProcessed,
+    });
+  }
+
+  if (refundData) {
+    io.emit("wallet:update", {
+      userId: refundData.walletUserId,
+      balance: refundData.walletBalance,
+    });
+  }
+}
 
     logCpAdminAction({
       adminId: req.user._id,
@@ -394,13 +410,27 @@ export const refundCPOrder = async (req, res) => {
     await order.save();
 
     const io = req.app.get("io");
-    if (io) {
-      io.emit("order:update", formatOrder(order));
-      io.emit("wallet:update", {
-        userId: refundData.walletUserId,
-        balance: refundData.walletBalance,
-      });
-    }
+    const io = req.app.get("io");
+if (io) {
+  io.emit("order:update", formatOrder(order));
+
+  const notifyUserId = order.endUserId?._id || order.endUserId || order.userId?._id || order.userId;
+  if (notifyUserId) {
+    io.to(notifyUserId.toString()).emit("orderUpdated", {
+      orderId: order._id,
+      status: order.status,
+      providerStatus: order.providerStatus || order.status,
+      delivered: order.quantityDelivered,
+      total: order.quantity,
+      refundProcessed: order.refundProcessed,
+    });
+  }
+
+  io.emit("wallet:update", {
+    userId: refundData.walletUserId,
+    balance: refundData.walletBalance,
+  });
+}
 
     logCpAdminAction({
       adminId: req.user._id,

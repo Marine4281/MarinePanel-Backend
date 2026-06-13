@@ -409,7 +409,7 @@ export const refundCPOrder = async (req, res) => {
     order.status = "refunded";
     await order.save();
 
-    const io = req.app.get("io");
+    
     const io = req.app.get("io");
 if (io) {
   io.emit("order:update", formatOrder(order));

@@ -1,11 +1,19 @@
+// controllers/order/getMyOrdersStats.js
+
 import Order from "../../models/Order.js";
 
 export const getMyOrdersStats = async (req, res) => {
   try {
     const { search, status, fromDate, toDate } = req.query;
 
+    // Same dual-field match as getMyOrders
+    const userMatch = [
+      { userId: req.user._id },
+      { endUserId: req.user._id },
+    ];
+
     const match = {
-      userId: req.user._id,
+      $or: userMatch,
     };
 
     if (status) {
@@ -14,24 +22,30 @@ export const getMyOrdersStats = async (req, res) => {
 
     if (fromDate || toDate) {
       match.createdAt = {};
-
-      if (fromDate) {
-        match.createdAt.$gte = new Date(fromDate);
-      }
-
+      if (fromDate) match.createdAt.$gte = new Date(fromDate);
       if (toDate) {
-        match.createdAt.$lte = new Date(toDate);
+        const end = new Date(toDate);
+        end.setHours(23, 59, 59, 999);
+        match.createdAt.$lte = end;
       }
     }
 
     if (search) {
-      const regex = new RegExp(search, "i");
-
-      match.$or = [
-        { customOrderId: regex },
-        { service: regex },
-        { link: regex },
+      const cleanSearch = search.replace("#", "").trim();
+      const orConditions = [
+        { service: { $regex: cleanSearch, $options: "i" } },
+        { link: { $regex: cleanSearch, $options: "i" } },
       ];
+      if (!isNaN(cleanSearch)) {
+        orConditions.push({ customOrderId: Number(cleanSearch) });
+      }
+
+      // Merge: both userMatch AND search conditions must hold
+      match.$and = [
+        { $or: userMatch },
+        { $or: orConditions },
+      ];
+      delete match.$or;
     }
 
     const stats = await Order.aggregate([
@@ -39,26 +53,11 @@ export const getMyOrdersStats = async (req, res) => {
       {
         $facet: {
           total: [{ $count: "count" }],
-          pending: [
-            { $match: { status: "pending" } },
-            { $count: "count" },
-          ],
-          processing: [
-            { $match: { status: "processing" } },
-            { $count: "count" },
-          ],
-          completed: [
-            { $match: { status: "completed" } },
-            { $count: "count" },
-          ],
-          partial: [
-            { $match: { status: "partial" } },
-            { $count: "count" },
-          ],
-          failed: [
-            { $match: { status: "failed" } },
-            { $count: "count" },
-          ],
+          pending: [{ $match: { status: "pending" } }, { $count: "count" }],
+          processing: [{ $match: { status: "processing" } }, { $count: "count" }],
+          completed: [{ $match: { status: "completed" } }, { $count: "count" }],
+          partial: [{ $match: { status: "partial" } }, { $count: "count" }],
+          failed: [{ $match: { status: "failed" } }, { $count: "count" }],
         },
       },
     ]);
@@ -75,9 +74,6 @@ export const getMyOrdersStats = async (req, res) => {
     });
   } catch (err) {
     console.error("USER STATS ERROR:", err);
-
-    res.status(500).json({
-      message: "Failed to fetch stats",
-    });
+    res.status(500).json({ message: "Failed to fetch stats" });
   }
 };

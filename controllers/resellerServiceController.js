@@ -3,7 +3,8 @@ import Service from "../models/Service.js";
 import User from "../models/User.js";
 import ResellerService from "../models/ResellerService.js";
 import Settings from "../models/Settings.js";
-import { CPService } from "../models/CPService.js"; // your CP-specific service model if applicable
+// ❌ REMOVE the CPService import — it doesn't exist
+// CP-owned services live in the same Service model with cpOwner field
 
 /* =========================================================
 GET ALL SERVICES (Reseller/Admin/End User)
@@ -35,8 +36,6 @@ export const getResellerServices = async (req, res) => {
     const settings = await Settings.findOne();
     const adminCommission = Number(settings?.commission || 0);
 
-    // ── Build base service query ────────────────────────────────────
-    // If this reseller belongs to a CP, scope to the CP's service mode
     let services = [];
 
     if (cpOwnerId) {
@@ -44,13 +43,11 @@ export const getResellerServices = async (req, res) => {
       const serviceMode = cpOwner?.childPanelServiceMode || "none";
 
       if (serviceMode === "none") {
-        // CP hasn't configured services yet — return empty
         return res.json({ services: [], commission: resellerCommission });
       }
 
       if (serviceMode === "platform" || serviceMode === "both") {
-        // Platform services visible to this CP
-        const platformServices = await Service.find({ status: true })
+        const platformServices = await Service.find({ status: true, cpOwner: null })
           .select("name rate min max category platform visible serviceId isFree freeQuantity cooldownHours refillAllowed cancelAllowed serviceType description commissionOverride")
           .sort({ createdAt: -1 })
           .lean();
@@ -58,18 +55,18 @@ export const getResellerServices = async (req, res) => {
       }
 
       if (serviceMode === "own" || serviceMode === "both") {
-        // CP's own provider services (cpOwner field on Service)
+        // CP's own provider services — same Service model, cpOwner field set
         const ownServices = await Service.find({
           status: true,
           cpOwner: cpOwnerId,
         })
-          .select("name rate min max category platform visible serviceId isFree freeQuantity cooldownHours refillAllowed cancelAllowed serviceType description cpOwner")
+          .select("name rate min max category platform visible serviceId isFree freeQuantity cooldownHours refillAllowed cancelAllowed serviceType description cpOwner commissionOverride")
           .sort({ createdAt: -1 })
           .lean();
         services.push(...ownServices);
       }
 
-      // Deduplicate by _id string
+      // Deduplicate by _id (in case both modes return overlapping services)
       const seen = new Set();
       services = services.filter((s) => {
         const key = s._id.toString();
@@ -78,14 +75,14 @@ export const getResellerServices = async (req, res) => {
         return true;
       });
     } else {
-      // Main platform reseller — all platform services
-      services = await Service.find({ status: true })
+      // Main platform reseller — platform services only (cpOwner: null)
+      services = await Service.find({ status: true, cpOwner: null })
         .select("name rate min max category platform visible serviceId isFree freeQuantity cooldownHours refillAllowed cancelAllowed serviceType isDefaultCategoryGlobal isDefaultCategoryPlatform description commissionOverride")
         .sort({ createdAt: -1 })
         .lean();
     }
 
-    // ── Reseller-level overrides ────────────────────────────────────
+    // Reseller-level overrides
     let resellerOverrides = [];
     if (resellerId) {
       resellerOverrides = await ResellerService.find({ resellerId }).lean();
@@ -96,7 +93,6 @@ export const getResellerServices = async (req, res) => {
       overridesMap[r.serviceId.toString()] = r;
     });
 
-    // ── Format + price each service ─────────────────────────────────
     const formattedServices = services
       .map((s) => {
         const providerRate = Number(s.rate || 0);
@@ -107,10 +103,10 @@ export const getResellerServices = async (req, res) => {
         }
 
         const systemRate = providerRate + (providerRate * adminRate) / 100;
-        const finalRate = systemRate + (systemRate * resellerCommission) / 100;
+        const finalRate  = systemRate + (systemRate * resellerCommission) / 100;
 
         const override = overridesMap[s._id.toString()];
-        const visible = override?.visible ?? s.visible ?? true;
+        const visible  = override?.visible  ?? s.visible  ?? true;
         const name     = override?.customName     || s.name;
         const category = override?.customCategory || s.category || "General";
 

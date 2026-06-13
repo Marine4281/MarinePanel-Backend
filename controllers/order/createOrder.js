@@ -62,13 +62,24 @@ export const createOrder = async (req, res) => {
 
     // ─── USER & WALLET ─────────────────────────────────────────────────────
     const user = await User.findById(req.user._id);
-    if (!user) return res.status(404).json({ message: "User not found" });
+if (!user) return res.status(404).json({ message: "User not found" });
 
-    if (user.isBlocked) return res.status(403).json({ message: "Account is blocked" });
-    if (user.isFrozen) return res.status(403).json({ message: "Account is frozen" });
+if (user.isBlocked) return res.status(403).json({ message: "Account is blocked" });
+if (user.isFrozen) return res.status(403).json({ message: "Account is frozen" });
 
-    const wallet = await ensureWallet(user._id);
+const wallet = await ensureWallet(user._id);
 
+// ─── IDENTITY: CP end-users appear as the CP owner to the platform ─────
+// If this request comes from an end-user on a CP domain, the order's
+// userId is stored as the CP owner — not the end user.
+// The real end user is preserved in endUserId for the CP dashboard.
+const isEndUserOnCpDomain =
+  req.childPanel &&
+  req.user &&
+  req.childPanel._id.toString() !== req.user._id.toString();
+
+const orderUserId = isEndUserOnCpDomain ? req.childPanel._id : user._id;
+const endUserId = isEndUserOnCpDomain ? user._id : null;
     // ─── RESOLVE PROVIDER ──────────────────────────────────────────────────
     const providerResult = await resolveProviderProfile({ req, serviceData });
     if (!providerResult) {

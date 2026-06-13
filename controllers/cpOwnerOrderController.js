@@ -5,7 +5,6 @@ import Wallet from "../models/Wallet.js";
 import User from "../models/User.js";
 import logCpAdminAction from "../utils/logCpAdminAction.js";
 import { formatProviderStatusDisplay } from "../utils/providerStatusMapper.js";
-
 import {
   creditChildPanelCommission,
   reverseChildPanelCommission,
@@ -19,8 +18,10 @@ const calculateBalance = (transactions = []) =>
     .reduce((acc, t) => acc + (Number(t.amount) || 0), 0);
 
 const formatOrder = (order) => {
-  const u = order.userId;
-  const isPopulated = u && typeof u === "object" && u.email;
+  // For CP end-user orders: endUserId = real user, userId = CP owner (hidden).
+  // For orders the CP owner placed themselves: endUserId = null, userId = CP owner.
+  const displayUser = order.endUserId || order.userId;
+  const isPopulated = displayUser && typeof displayUser === "object" && displayUser.email;
 
   return {
     _id: order._id,
@@ -38,14 +39,19 @@ const formatOrder = (order) => {
     childPanelCommission: order.childPanelCommission || 0,
     status: order.status,
     providerStatus: order.providerStatus,
-    displayStatus: formatProviderStatusDisplay(order),   // ← NEW
+    displayStatus: formatProviderStatusDisplay(order),
     createdAt: order.createdAt,
     refundProcessed: order.refundProcessed || false,
     placedViaChildPanel: order.placedViaChildPanel || false,
     isOwnOrder: !order.endUserId,
     user: isPopulated
-      ? { _id: u._id, email: u.email, username: u.email?.split("@")[0] || "", balance: u.balance || 0 }
-      : { _id: u?._id || null, email: "Unknown", username: "", balance: 0 },
+      ? {
+          _id: displayUser._id,
+          email: displayUser.email,
+          username: displayUser.email?.split("@")[0] || "",
+          balance: displayUser.balance || 0,
+        }
+      : { _id: displayUser?._id || null, email: "Unknown", username: "", balance: 0 },
   };
 };
 
@@ -54,7 +60,11 @@ const formatOrder = (order) => {
 const processRefund = async ({ order, refundType = "full", customAmount = 0 }) => {
   if (!order || order.refundProcessed) return null;
 
-  const wallet = await Wallet.findOne({ user: order.userId });
+  // Refund goes to the actual payer:
+  // CP end-user orders → endUserId, all others → userId
+  const payerId = order.endUserId || order.userId;
+
+  const wallet = await Wallet.findOne({ user: payerId });
   if (!wallet) return null;
 
   const alreadyRefunded = wallet.transactions.find(
@@ -94,16 +104,14 @@ const processRefund = async ({ order, refundType = "full", customAmount = 0 }) =
   );
   await wallet.save();
 
-  await User.findByIdAndUpdate(order.userId._id || order.userId, {
-    balance: wallet.balance,
-  });
+  await User.findByIdAndUpdate(payerId, { balance: wallet.balance });
 
   order.refundProcessed = true;
   await order.save();
 
   await reverseChildPanelCommission(order);
 
-  return { refundAmount, walletBalance: wallet.balance, walletUserId: wallet.user };
+  return { refundAmount, walletBalance: wallet.balance, walletUserId: payerId };
 };
 
 // ======================= GET ALL ORDERS =======================
@@ -131,6 +139,8 @@ export const getCPOrders = async (req, res) => {
 
     if (search && search.trim()) {
       const clean = search.replace("#", "").trim();
+
+      // Search by end-user email (the real user, stored in endUserId)
       const users = await User.find({
         email: { $regex: clean, $options: "i" },
         childPanelOwner: req.user._id,
@@ -148,10 +158,14 @@ export const getCPOrders = async (req, res) => {
         orQueries.push({ customOrderId: Number(clean) });
         orQueries.push({ rate: Number(clean) });
       }
-      if (userIds.length > 0) orQueries.push({ userId: { $in: userIds } });
+      // Match on endUserId (real end-user) for CP end-user orders
+      if (userIds.length > 0) orQueries.push({ endUserId: { $in: userIds } });
 
-      orderQuery = { childPanelOwner: req.user._id, ...( status ? { status } : {}), $or: orQueries };
-      if (orderQuery.createdAt) {/* keep date filter */}
+      orderQuery = {
+        childPanelOwner: req.user._id,
+        ...(status ? { status } : {}),
+        $or: orQueries,
+      };
     }
 
     const [ordersRaw, total] = await Promise.all([
@@ -205,7 +219,7 @@ export const getCPOrderStats = async (req, res) => {
         { orderId: { $regex: clean, $options: "i" } },
         { service: { $regex: clean, $options: "i" } },
       ];
-      if (userIds.length > 0) orQueries.push({ userId: { $in: userIds } });
+      if (userIds.length > 0) orQueries.push({ endUserId: { $in: userIds } });
       match.$or = orQueries;
     }
 
@@ -251,7 +265,9 @@ export const updateCPOrderStatus = async (req, res) => {
     const order = await Order.findOne({
       _id: req.params.id,
       childPanelOwner: req.user._id,
-    }).populate("userId", "email balance");
+    })
+      .populate({ path: "endUserId", select: "email balance" })
+      .populate({ path: "userId", select: "email balance" });
 
     if (!order) return res.status(404).json({ message: "Order not found" });
     if (order.status === "refunded")
@@ -278,11 +294,29 @@ export const updateCPOrderStatus = async (req, res) => {
     const io = req.app.get("io");
     if (io) {
       io.emit("order:update", formatOrder(order));
-      if (refundData) io.emit("wallet:update", { userId: refundData.walletUserId, balance: refundData.walletBalance });
+      if (refundData)
+        io.emit("wallet:update", {
+          userId: refundData.walletUserId,
+          balance: refundData.walletBalance,
+        });
     }
-    logCpAdminAction({ adminId: req.user._id, adminEmail: req.user.email, childPanelId: req.user._id, action: "COMPLETE_ORDER", targetType: "Order", targetId: order._id, description: `Updated order ${order._id} status to ${status}`, ipAddress: req.ip }).catch(() => {});
 
-    res.json({ message: "Status updated", order: formatOrder(order), refundAmount: refundData?.refundAmount || 0 });
+    logCpAdminAction({
+      adminId: req.user._id,
+      adminEmail: req.user.email,
+      childPanelId: req.user._id,
+      action: "COMPLETE_ORDER",
+      targetType: "Order",
+      targetId: order._id,
+      description: `Updated order ${order._id} status to ${status}`,
+      ipAddress: req.ip,
+    }).catch(() => {});
+
+    res.json({
+      message: "Status updated",
+      order: formatOrder(order),
+      refundAmount: refundData?.refundAmount || 0,
+    });
   } catch (err) {
     console.error("CP UPDATE STATUS ERROR:", err);
     res.status(500).json({ message: "Failed to update status" });
@@ -298,7 +332,9 @@ export const updateCPOrderProgress = async (req, res) => {
     const order = await Order.findOne({
       _id: req.params.id,
       childPanelOwner: req.user._id,
-    }).populate("userId", "email balance");
+    })
+      .populate({ path: "endUserId", select: "email balance" })
+      .populate({ path: "userId", select: "email balance" });
 
     if (!order) return res.status(404).json({ message: "Order not found" });
     if (order.status === "refunded")
@@ -341,7 +377,9 @@ export const refundCPOrder = async (req, res) => {
     const order = await Order.findOne({
       _id: req.params.id,
       childPanelOwner: req.user._id,
-    }).populate("userId", "email balance");
+    })
+      .populate({ path: "endUserId", select: "email balance" })
+      .populate({ path: "userId", select: "email balance" });
 
     if (!order) return res.status(404).json({ message: "Order not found" });
     if (order.status === "refunded")
@@ -358,9 +396,22 @@ export const refundCPOrder = async (req, res) => {
     const io = req.app.get("io");
     if (io) {
       io.emit("order:update", formatOrder(order));
-      io.emit("wallet:update", { userId: refundData.walletUserId, balance: refundData.walletBalance });
+      io.emit("wallet:update", {
+        userId: refundData.walletUserId,
+        balance: refundData.walletBalance,
+      });
     }
-    logCpAdminAction({ adminId: req.user._id, adminEmail: req.user.email, childPanelId: req.user._id, action: "REFUND_ORDER", targetType: "Order", targetId: order._id, description: `Refunded order ${order._id}`, ipAddress: req.ip }).catch(() => {});
+
+    logCpAdminAction({
+      adminId: req.user._id,
+      adminEmail: req.user.email,
+      childPanelId: req.user._id,
+      action: "REFUND_ORDER",
+      targetType: "Order",
+      targetId: order._id,
+      description: `Refunded order ${order._id}`,
+      ipAddress: req.ip,
+    }).catch(() => {});
 
     res.json({ message: "Refund successful", refundAmount: refundData.refundAmount });
   } catch (err) {

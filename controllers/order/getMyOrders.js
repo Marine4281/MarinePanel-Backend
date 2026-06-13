@@ -1,3 +1,5 @@
+// controllers/order/getMyOrders.js
+
 import Order from "../../models/Order.js";
 import { formatProviderStatusDisplay } from "../../utils/providerStatusMapper.js";
 
@@ -12,9 +14,17 @@ export const getMyOrders = async (req, res) => {
       limit = 10,
     } = req.query;
 
-    const query = {
-      userId: req.user._id,
+    // A CP end-user's orders are stored with userId = cpOwner and endUserId = them.
+    // A regular user's orders are stored with userId = them and endUserId = null.
+    // So we match on either field to cover both cases.
+    const userMatch = {
+      $or: [
+        { userId: req.user._id },
+        { endUserId: req.user._id },
+      ],
     };
+
+    const query = { ...userMatch };
 
     if (search && search.trim() !== "") {
       const cleanSearch = search.replace("#", "").trim();
@@ -28,7 +38,12 @@ export const getMyOrders = async (req, res) => {
         orConditions.push({ customOrderId: Number(cleanSearch) });
       }
 
-      query.$or = orConditions;
+      // Merge search $or with userMatch $or using $and
+      query.$and = [
+        { $or: userMatch.$or },
+        { $or: orConditions },
+      ];
+      delete query.$or;
     }
 
     if (status) {
@@ -58,9 +73,6 @@ export const getMyOrders = async (req, res) => {
       Order.countDocuments(query),
     ]);
 
-    // Attach displayStatus so the frontend always shows the accurate
-    // provider-facing status (e.g. "In progress") rather than the
-    // internal system status (e.g. "processing").
     const orders = ordersRaw.map((order) => ({
       ...order,
       displayStatus: formatProviderStatusDisplay(order),

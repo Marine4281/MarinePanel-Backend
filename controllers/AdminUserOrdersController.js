@@ -89,14 +89,12 @@ const processRefund = async ({
    HELPER: EMIT ORDER UPDATED TO USER ROOM
 ====================================================== */
 const emitOrderUpdated = (io, order, refundData = null) => {
-  // Broadcast to admin pages
   io.emit("order:update", {
     _id: order._id,
     status: order.status,
     quantityDelivered: order.quantityDelivered,
   });
 
-  // ✅ Target the end-user's socket room so their Orders page updates live
   const notifyUserId =
     order.endUserId?._id || order.endUserId ||
     order.userId?._id || order.userId;
@@ -166,7 +164,6 @@ export const getUserOrders = async (req, res) => {
       if (toDate) {
         const end = new Date(toDate);
         end.setHours(23, 59, 59, 999);
-
         query.createdAt.$lte = end;
       }
     }
@@ -232,10 +229,7 @@ export const getUserOrders = async (req, res) => {
 
     const formattedOrders = orders.map((order) => {
       const isCPOrder = !!(order.childPanelOwner && order.childPanelOwner._id);
-
-      const displayUser = isCPOrder
-        ? order.childPanelOwner
-        : order.userId;
+      const displayUser = isCPOrder ? order.childPanelOwner : order.userId;
 
       return {
         ...order,
@@ -254,10 +248,7 @@ export const getUserOrders = async (req, res) => {
     });
   } catch (error) {
     console.error("Get Orders Error:", error);
-
-    res.status(500).json({
-      message: "Failed to fetch orders",
-    });
+    res.status(500).json({ message: "Failed to fetch orders" });
   }
 };
 
@@ -297,6 +288,7 @@ export const updateOrderStatus = async (req, res) => {
     }
 
     order.status = status;
+    order.providerStatus = status; // ✅ keep displayStatus in sync for manual overrides
 
     if (status === "completed") {
       order.quantityDelivered = order.quantity;
@@ -374,6 +366,8 @@ export const updateOrderProgress = async (req, res) => {
       order.status = "processing";
     }
 
+    order.providerStatus = order.status; // ✅ keep displayStatus in sync for manual overrides
+
     await order.save();
 
     if (order.status === "completed") {
@@ -414,6 +408,7 @@ export const refundOrder = async (req, res) => {
     }
 
     order.status = "refunded";
+    order.providerStatus = "refunded"; // ✅ keep displayStatus in sync for manual overrides
 
     await order.save();
 
@@ -456,14 +451,8 @@ export const getOrderStats = async (req, res) => {
 
     if (fromDate || toDate) {
       match.createdAt = {};
-
-      if (fromDate) {
-        match.createdAt.$gte = new Date(fromDate);
-      }
-
-      if (toDate) {
-        match.createdAt.$lte = new Date(toDate);
-      }
+      if (fromDate) match.createdAt.$gte = new Date(fromDate);
+      if (toDate) match.createdAt.$lte = new Date(toDate);
     }
 
     if (search) {
@@ -490,7 +479,6 @@ export const getOrderStats = async (req, res) => {
 
     const stats = await Order.aggregate([
       { $match: match },
-
       {
         $facet: {
           total: [{ $count: "count" }],

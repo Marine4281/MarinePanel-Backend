@@ -18,8 +18,6 @@ const calculateBalance = (transactions = []) =>
     .reduce((acc, t) => acc + (Number(t.amount) || 0), 0);
 
 const formatOrder = (order) => {
-  // For CP end-user orders: endUserId = real user, userId = CP owner (hidden).
-  // For orders the CP owner placed themselves: endUserId = null, userId = CP owner.
   const displayUser = order.endUserId || order.userId;
   const isPopulated = displayUser && typeof displayUser === "object" && displayUser.email;
 
@@ -60,8 +58,6 @@ const formatOrder = (order) => {
 const processRefund = async ({ order, refundType = "full", customAmount = 0 }) => {
   if (!order || order.refundProcessed) return null;
 
-  // Refund goes to the actual payer:
-  // CP end-user orders → endUserId, all others → userId
   const payerId = order.endUserId || order.userId;
 
   const wallet = await Wallet.findOne({ user: payerId });
@@ -140,7 +136,6 @@ export const getCPOrders = async (req, res) => {
     if (search && search.trim()) {
       const clean = search.replace("#", "").trim();
 
-      // Search by end-user email (the real user, stored in endUserId)
       const users = await User.find({
         email: { $regex: clean, $options: "i" },
         childPanelOwner: req.user._id,
@@ -158,7 +153,6 @@ export const getCPOrders = async (req, res) => {
         orQueries.push({ customOrderId: Number(clean) });
         orQueries.push({ rate: Number(clean) });
       }
-      // Match on endUserId (real end-user) for CP end-user orders
       if (userIds.length > 0) orQueries.push({ endUserId: { $in: userIds } });
 
       orderQuery = {
@@ -276,6 +270,8 @@ export const updateCPOrderStatus = async (req, res) => {
       return res.status(400).json({ message: "Completed order cannot be modified" });
 
     order.status = status;
+    order.providerStatus = status; // ✅ keep displayStatus in sync for manual overrides
+
     if (status === "completed") {
       order.quantityDelivered = order.quantity;
       await creditChildPanelCommission(order);
@@ -292,30 +288,28 @@ export const updateCPOrderStatus = async (req, res) => {
     await order.save();
 
     const io = req.app.get("io");
-if (io) {
-  // Notify CP dashboard (listens on "order:update")
-  io.emit("order:update", formatOrder(order));
+    if (io) {
+      io.emit("order:update", formatOrder(order));
 
-  // Notify the end-user's orders page (listens on "orderUpdated" in their room)
-  const notifyUserId = order.endUserId?._id || order.endUserId || order.userId?._id || order.userId;
-  if (notifyUserId) {
-    io.to(notifyUserId.toString()).emit("orderUpdated", {
-      orderId: order._id,
-      status: order.status,
-      providerStatus: order.providerStatus || order.status,
-      delivered: order.quantityDelivered,
-      total: order.quantity,
-      refundProcessed: order.refundProcessed,
-    });
-  }
+      const notifyUserId = order.endUserId?._id || order.endUserId || order.userId?._id || order.userId;
+      if (notifyUserId) {
+        io.to(notifyUserId.toString()).emit("orderUpdated", {
+          orderId: order._id,
+          status: order.status,
+          providerStatus: order.providerStatus || order.status,
+          delivered: order.quantityDelivered,
+          total: order.quantity,
+          refundProcessed: order.refundProcessed,
+        });
+      }
 
-  if (refundData) {
-    io.emit("wallet:update", {
-      userId: refundData.walletUserId,
-      balance: refundData.walletBalance,
-    });
-  }
-}
+      if (refundData) {
+        io.emit("wallet:update", {
+          userId: refundData.walletUserId,
+          balance: refundData.walletBalance,
+        });
+      }
+    }
 
     logCpAdminAction({
       adminId: req.user._id,
@@ -372,6 +366,8 @@ export const updateCPOrderProgress = async (req, res) => {
       order.status = "processing";
     }
 
+    order.providerStatus = order.status; // ✅ keep displayStatus in sync for manual overrides
+
     await order.save();
 
     const io = req.app.get("io");
@@ -407,30 +403,31 @@ export const refundCPOrder = async (req, res) => {
       return res.status(400).json({ message: "Refund failed or already processed" });
 
     order.status = "refunded";
+    order.providerStatus = "refunded"; // ✅ keep displayStatus in sync for manual overrides
+
     await order.save();
 
-    
     const io = req.app.get("io");
-if (io) {
-  io.emit("order:update", formatOrder(order));
+    if (io) {
+      io.emit("order:update", formatOrder(order));
 
-  const notifyUserId = order.endUserId?._id || order.endUserId || order.userId?._id || order.userId;
-  if (notifyUserId) {
-    io.to(notifyUserId.toString()).emit("orderUpdated", {
-      orderId: order._id,
-      status: order.status,
-      providerStatus: order.providerStatus || order.status,
-      delivered: order.quantityDelivered,
-      total: order.quantity,
-      refundProcessed: order.refundProcessed,
-    });
-  }
+      const notifyUserId = order.endUserId?._id || order.endUserId || order.userId?._id || order.userId;
+      if (notifyUserId) {
+        io.to(notifyUserId.toString()).emit("orderUpdated", {
+          orderId: order._id,
+          status: order.status,
+          providerStatus: order.providerStatus || order.status,
+          delivered: order.quantityDelivered,
+          total: order.quantity,
+          refundProcessed: order.refundProcessed,
+        });
+      }
 
-  io.emit("wallet:update", {
-    userId: refundData.walletUserId,
-    balance: refundData.walletBalance,
-  });
-}
+      io.emit("wallet:update", {
+        userId: refundData.walletUserId,
+        balance: refundData.walletBalance,
+      });
+    }
 
     logCpAdminAction({
       adminId: req.user._id,

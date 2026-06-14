@@ -4,7 +4,7 @@ import Order from "../models/Order.js";
 import ProviderProfile from "../models/ProviderProfile.js";
 import Wallet from "../models/Wallet.js";
 import axios from "axios";
-import { mapProviderStatus, calculateDelivered } from "../utils/providerStatusMapper.js";
+import { mapProviderStatus, calculateDelivered, formatProviderStatusDisplay } from "../utils/providerStatusMapper.js";
 import { creditResellerCommission, reverseResellerCommission } from "../controllers/orderController.js";
 
 const calculateBalance = (transactions = []) =>
@@ -143,11 +143,6 @@ export const syncProviderOrders = async (io) => {
             rawStatus.toLowerCase().replace(/\s+/g, "").trim()
           );
 
-          const providerExplicitlyComplete = mappedStatus === "completed";
-          if (providerOrder.remains == 0 && !providerExplicitlyComplete) {
-            // Keep current mapped status — provider hasn't confirmed yet
-          }
-
           const delivered = calculateDelivered(order.quantity, providerOrder.remains);
           let statusChanged = false;
 
@@ -169,8 +164,9 @@ export const syncProviderOrders = async (io) => {
           if (statusChanged) await order.save();
         }
 
-        // ── REFUND ──────────────────────────────────────────────
-        // Always refund the actual payer: endUserId (CP end-user) or userId (everyone else)
+        /* ============================================================
+           REFUND — goes to the actual payer (endUserId for CP end-users)
+        ============================================================ */
         if (!order.isFreeOrder && order.isCharged && !order.refundProcessed) {
           const wallet = await getPayerWallet(order);
 
@@ -230,30 +226,36 @@ export const syncProviderOrders = async (io) => {
           await creditResellerCommission(order);
         }
 
-        // Emit to the real user who can see this order in their UI
-        // For CP end-user orders: notify the end-user (endUserId)
-        // For all others: notify userId
-        // Emit to the real user who can see this order in their UI
-const notifyUserId = order.endUserId || order.userId;
+        /* ============================================================
+           SOCKET NOTIFICATIONS
+           - Targeted "orderUpdated" → end-user's Orders page (joined room)
+           - Broadcast "order:update" → CP admin dashboard + main admin
+        ============================================================ */
+        if (io) {
+          const notifyUserId = order.endUserId || order.userId;
 
-if (io) {
-  // Targeted: end-user's Orders page (listens on "orderUpdated" in their room)
-  io.to(notifyUserId.toString()).emit("orderUpdated", {
-    orderId: order._id,
-    status: order.status,
-    providerStatus: order.providerStatus,
-    delivered: order.quantityDelivered,
-    total: order.quantity,
-    refundProcessed: order.refundProcessed,
-  });
+          // End-user's Orders page (listens on "orderUpdated" in their room)
+          io.to(notifyUserId.toString()).emit("orderUpdated", {
+            orderId: order._id,
+            status: order.status,
+            providerStatus: order.providerStatus,
+            delivered: order.quantityDelivered,
+            total: order.quantity,
+            refundProcessed: order.refundProcessed,
+          });
 
-  // Broadcast: CP admin dashboard (listens on "order:update")
-  // Also covers main platform admin dashboard
-  io.emit("order:update", {
-    _id: order._id,
-    status: order.status,
-    quantityDelivered: order.quantityDelivered,
-    refundProcessed: order.refundProcessed,
-    displayStatus: formatProviderStatusDisplay(order),
-  });
-}
+          // CP admin dashboard + main platform admin (listens on "order:update" broadcast)
+          io.emit("order:update", {
+            _id: order._id,
+            status: order.status,
+            quantityDelivered: order.quantityDelivered,
+            refundProcessed: order.refundProcessed,
+            displayStatus: formatProviderStatusDisplay(order),
+          });
+        }
+      }
+    }
+  } catch (error) {
+    console.error("❌ Order sync error:", error);
+  }
+};

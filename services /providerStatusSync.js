@@ -233,7 +233,8 @@ export const syncProviderOrders = async (io) => {
         // Emit to the real user who can see this order in their UI
         // For CP end-user orders: notify the end-user (endUserId)
         // For all others: notify userId
-        const notifyUserId = order.endUserId || order.userId;
+        // Emit to the real user who can see this order in their UI
+const notifyUserId = order.endUserId || order.userId;
 
 if (io) {
   // Targeted: end-user's Orders page (listens on "orderUpdated" in their room)

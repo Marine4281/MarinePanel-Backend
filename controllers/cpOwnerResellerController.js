@@ -472,3 +472,86 @@ export const getCPResellerOrders = async (req, res) => {
     res.status(500).json({ success: false, message: "Failed to fetch orders" });
   }
 };
+// ======================= UPDATE RESELLER END-USER BALANCE =======================
+// CP owner can adjust the wallet balance of a user who belongs to one of their resellers.
+// Double-scoped: reseller must belong to this CP, user must belong to that reseller.
+
+export const updateCPResellerUserBalance = async (req, res) => {
+  try {
+    const { id: resellerId, userId } = req.params;
+    const newBalance = Number(req.body.balance);
+
+    if (!isValidId(resellerId) || !isValidId(userId)) {
+      return res.status(400).json({ success: false, message: "Invalid ID" });
+    }
+
+    if (Number.isNaN(newBalance)) {
+      return res.status(400).json({ success: false, message: "Invalid balance" });
+    }
+
+    // Verify reseller belongs to this child panel
+    const reseller = await User.findOne({
+      _id: resellerId,
+      isReseller: true,
+      childPanelOwner: req.user._id,
+    });
+    if (!reseller) {
+      return res.status(404).json({ success: false, message: "Reseller not found" });
+    }
+
+    // Verify user belongs to that reseller
+    const user = await User.findOne({ _id: userId, resellerOwner: resellerId });
+    if (!user) {
+      return res.status(404).json({ success: false, message: "User not found" });
+    }
+
+    let wallet = await Wallet.findOne({ user: user._id });
+
+    if (!wallet) {
+      wallet = await Wallet.create({
+        user: user._id,
+        transactions: [
+          {
+            type: "CP Admin Adjustment",
+            amount: newBalance,
+            status: "Completed",
+            note: "Initial balance set by child panel admin",
+            createdAt: new Date(),
+          },
+        ],
+      });
+    } else {
+      const current = calculateBalance(wallet.transactions);
+      const diff = newBalance - current;
+      if (diff !== 0) {
+        wallet.transactions.push({
+          type: "CP Admin Adjustment",
+          amount: diff,
+          status: "Completed",
+          note: "Balance updated by child panel admin",
+          createdAt: new Date(),
+        });
+      }
+    }
+
+    wallet.balance = calculateBalance(wallet.transactions);
+    await wallet.save();
+    await User.findByIdAndUpdate(user._id, { balance: wallet.balance });
+
+    logCpAdminAction({
+      adminId: req.user._id,
+      adminEmail: req.user.email,
+      childPanelId: req.user._id,
+      action: "UPDATE_RESELLER_USER_BALANCE",
+      targetType: "User",
+      targetId: user._id,
+      description: `Updated balance for reseller end-user ${user.email} (reseller: ${reseller.email}) to $${wallet.balance}`,
+      ipAddress: req.ip,
+    }).catch(() => {});
+
+    res.json({ success: true, balance: wallet.balance });
+  } catch (error) {
+    console.error("CP UPDATE RESELLER USER BALANCE ERROR:", error);
+    res.status(500).json({ success: false, message: "Failed to update balance" });
+  }
+};

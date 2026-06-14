@@ -211,6 +211,14 @@ export const activateReseller = async (req, res) => {
       }
     }
 
+     // ── Refresh CORS allowlist so new domain is unblocked immediately ──
+    try {
+      const { refreshResellerDomains } = await import("../app.js");
+      await refreshResellerDomains();
+    } catch (e) {
+      console.error("Failed to refresh reseller domains after activation:", e.message);
+    }
+
     res.json({
       message: "Reseller activated successfully",
       domain: finalDomain,
@@ -221,7 +229,6 @@ export const activateReseller = async (req, res) => {
     res.status(500).json({ message: "Activation failed" });
   }
 };
-
 /* ================================================
    DASHBOARD (unchanged)
 ================================================ */

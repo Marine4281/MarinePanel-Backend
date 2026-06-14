@@ -235,19 +235,24 @@ export const syncProviderOrders = async (io) => {
         // For all others: notify userId
         const notifyUserId = order.endUserId || order.userId;
 
-        if (io) {
-          io.to(notifyUserId.toString()).emit("orderUpdated", {
-            orderId: order._id,
-            status: order.status,
-            providerStatus: order.providerStatus,
-            delivered: order.quantityDelivered,
-            total: order.quantity,
-            refundProcessed: order.refundProcessed,
-          });
-        }
-      }
-    }
-  } catch (error) {
-    console.error("❌ Order sync error:", error);
-  }
-};
+if (io) {
+  // Targeted: end-user's Orders page (listens on "orderUpdated" in their room)
+  io.to(notifyUserId.toString()).emit("orderUpdated", {
+    orderId: order._id,
+    status: order.status,
+    providerStatus: order.providerStatus,
+    delivered: order.quantityDelivered,
+    total: order.quantity,
+    refundProcessed: order.refundProcessed,
+  });
+
+  // Broadcast: CP admin dashboard (listens on "order:update")
+  // Also covers main platform admin dashboard
+  io.emit("order:update", {
+    _id: order._id,
+    status: order.status,
+    quantityDelivered: order.quantityDelivered,
+    refundProcessed: order.refundProcessed,
+    displayStatus: formatProviderStatusDisplay(order),
+  });
+}

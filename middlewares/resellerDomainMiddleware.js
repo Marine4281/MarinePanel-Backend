@@ -92,6 +92,11 @@ export const detectResellerDomain = async (req, res, next) => {
         supportTelegram: reseller.supportTelegram || "",
         supportWhatsappChannel:
           reseller.supportWhatsappChannel || "",
+
+        // ── FIX: this was missing, so reseller custom SEO never
+        // reached the public /seo/public endpoint and always fell
+        // back to generic defaults on live reseller domains.
+        resellerSeo: reseller.resellerSeo || {},
       };
     }
 

@@ -246,9 +246,11 @@ seo: {
   description: { type: String, default: "Buy Instagram followers, TikTok views and YouTube subscribers at the best prices. Trusted SMM reseller panel with instant delivery." },
   keywords:    { type: String, default: "cheap smm panel, best smm panel, smm reseller panel, instagram followers panel" },
   ogImage:     { type: String, default: "" }, // Cloudinary URL
+  ogImagePublicId: { type: String, default: "" }, // Cloudinary public_id (was missing — old images were never deleted)
   twitterCard: { type: String, default: "summary_large_image", enum: ["summary", "summary_large_image"] },
   canonical:   { type: String, default: "https://marinepanel.online/" },
   favicon:     { type: String, default: "" }, // Cloudinary URL
+  faviconPublicId: { type: String, default: "" }, // Cloudinary public_id (was missing — old images were never deleted)
   // Schema.org org social links
   schemaOrg: {
     whatsapp:   { type: String, default: "" },

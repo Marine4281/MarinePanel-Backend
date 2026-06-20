@@ -157,6 +157,19 @@ const userSchema = new mongoose.Schema(
   default: "",
 },
 
+// ── RESELLER SEO (was missing — settings never persisted to DB) ──
+resellerSeo: {
+  title:             { type: String, default: "" },
+  description:       { type: String, default: "" },
+  keywords:           { type: String, default: "" },
+  ogImage:            { type: String, default: "" },
+  ogImagePublicId:    { type: String, default: "" },
+  favicon:            { type: String, default: "" },
+  faviconPublicId:    { type: String, default: "" },
+  twitterCard:        { type: String, default: "summary_large_image", enum: ["summary", "summary_large_image"] },
+  canonical:          { type: String, default: "" },
+},
+
 // ADD after childPanelLogo field (~line 335):
 childPanelLogoPublicId: {
   type: String,
@@ -347,6 +360,19 @@ childPanelLogoPublicId: {
       type: String,
       default: "#1e40af",
       trim: true,
+    },
+
+    // ── CHILD PANEL SEO (was missing — settings never persisted to DB) ──
+    childPanelSeo: {
+      title:           { type: String, default: "" },
+      description:     { type: String, default: "" },
+      keywords:        { type: String, default: "" },
+      ogImage:         { type: String, default: "" },
+      ogImagePublicId: { type: String, default: "" },
+      favicon:         { type: String, default: "" },
+      faviconPublicId: { type: String, default: "" },
+      twitterCard:     { type: String, default: "summary_large_image", enum: ["summary", "summary_large_image"] },
+      canonical:       { type: String, default: "" },
     },
 
     // Support links

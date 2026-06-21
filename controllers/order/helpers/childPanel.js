@@ -16,5 +16,25 @@ export const resolveChildPanelData = async (user) => {
     }
   }
 
+  // ─── NEW: Reseller → CP chain ────────────────────────────────────────
+  // If this user belongs to a reseller who belongs to a child panel,
+  // that child panel should own this order too.
+  if (!childPanelOwnerId && user.resellerOwner) {
+    const reseller = await User.findById(user.resellerOwner).select(
+      "childPanelOwner isChildPanel childPanelIsActive childPanelPerOrderFee"
+    );
+
+    if (reseller && reseller.childPanelOwner) {
+      const cpOwner = await User.findById(reseller.childPanelOwner).select(
+        "isChildPanel childPanelIsActive childPanelPerOrderFee"
+      );
+
+      if (cpOwner && cpOwner.isChildPanel && cpOwner.childPanelIsActive) {
+        childPanelOwnerId = cpOwner._id;
+        childPanelPerOrderFee = Number(cpOwner.childPanelPerOrderFee || 0);
+      }
+    }
+  }
+
   return { childPanelOwnerId, childPanelPerOrderFee };
 };

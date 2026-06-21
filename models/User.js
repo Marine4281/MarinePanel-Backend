@@ -230,6 +230,12 @@ childPanelLogoPublicId: {
       default: null,
     },
 
+    resellerLandingTemplate: {
+       type: String,
+       enum: ["default", "dark-pro", "minimal", "vibrant"],
+       default: "default",
+     },
+
     /*
     --------------------------------
     RESELLER USER RELATION
@@ -360,6 +366,12 @@ childPanelLogoPublicId: {
       type: String,
       default: "#1e40af",
       trim: true,
+    },
+    
+    childPanelLandingTemplate: {
+      type: String,
+      enum: ["default", "dark-pro", "minimal", "vibrant"],
+      default: "default",
     },
 
     // ── CHILD PANEL SEO (was missing — settings never persisted to DB) ──

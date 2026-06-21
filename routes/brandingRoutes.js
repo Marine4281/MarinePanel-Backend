@@ -3,6 +3,7 @@
 import express from "express";
 import {
   getPublicBranding,
+  updateResellerLandingTemplate,
   getDashboardBranding
 } from "../controllers/brandingController.js";
 
@@ -44,6 +45,10 @@ router.get(
   protect,
   getDashboardBranding
 );
+
+//Landing Templates
+
+router.put("/landing-template", authMiddleware, resellerOnly, updateResellerLandingTemplate);
 
 
 

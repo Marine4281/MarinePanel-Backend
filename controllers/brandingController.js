@@ -157,3 +157,27 @@ export const updateBranding = async (req, res) => {
     res.status(500).json({ message: "Failed to update branding" });
   }
 };
+
+export const updateResellerLandingTemplate = async (req, res) => {
+  try {
+    const { landingTemplate } = req.body;
+    const VALID = ["default", "dark-pro", "minimal", "vibrant"];
+    if (!VALID.includes(landingTemplate)) {
+      return res.status(400).json({
+        message: `Invalid template. Must be one of: ${VALID.join(", ")}`,
+      });
+    }
+
+    const user = await User.findById(req.user._id);
+    if (!user) return res.status(404).json({ message: "User not found" });
+    if (!user.resellerOwner) return res.status(403).json({ message: "Not a reseller" });
+
+    user.resellerLandingTemplate = landingTemplate;
+    await user.save();
+
+    res.json({ success: true, landingTemplate: user.resellerLandingTemplate });
+  } catch (err) {
+    console.error("RESELLER UPDATE LANDING TEMPLATE ERROR:", err);
+    res.status(500).json({ message: "Failed to update landing template" });
+  }
+};

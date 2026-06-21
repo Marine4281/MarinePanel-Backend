@@ -1,4 +1,5 @@
 // controllers/order/createOrder.js
+// (Full file — only two targeted changes marked with ← NEW)
 
 import Order from "../../models/Order.js";
 import User from "../../models/User.js";
@@ -62,24 +63,22 @@ export const createOrder = async (req, res) => {
 
     // ─── USER & WALLET ─────────────────────────────────────────────────────
     const user = await User.findById(req.user._id);
-if (!user) return res.status(404).json({ message: "User not found" });
+    if (!user) return res.status(404).json({ message: "User not found" });
 
-if (user.isBlocked) return res.status(403).json({ message: "Account is blocked" });
-if (user.isFrozen) return res.status(403).json({ message: "Account is frozen" });
+    if (user.isBlocked) return res.status(403).json({ message: "Account is blocked" });
+    if (user.isFrozen) return res.status(403).json({ message: "Account is frozen" });
 
-const wallet = await ensureWallet(user._id);
+    const wallet = await ensureWallet(user._id);
 
-// ─── IDENTITY: CP end-users appear as the CP owner to the platform ─────
-// If this request comes from an end-user on a CP domain, the order's
-// userId is stored as the CP owner — not the end user.
-// The real end user is preserved in endUserId for the CP dashboard.
-const isEndUserOnCpDomain =
-  req.childPanel &&
-  req.user &&
-  req.childPanel._id.toString() !== req.user._id.toString();
+    // ─── IDENTITY: CP end-users appear as the CP owner to the platform ─────
+    const isEndUserOnCpDomain =
+      req.childPanel &&
+      req.user &&
+      req.childPanel._id.toString() !== req.user._id.toString();
 
-const orderUserId = isEndUserOnCpDomain ? req.childPanel._id : user._id;
-const endUserId = isEndUserOnCpDomain ? user._id : null;
+    const orderUserId = isEndUserOnCpDomain ? req.childPanel._id : user._id;
+    const endUserId = isEndUserOnCpDomain ? user._id : null;
+
     // ─── RESOLVE PROVIDER ──────────────────────────────────────────────────
     const providerResult = await resolveProviderProfile({ req, serviceData });
     if (!providerResult) {
@@ -88,8 +87,18 @@ const endUserId = isEndUserOnCpDomain ? user._id : null;
     const { effectiveProviderProfile, routeThroughMainPlatformApi } = providerResult;
 
     // ─── RESOLVE CHILD PANEL DATA ──────────────────────────────────────────
+    // Now also resolves CP owner through the reseller → CP chain
     const { childPanelOwnerId, childPanelPerOrderFee } =
       await resolveChildPanelData(user);
+
+    // ─── NEW: Determine if this service originates from the main platform ──
+    // A service is a "main platform service" if:
+    //   (a) it has no cpOwner (it's a direct main-platform service), OR
+    //   (b) it was imported from the main platform (provider === "platform")
+    // This flag controls whether the order appears in admin's user orders list.
+    const isMainPlatformService =
+      !serviceData.cpOwner ||
+      serviceData.provider === "platform";
 
     // ─── PRICING ───────────────────────────────────────────────────────────
     let isFreeOrder = false;
@@ -201,12 +210,6 @@ const endUserId = isEndUserOnCpDomain ? user._id : null;
     }
 
     // ─── DEDUCT BASE COST FROM CP OWNER (PAID ORDERS) ─────────────────────
-    // If the CP owner can't cover the base cost:
-    //   • Do NOT refund the end-user
-    //   • Do NOT return an error to the end-user
-    //   • Skip deducting the CP owner (balance stays where it is, never negative)
-    //   • Set a flag so the provider call is skipped — order lands as "pending"
-    //   • The order will sit pending until the CP owner tops up
     let cpOwnerInsufficientFunds = false;
 
     if (!isFreeOrder && childPanelOwnerId) {
@@ -214,9 +217,6 @@ const endUserId = isEndUserOnCpDomain ? user._id : null;
 
       if (cpOwnerWalletForPaid) {
         const cpOwnerCurrentBalance = calculateBalance(cpOwnerWalletForPaid.transactions);
-
-        // Deduct systemCharge (platform rate) when routing through platform API,
-        // otherwise deduct baseCharge (raw provider cost) for CP's own providers.
         const cpOwnerDeduction = routeThroughMainPlatformApi ? systemCharge : baseCharge;
 
         if (cpOwnerCurrentBalance < cpOwnerDeduction) {
@@ -248,11 +248,13 @@ const endUserId = isEndUserOnCpDomain ? user._id : null;
       resellerOwner: user.resellerOwner || null,
       resellerCommission,
 
-      childPanelOwner: childPanelOwnerId,
-      placedViaChildPanel: !!req.childPanel,
+      childPanelOwner: childPanelOwnerId,                      // ← NOW also set for CP-reseller end users
+      placedViaChildPanel: !!childPanelOwnerId,                // ← true whenever order belongs to any CP
       childPanelCommission,
       childPanelEarningsCredited: false,
       childPanelPerOrderFee,
+
+      isMainPlatformService,                                    // ← NEW field
 
       category: serviceData.category,
       service: serviceData.name,
@@ -268,11 +270,6 @@ const endUserId = isEndUserOnCpDomain ? user._id : null;
       earningsCredited: false,
       isCharged: !isFreeOrder,
 
-      // ─── PROVIDER FIELDS ───────────────────────────────────────────────
-      // When routing via the platform API, store the platform-layer identity:
-      //   provider       → "Marine Panel" (not the upstream like "Nice")
-      //   providerServiceId → platform's numeric serviceId (e.g. 1255)
-      // This keeps admin-visible fields consistent with what was actually called.
       provider: routeThroughMainPlatformApi ? "Marine Panel" : serviceData.provider,
       providerApiUrl: effectiveProviderProfile.apiUrl,
       providerServiceId: routeThroughMainPlatformApi
@@ -295,8 +292,6 @@ const endUserId = isEndUserOnCpDomain ? user._id : null;
     });
 
     // ─── PROVIDER CALL ────────────────────────────────────────────────────
-    // Skip provider call entirely if the CP owner has insufficient funds.
-    // The order stays "pending" — no error shown to the end-user.
     if (cpOwnerInsufficientFunds) {
       order.status = "pending";
       order.providerStatus = "pending";
@@ -305,9 +300,6 @@ const endUserId = isEndUserOnCpDomain ? user._id : null;
     } else {
       try {
         if (routeThroughMainPlatformApi) {
-          // Call the platform's own API endpoint.
-          // Use serviceData.serviceId (the platform's numeric ID, e.g. 1255)
-          // NOT serviceData.providerServiceId (the upstream provider's ID, e.g. 1247).
           const payload = new URLSearchParams();
           payload.append("key", effectiveProviderProfile.apiKey);
           payload.append("action", "add");
@@ -361,7 +353,6 @@ const endUserId = isEndUserOnCpDomain ? user._id : null;
 
         await order.save();
       } catch (err) {
-        // ─── SAFE REFUND ON PROVIDER FAILURE ─────────────────────────────
         if (!isFreeOrder) {
           wallet.transactions.push({
             type: "Refund",

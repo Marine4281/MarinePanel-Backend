@@ -18,8 +18,14 @@ const calculateBalance = (transactions = []) =>
     .reduce((acc, t) => acc + (Number(t.amount) || 0), 0);
 
 const formatOrder = (order) => {
+  // For direct CP domain end-users: endUserId holds the real end user
+  // For CP-reseller end-users: endUserId is null, but userId is the end user
+  //   (because req.childPanel was not set, so orderUserId = user._id)
   const displayUser = order.endUserId || order.userId;
   const isPopulated = displayUser && typeof displayUser === "object" && displayUser.email;
+
+  // Determine if this order came via a CP reseller (no endUserId but has resellerOwner)
+  const isResellerEndUserOrder = !order.endUserId && !!order.resellerOwner;
 
   return {
     _id: order._id,
@@ -41,7 +47,8 @@ const formatOrder = (order) => {
     createdAt: order.createdAt,
     refundProcessed: order.refundProcessed || false,
     placedViaChildPanel: order.placedViaChildPanel || false,
-    isOwnOrder: !order.endUserId,
+    isOwnOrder: !order.endUserId && !isResellerEndUserOrder,
+    isResellerEndUserOrder,
     user: isPopulated
       ? {
           _id: displayUser._id,

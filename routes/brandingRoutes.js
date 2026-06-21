@@ -11,7 +11,6 @@ import {
 
 import { protect } from "../middlewares/authMiddleware.js";
 import { detectResellerDomain } from "../middlewares/resellerDomainMiddleware.js";
-import { childPanelOnly } from "../middlewares/adminMiddleware.js";
 
 const router = express.Router();
 
@@ -39,27 +38,25 @@ router.get(
 
 /*
 --------------------------------
-🖼️ LANDING TEMPLATE
-(CHILD PANEL OWNER ONLY)
+🖼️ LANDING TEMPLATE (RESELLER ONLY)
+FIX 3: removed wrong childPanelOnly middleware
+FIX 4: changed put → patch to match frontend API.patch() call
 --------------------------------
 */
-router.put(
+router.patch(
   "/landing-template",
   protect,
-  childPanelOnly,
   updateResellerLandingTemplate
 );
 
 /*
 --------------------------------
-✏️ UPDATE BRANDING
-(CHILD PANEL OWNER ONLY)
+✏️ UPDATE BRANDING (RESELLER ONLY)
 --------------------------------
 */
 router.patch(
   "/",
   protect,
-  childPanelOnly,
   updateBranding
 );
 

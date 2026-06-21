@@ -22,8 +22,7 @@ export const getPublicBranding = async (req, res) => {
           supportWhatsapp:        req.brand.supportWhatsapp            || "",
           supportTelegram:        req.brand.supportTelegram            || "",
           supportWhatsappChannel: req.brand.supportWhatsappChannel     || "",
-          landingTemplate: user.childPanelLandingTemplate || "default",
-          
+          landingTemplate:        req.childPanel.childPanelLandingTemplate || "default", // FIX 1a: was `user.childPanelLandingTemplate`
         });
       }
 
@@ -36,7 +35,7 @@ export const getPublicBranding = async (req, res) => {
         supportWhatsapp:        req.brand.supportWhatsapp        || "",
         supportTelegram:        req.brand.supportTelegram        || "",
         supportWhatsappChannel: req.brand.supportWhatsappChannel || "",
-        landingTemplate: user.resellerLandingTemplate || "default",
+        landingTemplate:        req.brand.resellerLandingTemplate || "default", // FIX 1b: was `user.resellerLandingTemplate`
       });
     }
 
@@ -80,6 +79,7 @@ export const getDashboardBranding = async (req, res) => {
         supportWhatsapp:        req.user.supportWhatsapp        || "",
         supportTelegram:        req.user.supportTelegram        || "",
         supportWhatsappChannel: req.user.supportWhatsappChannel || "",
+        landingTemplate:        req.user.resellerLandingTemplate || "default", // FIX 2: was missing entirely
       });
     }
 
@@ -161,10 +161,17 @@ export const updateBranding = async (req, res) => {
   }
 };
 
+
+/*
+========================================
+UPDATE LANDING TEMPLATE (RESELLER ONLY)
+========================================
+*/
 export const updateResellerLandingTemplate = async (req, res) => {
   try {
     const { landingTemplate } = req.body;
     const VALID = ["default", "dark-pro", "minimal", "vibrant"];
+
     if (!VALID.includes(landingTemplate)) {
       return res.status(400).json({
         message: `Invalid template. Must be one of: ${VALID.join(", ")}`,
@@ -173,7 +180,7 @@ export const updateResellerLandingTemplate = async (req, res) => {
 
     const user = await User.findById(req.user._id);
     if (!user) return res.status(404).json({ message: "User not found" });
-    if (!user.resellerOwner) return res.status(403).json({ message: "Not a reseller" });
+    if (!user.isReseller) return res.status(403).json({ message: "Not a reseller" }); // FIX 5: was user.resellerOwner
 
     user.resellerLandingTemplate = landingTemplate;
     await user.save();

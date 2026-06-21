@@ -1,15 +1,17 @@
 // routes/brandingRoutes.js
 
 import express from "express";
+
 import {
   getPublicBranding,
+  updateBranding,
   updateResellerLandingTemplate,
   getDashboardBranding,
 } from "../controllers/brandingController.js";
 
-import { updateBranding } from "../controllers/brandingController.js";
 import { protect } from "../middlewares/authMiddleware.js";
-import { detectResellerDomain } from "../middlewares/resellerDomainMiddleware.js"; // ✅ REQUIRED
+import { resellerOnly } from "../middlewares/resellerMiddleware.js";
+import { detectResellerDomain } from "../middlewares/resellerDomainMiddleware.js";
 
 const router = express.Router();
 
@@ -27,7 +29,7 @@ const router = express.Router();
 */
 router.get(
   "/public",
-  detectResellerDomain, // ✅ CRITICAL FIX
+  detectResellerDomain,
   getPublicBranding
 );
 
@@ -46,23 +48,32 @@ router.get(
   getDashboardBranding
 );
 
-//Landing Templates
-
-router.put("/landing-template", authMiddleware, resellerOnly, updateResellerLandingTemplate);
-
-
+/*
+--------------------------------
+🖼️ UPDATE LANDING TEMPLATE
+--------------------------------
+- Reseller only
+--------------------------------
+*/
+router.put(
+  "/landing-template",
+  protect,
+  resellerOnly,
+  updateResellerLandingTemplate
+);
 
 /*
 --------------------------------
-✏️ UPDATE BRANDING (RESELLER ONLY)
+✏️ UPDATE BRANDING
 --------------------------------
-- Updates reseller branding in DB
-- Used in dashboard settings page
+- Updates reseller branding
+- Used in dashboard settings
 --------------------------------
 */
 router.patch(
   "/",
   protect,
+  resellerOnly,
   updateBranding
 );
 

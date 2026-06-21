@@ -26,6 +26,7 @@ import {
   uploadCpOwnerLogo,
   uploadCpOwnerSeoImage,
   getResellerSeo,
+  getCpOwnerSeo,
 } from "../controllers/seoController.js";
 
 const router = express.Router();
@@ -53,6 +54,7 @@ router.get("/reseller", protect, getResellerSeo);
 
 // ── CHILD PANEL OWNER ────────────────────────────────────────────
 router.patch("/cp",                       protect, updateCpOwnerSeo);
+router.get(  "/cp",                       protect, getCpOwnerSeo);
 router.post( "/cp/logo",                  protect, uploadBrandLogo.single("image"),  uploadCpOwnerLogo);
 router.post( "/cp/seo-image",             protect, uploadSeoImage.single("image"),   uploadCpOwnerSeoImage);
 

@@ -119,6 +119,50 @@ const emitOrderUpdated = (io, order, refundData = null) => {
 };
 
 /* ======================================================
+   BUILD BASE FILTER
+   Rules:
+   1. Orders with NO childPanelOwner AND whose userId is not
+      a CP-reseller end user → always show (main platform orders)
+   2. Orders WITH childPanelOwner AND isMainPlatformService=true
+      → show (CP used a main-platform service; admin sees it with
+        CP owner as the customer)
+   3. Orders WITH childPanelOwner AND isMainPlatformService=false
+      → hide (CP's own private services; only visible to CP owner)
+====================================================== */
+const buildAdminBaseFilter = async () => {
+  // Find all users who are end-users of a CP reseller
+  // (user.resellerOwner exists AND that reseller belongs to a CP)
+  const cpResellers = await User.find({
+    childPanelOwner: { $ne: null },
+    isReseller: true,
+  }).select("_id");
+
+  const cpResellerIds = cpResellers.map((r) => r._id);
+
+  // End users of CP resellers: their resellerOwner is in cpResellerIds
+  const cpResellerEndUsers = cpResellerIds.length > 0
+    ? await User.find({ resellerOwner: { $in: cpResellerIds } }).distinct("_id")
+    : [];
+
+  return {
+    $or: [
+      // Case 1: Pure main-platform order (no CP involvement)
+      {
+        childPanelOwner: null,
+        ...(cpResellerEndUsers.length > 0
+          ? { userId: { $nin: cpResellerEndUsers } }
+          : {}),
+      },
+      // Case 2: CP order but service is from main platform → show in admin
+      {
+        childPanelOwner: { $ne: null },
+        isMainPlatformService: true,
+      },
+    ],
+  };
+};
+
+/* ======================================================
    GET ALL USER ORDERS (Search + Pagination)
 ====================================================== */
 export const getUserOrders = async (req, res) => {
@@ -135,18 +179,7 @@ export const getUserOrders = async (req, res) => {
     const pageNum = Math.max(1, Number(page));
     const limitNum = Math.max(1, Number(limit));
 
-    const cpEndUserIds = await User.find({
-      childPanelOwner: { $ne: null },
-    }).distinct("_id");
-
-    const baseFilter = cpEndUserIds.length > 0
-      ? {
-          $or: [
-            { childPanelOwner: { $ne: null }, placedViaChildPanel: true },
-            { childPanelOwner: null, userId: { $nin: cpEndUserIds } },
-          ],
-        }
-      : { childPanelOwner: null };
+    const baseFilter = await buildAdminBaseFilter();
 
     let query = { ...baseFilter };
 
@@ -156,11 +189,7 @@ export const getUserOrders = async (req, res) => {
 
     if (fromDate || toDate) {
       query.createdAt = {};
-
-      if (fromDate) {
-        query.createdAt.$gte = new Date(fromDate);
-      }
-
+      if (fromDate) query.createdAt.$gte = new Date(fromDate);
       if (toDate) {
         const end = new Date(toDate);
         end.setHours(23, 59, 59, 999);
@@ -171,6 +200,7 @@ export const getUserOrders = async (req, res) => {
     if (search && search.trim() !== "") {
       const cleanSearch = search.replace("#", "").trim();
 
+      // Search only main-platform users (not CP end-users)
       const users = await User.find({
         email: { $regex: cleanSearch, $options: "i" },
         childPanelOwner: null,
@@ -288,7 +318,7 @@ export const updateOrderStatus = async (req, res) => {
     }
 
     order.status = status;
-    order.providerStatus = status; // ✅ keep displayStatus in sync for manual overrides
+    order.providerStatus = status;
 
     if (status === "completed") {
       order.quantityDelivered = order.quantity;
@@ -366,7 +396,7 @@ export const updateOrderProgress = async (req, res) => {
       order.status = "processing";
     }
 
-    order.providerStatus = order.status; // ✅ keep displayStatus in sync for manual overrides
+    order.providerStatus = order.status;
 
     await order.save();
 
@@ -408,7 +438,7 @@ export const refundOrder = async (req, res) => {
     }
 
     order.status = "refunded";
-    order.providerStatus = "refunded"; // ✅ keep displayStatus in sync for manual overrides
+    order.providerStatus = "refunded";
 
     await order.save();
 
@@ -432,18 +462,7 @@ export const getOrderStats = async (req, res) => {
   try {
     const { search, status, fromDate, toDate } = req.query;
 
-    const cpEndUserIds = await User.find({
-      childPanelOwner: { $ne: null },
-    }).distinct("_id");
-
-    const baseFilter = cpEndUserIds.length > 0
-      ? {
-          $or: [
-            { childPanelOwner: { $ne: null }, placedViaChildPanel: true },
-            { childPanelOwner: null, userId: { $nin: cpEndUserIds } },
-          ],
-        }
-      : { childPanelOwner: null };
+    const baseFilter = await buildAdminBaseFilter();
 
     const match = { ...baseFilter };
 

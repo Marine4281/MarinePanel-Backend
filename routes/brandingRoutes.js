@@ -10,21 +10,14 @@ import {
 } from "../controllers/brandingController.js";
 
 import { protect } from "../middlewares/authMiddleware.js";
-import { resellerOnly } from "../middlewares/resellerMiddleware.js";
 import { detectResellerDomain } from "../middlewares/resellerDomainMiddleware.js";
+import { childPanelOnly } from "../middlewares/adminMiddleware.js";
 
 const router = express.Router();
 
 /*
 --------------------------------
 🌍 PUBLIC BRANDING (DOMAIN-BASED)
---------------------------------
-- Used by:
-  • Main site
-  • Reseller subdomains
-  • Custom domains
-- NO authentication required
-- Uses resellerDomainMiddleware (req.brand)
 --------------------------------
 */
 router.get(
@@ -35,11 +28,7 @@ router.get(
 
 /*
 --------------------------------
-🔐 DASHBOARD BRANDING (LOGGED-IN)
---------------------------------
-- Used ONLY inside reseller dashboard
-- Requires authentication
-- Uses req.user (NOT domain)
+🔐 DASHBOARD BRANDING
 --------------------------------
 */
 router.get(
@@ -50,30 +39,27 @@ router.get(
 
 /*
 --------------------------------
-🖼️ UPDATE LANDING TEMPLATE
---------------------------------
-- Reseller only
+🖼️ LANDING TEMPLATE
+(CHILD PANEL OWNER ONLY)
 --------------------------------
 */
 router.put(
   "/landing-template",
   protect,
-  resellerOnly,
+  childPanelOnly,
   updateResellerLandingTemplate
 );
 
 /*
 --------------------------------
 ✏️ UPDATE BRANDING
---------------------------------
-- Updates reseller branding
-- Used in dashboard settings
+(CHILD PANEL OWNER ONLY)
 --------------------------------
 */
 router.patch(
   "/",
   protect,
-  resellerOnly,
+  childPanelOnly,
   updateBranding
 );
 

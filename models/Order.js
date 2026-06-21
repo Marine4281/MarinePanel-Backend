@@ -113,6 +113,12 @@ const orderSchema = new mongoose.Schema(
       index: true,
     },
 
+    isMainPlatformService: {
+      type: Boolean,
+      default: true,
+      index: true,
+     },
+
     rate: {
       type: Number,
       default: 0,

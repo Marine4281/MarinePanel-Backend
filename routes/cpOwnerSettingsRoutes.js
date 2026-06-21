@@ -10,6 +10,7 @@ import {
   updateCPServiceMode,
   updateCPDomain,
   updateCPTemplate,
+  updateCPLandingTemplate,
 } from "../controllers/cpOwnerSettingsController.js";
 
 const router = express.Router();
@@ -27,5 +28,6 @@ router.put("/payment-mode", updateCPPaymentMode);
 router.put("/service-mode", updateCPServiceMode);
 router.put("/domain", updateCPDomain);
 router.put("/template", updateCPTemplate);
+router.put("/landing-template", updateCPLandingTemplate);  // ADD THIS
 
 export default router;

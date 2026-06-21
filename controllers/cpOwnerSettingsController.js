@@ -33,7 +33,7 @@ export const getCPSettings = async (req, res) => {
       themeColor: user.childPanelThemeColor || "#1e40af",
       slug: user.childPanelSlug || "",
       domain: user.childPanelDomain || "",
-
+      
       // Support
       supportWhatsapp: user.childPanelSupportWhatsapp || "",
       supportTelegram: user.childPanelSupportTelegram || "",
@@ -58,6 +58,8 @@ export const getCPSettings = async (req, res) => {
 
       // Template
       templateId: user.childPanelTemplateId || null,
+      landingTemplate: user.childPanelLandingTemplate || "default",
+
     });
   } catch (err) {
     console.error("CP GET SETTINGS ERROR:", err);

@@ -22,6 +22,8 @@ export const getPublicBranding = async (req, res) => {
           supportWhatsapp:        req.brand.supportWhatsapp            || "",
           supportTelegram:        req.brand.supportTelegram            || "",
           supportWhatsappChannel: req.brand.supportWhatsappChannel     || "",
+          landingTemplate: user.childPanelLandingTemplate || "default",
+          
         });
       }
 
@@ -34,6 +36,7 @@ export const getPublicBranding = async (req, res) => {
         supportWhatsapp:        req.brand.supportWhatsapp        || "",
         supportTelegram:        req.brand.supportTelegram        || "",
         supportWhatsappChannel: req.brand.supportWhatsappChannel || "",
+        landingTemplate: user.resellerLandingTemplate || "default",
       });
     }
 

@@ -4,7 +4,7 @@ import express from "express";
 import {
   getPublicBranding,
   updateResellerLandingTemplate,
-  getDashboardBranding
+  getDashboardBranding,
 } from "../controllers/brandingController.js";
 
 import { updateBranding } from "../controllers/brandingController.js";

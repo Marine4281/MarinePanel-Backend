@@ -307,3 +307,36 @@ export const updateCPTemplate = async (req, res) => {
     res.status(500).json({ message: "Failed to update template" });
   }
 };
+
+// ======================= UPDATE LANDING TEMPLATE =======================
+export const updateCPLandingTemplate = async (req, res) => {
+  try {
+    const { landingTemplate } = req.body;
+    const VALID = ["default", "dark-pro", "minimal", "vibrant"];
+    if (!VALID.includes(landingTemplate)) {
+      return res.status(400).json({
+        message: `Invalid template. Must be one of: ${VALID.join(", ")}`,
+      });
+    }
+    const user = await User.findById(req.user._id);
+    if (!user) return res.status(404).json({ message: "User not found" });
+
+    user.childPanelLandingTemplate = landingTemplate;
+    await user.save();
+
+    logCpAdminAction({
+      adminId: req.user._id,
+      adminEmail: req.user.email,
+      childPanelId: req.user._id,
+      action: "UPDATE_LANDING_TEMPLATE",
+      targetType: "Settings",
+      description: `Landing template set to: ${landingTemplate}`,
+      ipAddress: req.ip,
+    }).catch(() => {});
+
+    res.json({ success: true, landingTemplate: user.childPanelLandingTemplate });
+  } catch (err) {
+    console.error("CP UPDATE LANDING TEMPLATE ERROR:", err);
+    res.status(500).json({ message: "Failed to update landing template" });
+  }
+};

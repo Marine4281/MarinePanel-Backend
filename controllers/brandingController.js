@@ -11,7 +11,7 @@ PUBLIC BRANDING (DOMAIN-BASED)
 export const getPublicBranding = async (req, res) => {
   try {
     if (req.brand) {
-      // Child panel domain — req.childPanel is the owner User doc
+      // Child panel domain
       if (req.childPanel) {
         return res.json({
           brandName:              req.childPanel.childPanelBrandName  || req.childPanel.childPanelSlug,
@@ -22,7 +22,7 @@ export const getPublicBranding = async (req, res) => {
           supportWhatsapp:        req.brand.supportWhatsapp            || "",
           supportTelegram:        req.brand.supportTelegram            || "",
           supportWhatsappChannel: req.brand.supportWhatsappChannel     || "",
-          landingTemplate:        req.childPanel.childPanelLandingTemplate || "default", // FIX 1a: was `user.childPanelLandingTemplate`
+          landingTemplate:        req.childPanel.childPanelLandingTemplate || "default", // ✅ correct
         });
       }
 
@@ -35,13 +35,12 @@ export const getPublicBranding = async (req, res) => {
         supportWhatsapp:        req.brand.supportWhatsapp        || "",
         supportTelegram:        req.brand.supportTelegram        || "",
         supportWhatsappChannel: req.brand.supportWhatsappChannel || "",
-        landingTemplate:        req.brand.resellerLandingTemplate || "default", // FIX 1b: was `user.resellerLandingTemplate`
+        landingTemplate:        req.reseller.resellerLandingTemplate || "default", // ✅ FIXED: was req.brand.resellerLandingTemplate
       });
     }
 
     // Main platform
     const settings = await Settings.findOne();
-
     return res.json({
       brandName:              "MarinePanel",
       logo:                   null,
@@ -57,7 +56,6 @@ export const getPublicBranding = async (req, res) => {
     res.status(500).json({ message: "Branding load failed" });
   }
 };
-
 
 /*
 ========================================

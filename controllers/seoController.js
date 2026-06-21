@@ -426,3 +426,16 @@ export const getResellerSeo = async (req, res) => {
     res.status(500).json({ message: "Failed to fetch SEO" });
   }
 };
+
+// ====================================================================
+// CP OWNER — get own child panel SEO (for loading the dashboard form)
+// ====================================================================
+export const getCpOwnerSeo = async (req, res) => {
+  try {
+    if (!req.user?.isChildPanel) return res.status(403).json({ message: "Access denied" });
+    const user = await User.findById(req.user._id).lean();
+    res.json({ seo: user?.childPanelSeo || {} });
+  } catch (err) {
+    res.status(500).json({ message: "Failed to fetch SEO" });
+  }
+};

@@ -422,6 +422,9 @@ export const getChildPanelDetails = async (req, res) => {
     const userPage     = Number(req.query.userPage)     || 1;
     const orderPage    = Number(req.query.orderPage)    || 1;
     const limit        = Number(req.query.limit)        || 15;
+    const effectiveGraceHours   = cp.childPanelGracePeriodHours ?? settings?.childPanelGracePeriodHours ?? 0;
+    const effectiveReminderHours = cp.childPanelReminderHours ?? settings?.childPanelReminderHours ?? 48;
+    const effectiveAutoDeduct   = cp.childPanelAutoDeduct ?? settings?.childPanelAutoDeduct ?? true;
 
     if (!isValidId(id)) {
       return res.status(400).json({ success: false, message: "Invalid ID" });
@@ -447,6 +450,16 @@ export const getChildPanelDetails = async (req, res) => {
     const daysUntilExpiry = nextBilledAt
       ? Math.ceil((nextBilledAt - now) / (1000 * 60 * 60 * 24))
       : null;
+
+     // Grace deadline
+const graceDeadline = nextBilledAt
+  ? new Date(nextBilledAt.getTime() + effectiveGraceHours * 60 * 60 * 1000)
+  : null;
+
+// Reminder window active?
+const reminderActive = nextBilledAt
+  ? (now >= new Date(nextBilledAt.getTime() - effectiveReminderHours * 60 * 60 * 1000)) && !subscriptionExpired
+  : false;
 
     const [resellers, users, orders, totalResellers, totalUsers, totalOrders] =
       await Promise.all([
@@ -525,6 +538,9 @@ export const getChildPanelDetails = async (req, res) => {
           ...cp,
           // Attach derived billing fields so the frontend never has to recompute
           effectiveIntervalDays,
+          effectiveGraceHours,
+          effectiveReminderHours,
+          effectiveAutoDeduct,
           subscriptionExpired,
           daysUntilExpiry,
         },

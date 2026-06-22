@@ -422,9 +422,6 @@ export const getChildPanelDetails = async (req, res) => {
     const userPage     = Number(req.query.userPage)     || 1;
     const orderPage    = Number(req.query.orderPage)    || 1;
     const limit        = Number(req.query.limit)        || 15;
-    const effectiveGraceHours   = cp.childPanelGracePeriodHours ?? settings?.childPanelGracePeriodHours ?? 0;
-    const effectiveReminderHours = cp.childPanelReminderHours ?? settings?.childPanelReminderHours ?? 48;
-    const effectiveAutoDeduct   = cp.childPanelAutoDeduct ?? settings?.childPanelAutoDeduct ?? true;
 
     if (!isValidId(id)) {
       return res.status(400).json({ success: false, message: "Invalid ID" });
@@ -441,6 +438,11 @@ export const getChildPanelDetails = async (req, res) => {
       cp.childPanelBillingIntervalDays ??
       Number(settings?.childPanelBillingIntervalDays ?? 30);
 
+    // ── Resolve per-CP overrides → fall back to global defaults ──
+    const effectiveGraceHours    = cp.childPanelGracePeriodHours ?? settings?.childPanelGracePeriodHours ?? 0;
+    const effectiveReminderHours = cp.childPanelReminderHours    ?? settings?.childPanelReminderHours    ?? 48;
+    const effectiveAutoDeduct    = cp.childPanelAutoDeduct       ?? settings?.childPanelAutoDeduct       ?? true;
+
     // Subscription status derived fields
     const now = new Date();
     const nextBilledAt = cp.childPanelNextBilledAt
@@ -451,15 +453,15 @@ export const getChildPanelDetails = async (req, res) => {
       ? Math.ceil((nextBilledAt - now) / (1000 * 60 * 60 * 24))
       : null;
 
-     // Grace deadline
-const graceDeadline = nextBilledAt
-  ? new Date(nextBilledAt.getTime() + effectiveGraceHours * 60 * 60 * 1000)
-  : null;
+    // Grace deadline
+    const graceDeadline = nextBilledAt
+      ? new Date(nextBilledAt.getTime() + effectiveGraceHours * 60 * 60 * 1000)
+      : null;
 
-// Reminder window active?
-const reminderActive = nextBilledAt
-  ? (now >= new Date(nextBilledAt.getTime() - effectiveReminderHours * 60 * 60 * 1000)) && !subscriptionExpired
-  : false;
+    // Reminder window active?
+    const reminderActive = nextBilledAt
+      ? (now >= new Date(nextBilledAt.getTime() - effectiveReminderHours * 60 * 60 * 1000)) && !subscriptionExpired
+      : false;
 
     const [resellers, users, orders, totalResellers, totalUsers, totalOrders] =
       await Promise.all([
@@ -527,9 +529,9 @@ const reminderActive = nextBilledAt
       },
     ]);
 
-    const totalOrderCount = revenueAgg?.totalOrders   ?? 0;
-    const totalRevenue    = revenueAgg?.totalRevenue   ?? 0;
-    const totalEarnings   = revenueAgg?.totalEarnings  ?? 0;
+    const totalOrderCount = revenueAgg?.totalOrders  ?? 0;
+    const totalRevenue    = revenueAgg?.totalRevenue  ?? 0;
+    const totalEarnings   = revenueAgg?.totalEarnings ?? 0;
 
     res.json({
       success: true,
@@ -541,14 +543,17 @@ const reminderActive = nextBilledAt
           effectiveGraceHours,
           effectiveReminderHours,
           effectiveAutoDeduct,
+          graceDeadline,
+          reminderActive,
           subscriptionExpired,
           daysUntilExpiry,
+          subscriptionSuspended: cp.childPanelSubscriptionSuspended ?? false,
         },
         stats: {
-          childPanelWallet:  formatNumber(cp.childPanelWallet),
-          totalOrders:       totalOrderCount,
-          totalRevenue:      formatNumber(totalRevenue),
-          totalEarnings:     formatNumber(totalEarnings),
+          childPanelWallet: formatNumber(cp.childPanelWallet),
+          totalOrders:      totalOrderCount,
+          totalRevenue:     formatNumber(totalRevenue),
+          totalEarnings:    formatNumber(totalEarnings),
           totalResellers,
           totalUsers,
         },
@@ -568,43 +573,3 @@ const reminderActive = nextBilledAt
     res.status(500).json({ success: false, message: "Failed to fetch details" });
   }
 };
-
-//RESET CHILDPANEL BILLING
-export const resetChildPanelBilling = async (req, res) => {
-  try {
-    const { id } = req.params;
-
-    if (!isValidId(id)) {
-      return res.status(400).json({ success: false, message: "Invalid ID" });
-    }
-
-    const [cp, settings] = await Promise.all([
-      User.findById(id),
-      Settings.findOne().lean(),
-    ]);
-
-    if (!cp || !cp.isChildPanel) {
-      return res.status(404).json({ success: false, message: "Child panel not found" });
-    }
-
-    // Copy global defaults onto this panel
-    cp.childPanelBillingMode         = settings?.childPanelBillingMode   ?? "monthly";
-    cp.childPanelMonthlyFee          = Number(settings?.childPanelMonthlyFee  ?? 20);
-    cp.childPanelPerOrderFee         = Number(settings?.childPanelPerOrderFee ?? 0);
-    cp.childPanelBillingIntervalDays = null; // null = follow global
-    cp.childPanelFeeIsCustom         = false;
-
-    // Reset the billing clock from today
-    const intervalDays = Number(settings?.childPanelBillingIntervalDays ?? 30);
-    const now = new Date();
-    cp.childPanelLastBilledAt = now;
-    cp.childPanelNextBilledAt = new Date(now.getTime() + intervalDays * 24 * 60 * 60 * 1000);
-
-    await cp.save();
-    res.json({ success: true, message: "Billing reset to global default" });
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ success: false, message: "Failed to reset billing" });
-  }
-};
-

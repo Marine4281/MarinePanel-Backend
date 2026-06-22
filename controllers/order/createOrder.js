@@ -259,7 +259,7 @@ export const createOrder = async (req, res) => {
       category: serviceData.category,
       service: serviceData.name,
       serviceId: serviceData.serviceId || serviceData._id.toString(),
-      rate: Number(serviceData.rate || 0),
+      rate: Number(finalrate || 0),
       link,
       quantity: qty,
       charge: finalCharge,

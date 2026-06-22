@@ -182,6 +182,35 @@ childPanelBillingIntervalDays: {
       default: 2,
     },
 
+
+    // --- GRACE PERIOD ---
+// How many hours after the due date before we actually suspend the CP.
+// 0 = suspend immediately on due date.
+// 24 = 1 day grace, 48 = 2 days, 72 = 3 days, etc.
+childPanelGracePeriodHours: {
+  type: Number,
+  default: 0,
+  min: 0,
+},
+
+// --- REMINDER WINDOW ---
+// How many hours before the due date to start showing the reminder banner.
+// 0 = no reminder. 24 = warn 1 day before, 48 = warn 2 days before.
+childPanelReminderHours: {
+  type: Number,
+  default: 48,
+  min: 0,
+},
+
+// --- AUTO-DEDUCT ---
+// When true, the billing cron will automatically deduct the fee from
+// the CP wallet on due date (if balance is sufficient).
+// When false, the CP owner must pay manually.
+childPanelAutoDeduct: {
+  type: Boolean,
+  default: true,
+},
+
     /*
     ================================================================
     MAINTENANCE MODE

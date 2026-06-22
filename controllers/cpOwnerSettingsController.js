@@ -56,6 +56,14 @@ export const getCPSettings = async (req, res) => {
       perOrderFee: user.childPanelPerOrderFee ?? 0,
       lastBilledAt: user.childPanelLastBilledAt || null,
 
+      // Billing status (computed from their own User doc + resolved settings)
+      nextBilledAt:            user.childPanelNextBilledAt   || null,
+      subscriptionSuspended:   user.childPanelSubscriptionSuspended ?? false,
+      autoDeduct:              user.childPanelAutoDeduct,           // null = using global
+      // These are read-only from their perspective (set by admin)
+      gracePeriodHours:        user.childPanelGracePeriodHours,     // null = using global
+      reminderHours:           user.childPanelReminderHours,        // null = using global
+
       // Template
       templateId: user.childPanelTemplateId || null,
       landingTemplate: user.childPanelLandingTemplate || "default",
@@ -340,5 +348,105 @@ export const updateCPLandingTemplate = async (req, res) => {
   } catch (err) {
     console.error("CP UPDATE LANDING TEMPLATE ERROR:", err);
     res.status(500).json({ message: "Failed to update landing template" });
+  }
+};
+
+// POST /cp/settings/auto-deduct
+// CP owner can toggle whether they want fees auto-deducted from their wallet
+export const updateCPAutoDeduct = async (req, res) => {
+  try {
+    const { autoDeduct } = req.body;
+    if (typeof autoDeduct !== "boolean") {
+      return res.status(400).json({ message: "autoDeduct must be true or false" });
+    }
+
+    const user = await User.findById(req.user._id);
+    if (!user) return res.status(404).json({ message: "User not found" });
+
+    user.childPanelAutoDeduct = autoDeduct;
+    await user.save();
+
+    res.json({ success: true, message: `Auto-deduct ${autoDeduct ? "enabled" : "disabled"}`, autoDeduct });
+  } catch (err) {
+    console.error("CP UPDATE AUTO-DEDUCT ERROR:", err);
+    res.status(500).json({ message: "Failed to update auto-deduct" });
+  }
+};
+
+// POST /cp/settings/pay-fee
+// CP owner manually pays their billing fee from their wallet
+export const payBillingFee = async (req, res) => {
+  try {
+    const user = await User.findById(req.user._id);
+    if (!user || !user.isChildPanel) {
+      return res.status(404).json({ message: "Child panel not found" });
+    }
+
+    const now = new Date();
+    const nextBilledAt = user.childPanelNextBilledAt
+      ? new Date(user.childPanelNextBilledAt)
+      : null;
+
+    if (!nextBilledAt) {
+      return res.status(400).json({ message: "No billing date set" });
+    }
+
+    const settings = await Settings.findOne().lean();
+
+    // Resolve fee
+    const billingMode = user.childPanelBillingMode || "monthly";
+    let fee = 0;
+
+    if (billingMode === "monthly" || billingMode === "both") {
+      const tiers = settings?.childPanelMonthlyTiers ?? [];
+      const orders = user.childPanelOrdersThisCycle ?? 0;
+      if (tiers.length > 0) {
+        const tier = tiers.find(
+          (t) => orders >= t.minOrders && (t.maxOrders === null || orders <= t.maxOrders)
+        );
+        fee += tier ? tier.fee : (user.childPanelMonthlyFee ?? settings?.childPanelMonthlyFee ?? 20);
+      } else {
+        fee += user.childPanelMonthlyFee ?? settings?.childPanelMonthlyFee ?? 20;
+      }
+    }
+    if (billingMode === "per_order" || billingMode === "both") {
+      fee += (user.childPanelPerOrderFee ?? settings?.childPanelPerOrderFee ?? 0) *
+             (user.childPanelOrdersThisCycle ?? 0);
+    }
+
+    if (fee <= 0) {
+      return res.status(400).json({ message: "No fee due" });
+    }
+
+    if (user.childPanelWallet < fee) {
+      return res.status(400).json({
+        message: `Insufficient wallet balance. You need $${fee.toFixed(2)} but have $${user.childPanelWallet.toFixed(2)}.`,
+        fee,
+        balance: user.childPanelWallet,
+      });
+    }
+
+    const effectiveIntervalDays =
+      user.childPanelBillingIntervalDays ??
+      Number(settings?.childPanelBillingIntervalDays ?? 30);
+
+    user.childPanelWallet = parseFloat((user.childPanelWallet - fee).toFixed(2));
+    user.childPanelLastBilledAt  = now;
+    user.childPanelNextBilledAt  = new Date(now.getTime() + effectiveIntervalDays * 24 * 60 * 60 * 1000);
+    user.childPanelOrdersThisCycle = 0;
+    user.childPanelSubscriptionSuspended = false;
+
+    await user.save();
+
+    res.json({
+      success: true,
+      message: `$${fee.toFixed(2)} deducted. Next billing: ${user.childPanelNextBilledAt}`,
+      fee,
+      newBalance: user.childPanelWallet,
+      nextBilledAt: user.childPanelNextBilledAt,
+    });
+  } catch (err) {
+    console.error("CP PAY FEE ERROR:", err);
+    res.status(500).json({ message: "Failed to process payment" });
   }
 };

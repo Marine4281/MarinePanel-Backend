@@ -168,7 +168,7 @@ export const toggleChildPanelStatus = async (req, res) => {
 export const updateChildPanelBilling = async (req, res) => {
   try {
     const { id } = req.params;
-    const { billingMode, monthlyFee, perOrderFee, billingIntervalDays } = req.body;
+    const { billingMode, monthlyFee, perOrderFee, billingIntervalDays, gracePeriodHours, reminderHours, autoDeduct } = req.body;
 
     if (!isValidId(id)) {
       return res.status(400).json({ success: false, message: "Invalid ID" });
@@ -182,6 +182,15 @@ export const updateChildPanelBilling = async (req, res) => {
     if (billingMode)               cp.childPanelBillingMode         = billingMode;
     if (monthlyFee  !== undefined) cp.childPanelMonthlyFee          = Number(monthlyFee);
     if (perOrderFee !== undefined) cp.childPanelPerOrderFee         = Number(perOrderFee);
+     if (gracePeriodHours !== undefined) {
+  cp.childPanelGracePeriodHours = gracePeriodHours === null ? null : Math.max(0, Number(gracePeriodHours));
+}
+if (reminderHours !== undefined) {
+  cp.childPanelReminderHours = reminderHours === null ? null : Math.max(0, Number(reminderHours));
+}
+if (autoDeduct !== undefined) {
+  cp.childPanelAutoDeduct = autoDeduct === null ? null : Boolean(autoDeduct);
+}
 
     // billingIntervalDays: null means "use global", a number means custom
     if (billingIntervalDays !== undefined) {
@@ -267,6 +276,9 @@ export const getChildPanelSettings = async (req, res) => {
         offerActivationFee: settings.childPanelOfferActivationFee  ?? 2,
         offerMonthlyFee:    settings.childPanelOfferMonthlyFee     ?? 0,
         offerExpiresAt:     settings.childPanelOfferExpiresAt      ?? null,
+        gracePeriodHours:    settings.childPanelGracePeriodHours    ?? 0,
+        reminderHours:       settings.childPanelReminderHours       ?? 48,
+        autoDeduct:          settings.childPanelAutoDeduct          ?? true,
       },
     });
   } catch (error) {
@@ -319,6 +331,10 @@ export const updateChildPanelDefaultFees = async (req, res) => {
       minDeposit,
       monthlyTiers,   // array of { minOrders, maxOrders, fee }
       billingIntervalDays,
+      gracePeriodHours,
+      reminderHours,
+      autoDeduct
+       
     } = req.body;
 
     const settings = await Settings.findOne();
@@ -330,6 +346,9 @@ export const updateChildPanelDefaultFees = async (req, res) => {
     if (perOrderFee   !== undefined) settings.childPanelPerOrderFee   = Number(perOrderFee);
     if (withdrawMin   !== undefined) settings.childPanelWithdrawMin   = Number(withdrawMin);
     if (minDeposit    !== undefined) settings.childPanelMinDeposit    = Number(minDeposit);
+    if (gracePeriodHours !== undefined) settings.childPanelGracePeriodHours = Math.max(0, Number(gracePeriodHours));
+    if (reminderHours    !== undefined) settings.childPanelReminderHours    = Math.max(0, Number(reminderHours));
+    if (autoDeduct       !== undefined) settings.childPanelAutoDeduct       = Boolean(autoDeduct);
     if (billingIntervalDays !== undefined) {
   settings.childPanelBillingIntervalDays = Math.max(1, Number(billingIntervalDays));
      }

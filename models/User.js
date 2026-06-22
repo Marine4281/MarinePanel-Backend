@@ -568,6 +568,35 @@ childPanelBillingIntervalDays: {
       default: false,
     },
 
+    // null = inherit global Settings.childPanelGracePeriodHours
+childPanelGracePeriodHours: {
+  type: Number,
+  default: null,
+  min: 0,
+},
+
+// null = inherit global Settings.childPanelReminderHours
+childPanelReminderHours: {
+  type: Number,
+  default: null,
+  min: 0,
+},
+
+// null = inherit global Settings.childPanelAutoDeduct
+// true/false = explicit override for this CP
+childPanelAutoDeduct: {
+  type: Boolean,
+  default: null,
+},
+
+// Set to true by the billing cron when grace period expires and fee unpaid.
+// Reset to false when admin manually resets billing or CP pays.
+// Separate from childPanelIsActive (which is admin manual suspension).
+childPanelSubscriptionSuspended: {
+  type: Boolean,
+  default: false,
+},
+
     // Kept for backward compatibility — use isChildPanel instead
     childPanelEnabled: {
       type: Boolean,

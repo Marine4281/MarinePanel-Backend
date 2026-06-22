@@ -661,7 +661,6 @@ export const updateChildPanelSettings = async (req, res) => {
 // Public — called by frontend to get branding for current domain
 export const getChildPanelBranding = async (req, res) => {
   try {
-    // req.childPanel is set by detectChildPanelDomain middleware
     if (!req.childPanel) {
       return res.status(404).json({ message: "Not a child panel domain" });
     }
@@ -669,16 +668,13 @@ export const getChildPanelBranding = async (req, res) => {
     const cp = req.childPanel;
 
     res.json({
-      brandName:  cp.childPanelBrandName  || "Panel",
-      logo:       cp.childPanelLogo       || null,
-      themeColor: cp.childPanelThemeColor || "#1e40af",
-      slug:       cp.childPanelSlug       || null,
-      domain:     cp.childPanelDomain     || null,
-      // ── ADDED ──────────────────────────────────────────────
-      // TemplateRouter reads this on every page load to decide
-      // which template to render. null = use default pages.
-      templateId: cp.childPanelTemplateId || null,
-      // ───────────────────────────────────────────────────────
+      brandName:      cp.childPanelBrandName  || "Panel",
+      logo:           cp.childPanelLogo       || null,
+      themeColor:     cp.childPanelThemeColor || "#1e40af",
+      slug:           cp.childPanelSlug       || null,
+      domain:         cp.childPanelDomain     || null,
+      templateId:     cp.childPanelTemplateId || null,
+      landingTemplate: cp.childPanelLandingTemplate || "default", // ← ADD THIS LINE
       support: {
         whatsapp:        cp.childPanelSupportWhatsapp        || null,
         telegram:        cp.childPanelSupportTelegram        || null,

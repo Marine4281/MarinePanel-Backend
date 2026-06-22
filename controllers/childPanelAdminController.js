@@ -472,13 +472,13 @@ export const getChildPanelDetails = async (req, res) => {
           .limit(limit)
           .lean(),
 
+        // Option B: all users under this CP (resellers + end users), excluding admin/cp accounts
         User.find({
           childPanelOwner: id,
-          isReseller:   { $ne: true },
           isAdmin:      { $ne: true },
           isChildPanel: { $ne: true },
         })
-          .select("email phone balance isBlocked isFrozen lastSeen createdAt")
+          .select("email phone balance isBlocked isFrozen lastSeen createdAt isReseller")
           .sort({ createdAt: -1 })
           .skip((userPage - 1) * limit)
           .limit(limit)
@@ -493,7 +493,6 @@ export const getChildPanelDetails = async (req, res) => {
         User.countDocuments({ isReseller: true, childPanelOwner: id }),
         User.countDocuments({
           childPanelOwner: id,
-          isReseller:   { $ne: true },
           isAdmin:      { $ne: true },
           isChildPanel: { $ne: true },
         }),
@@ -538,7 +537,6 @@ export const getChildPanelDetails = async (req, res) => {
       data: {
         childPanel: {
           ...cp,
-          // Attach derived billing fields so the frontend never has to recompute
           effectiveIntervalDays,
           effectiveGraceHours,
           effectiveReminderHours,

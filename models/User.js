@@ -232,7 +232,7 @@ childPanelLogoPublicId: {
 
     resellerLandingTemplate: {
        type: String,
-       enum: ["default", "dark-pro", "minimal", "vibrant"],
+       enum: ["default", "dark-pro", "minimal", "vibrant", "sunrise", "bold", "neon"],
        default: "default",
      },
 

@@ -7,6 +7,7 @@ import { Server } from "socket.io";
 /* CRON JOBS */
 import { startOrderSyncJob } from "./jobs/orderSyncJob.js";
 import { startRefillSyncJob } from "./jobs/refillSyncJob.js";
+import { startBillingCronJob } from "./jobs/billingCronJob.js";
 
 dotenv.config();
 
@@ -63,6 +64,7 @@ io.on("connection", (socket) => {
 /* ========================================
    ⏱️ START CRON JOBS
 ======================================== */
+startBillingCronJob();
 startOrderSyncJob(io);
 startRefillSyncJob();
 

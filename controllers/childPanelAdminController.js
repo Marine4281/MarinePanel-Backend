@@ -573,3 +573,42 @@ export const getChildPanelDetails = async (req, res) => {
     res.status(500).json({ success: false, message: "Failed to fetch details" });
   }
 };
+
+//RESET CHILDPANEL BILLING
+export const resetChildPanelBilling = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    if (!isValidId(id)) {
+      return res.status(400).json({ success: false, message: "Invalid ID" });
+    }
+
+    const [cp, settings] = await Promise.all([
+      User.findById(id),
+      Settings.findOne().lean(),
+    ]);
+
+    if (!cp || !cp.isChildPanel) {
+      return res.status(404).json({ success: false, message: "Child panel not found" });
+    }
+
+    // Copy global defaults onto this panel
+    cp.childPanelBillingMode         = settings?.childPanelBillingMode   ?? "monthly";
+    cp.childPanelMonthlyFee          = Number(settings?.childPanelMonthlyFee  ?? 20);
+    cp.childPanelPerOrderFee         = Number(settings?.childPanelPerOrderFee ?? 0);
+    cp.childPanelBillingIntervalDays = null; // null = follow global
+    cp.childPanelFeeIsCustom         = false;
+
+    // Reset the billing clock from today
+    const intervalDays = Number(settings?.childPanelBillingIntervalDays ?? 30);
+    const now = new Date();
+    cp.childPanelLastBilledAt = now;
+    cp.childPanelNextBilledAt = new Date(now.getTime() + intervalDays * 24 * 60 * 60 * 1000);
+
+    await cp.save();
+    res.json({ success: true, message: "Billing reset to global default" });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ success: false, message: "Failed to reset billing" });
+  }
+};

@@ -314,7 +314,7 @@ export const updateCPTemplate = async (req, res) => {
 export const updateCPLandingTemplate = async (req, res) => {
   try {
     const { landingTemplate } = req.body;
-    const VALID = ["default", "dark-pro", "minimal", "vibrant"];
+    const VALID = ["default", "dark-pro", "minimal", "vibrant",  "sunrise", "bold", "neon"];
     if (!VALID.includes(landingTemplate)) {
       return res.status(400).json({
         message: `Invalid template. Must be one of: ${VALID.join(", ")}`,

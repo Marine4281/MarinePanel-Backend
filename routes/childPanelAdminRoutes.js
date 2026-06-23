@@ -12,6 +12,7 @@ import {
   updateChildPanelOffer,
   updateChildPanelDefaultFees,
   deactivateChildPanel,
+  updatePlatformResellerFeeOverride,
 } from "../controllers/childPanelAdminController.js";
 
 import { protect } from "../middlewares/authMiddleware.js";
@@ -37,5 +38,6 @@ router.put("/:id/toggle-status",  protect, adminOnly, toggleChildPanelStatus);
 router.put("/:id/billing",        protect, adminOnly, updateChildPanelBilling);
 router.put("/:id/commission",     protect, adminOnly, updateChildPanelCommission);
 router.delete("/:id",             protect, adminOnly, deactivateChildPanel);
+router.patch("/:id/platform-reseller-fee", updatePlatformResellerFeeOverride);
 
 export default router;

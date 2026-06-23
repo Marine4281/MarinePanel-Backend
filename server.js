@@ -8,6 +8,7 @@ import { Server } from "socket.io";
 import { startOrderSyncJob } from "./jobs/orderSyncJob.js";
 import { startRefillSyncJob } from "./jobs/refillSyncJob.js";
 import { startBillingCronJob } from "./jobs/billingCronJob.js";
+import { startResellerActivationSyncJob } from "./jobs/resellerActivationSyncJob.js";
 
 dotenv.config();
 
@@ -67,6 +68,7 @@ io.on("connection", (socket) => {
 startBillingCronJob();
 startOrderSyncJob(io);
 startRefillSyncJob();
+startResellerActivationSyncJob(io);
 
 /* ========================================
    🚀 START SERVER

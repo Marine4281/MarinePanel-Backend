@@ -307,6 +307,18 @@ const creditWallet = async (transaction, gw, io) => {
     io.emit("wallet:update", { userId: transaction.user, balance: wallet.balance });
   }
 
+  // NEW — if this depositor is a child panel owner, retry any reseller
+  // activations that were pending due to insufficient platform fee funds
+  try {
+    const depositor = await User.findById(transaction.user).select("isChildPanel").lean();
+    if (depositor?.isChildPanel) {
+      const { resolvePendingActivationsForCp } = await import("./resellerActivationResolver.js");
+      await resolvePendingActivationsForCp(transaction.user, io);
+    }
+  } catch (err) {
+    console.error("Pending reseller activation resolve error:", err.message);
+  }
+
   // Credit child panel owner
   if (transaction.childPanelOwner && !transaction.childPanelCredited) {
     try {

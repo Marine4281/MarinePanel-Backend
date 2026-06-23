@@ -4,6 +4,7 @@ import User from "../models/User.js";
 import Order from "../models/Order.js";
 import Settings from "../models/Settings.js";
 import Wallet from "../models/Wallet.js";
+import { trySettlePlatformResellerFee } from "./resellerActivationResolver.js";
 
 /* ================================================
    HELPERS
@@ -73,6 +74,13 @@ export const getActivationFee = async (req, res) => {
    - On main platform: stamps no childPanelOwner, uses global fee
    - On CP domain: stamps childPanelOwner, uses CP's fee,
      credits fee to CP's wallet, subdomain under CP's domain
+   - NEW: On CP activation, the PLATFORM also silently charges the
+     CP owner's wallet an anti-abuse fee (separate from the CP's own
+     fee above, which is charged to the reseller). The reseller never
+     sees or knows about this second fee. If the CP owner's wallet
+     can't cover it, the reseller's panel is marked "pending" — they
+     are NOT told why, just shown a neutral pause screen. It resolves
+     automatically once the CP owner's wallet has enough balance.
 ================================================ */
 
 export const activateReseller = async (req, res) => {
@@ -211,6 +219,24 @@ export const activateReseller = async (req, res) => {
       }
     }
 
+    // ── NEW: Platform anti-abuse fee, silently charged to CP owner ────
+    // This is SEPARATE from the CP's own fee above. The reseller's own
+    // fee has already been deducted and credited at this point — this
+    // block only ever touches the CP owner's wallet, never the reseller's.
+    // If it can't be covered right now, `pending` is returned to the
+    // frontend so it can route to the neutral "pause" screen instead of
+    // the dashboard. The reseller is still told activation succeeded.
+    let pending = false;
+    if (isCP) {
+      const settled = await trySettlePlatformResellerFee({
+        cpOwnerId: cpOwner._id,
+        resellerUser: user,
+        cpFeeCharged: activationFee,
+        io: req.app.get("io"),
+      });
+      pending = !settled;
+    }
+
      // ── Refresh CORS allowlist so new domain is unblocked immediately ──
     try {
       const { refreshResellerDomains } = await import("../app.js");
@@ -223,6 +249,7 @@ export const activateReseller = async (req, res) => {
       message: "Reseller activated successfully",
       domain: finalDomain,
       remainingBalance: wallet.balance,
+      pending, // frontend routes to /reseller/pending when true, /reseller/dashboard otherwise
     });
   } catch (error) {
     console.error(error);

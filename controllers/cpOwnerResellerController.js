@@ -10,6 +10,7 @@ import Order from "../models/Order.js";
 import Wallet from "../models/Wallet.js";
 import mongoose from "mongoose";
 import logCpAdminAction from "../utils/logCpAdminAction.js";
+import ResellerActivationEvent from "../models/ResellerActivationEvent.js";
 
 // ======================= HELPERS =======================
 
@@ -553,5 +554,54 @@ export const updateCPResellerUserBalance = async (req, res) => {
   } catch (error) {
     console.error("CP UPDATE RESELLER USER BALANCE ERROR:", error);
     res.status(500).json({ success: false, message: "Failed to update balance" });
+  }
+};
+
+export const getResellerActivationUnreadCount = async (req, res) => {
+  try {
+    const count = await ResellerActivationEvent.countDocuments({
+      childPanelOwner: req.user._id,
+      seen: false,
+    });
+    res.json({ success: true, count });
+  } catch (error) {
+    res.status(500).json({ success: false, message: "Failed to fetch count" });
+  }
+};
+
+export const getResellerActivationEvents = async (req, res) => {
+  try {
+    const page  = Number(req.query.page)  || 1;
+    const limit = Number(req.query.limit) || 20;
+    const skip  = (page - 1) * limit;
+
+    const [events, total] = await Promise.all([
+      ResellerActivationEvent.find({ childPanelOwner: req.user._id })
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit)
+        .lean(),
+      ResellerActivationEvent.countDocuments({ childPanelOwner: req.user._id }),
+    ]);
+
+    res.json({
+      success: true,
+      data: events,
+      pagination: { page, limit, total, pages: Math.ceil(total / limit) },
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: "Failed to fetch events" });
+  }
+};
+
+export const markResellerActivationEventsSeen = async (req, res) => {
+  try {
+    await ResellerActivationEvent.updateMany(
+      { childPanelOwner: req.user._id, seen: false },
+      { $set: { seen: true } }
+    );
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ success: false, message: "Failed to mark seen" });
   }
 };

@@ -211,6 +211,14 @@ childPanelAutoDeduct: {
   default: true,
 },
 
+    // Platform fee silently charged to a CHILD PANEL OWNER's wallet whenever
+// one of their end-users activates a reseller panel. Anti-abuse throttle —
+// separate from the CP's own resellerActivationFee (charged to the reseller).
+platformResellerActivationFee: {
+  type: Number,
+  default: 5,
+},
+
     /*
     ================================================================
     MAINTENANCE MODE

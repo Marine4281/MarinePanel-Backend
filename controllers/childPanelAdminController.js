@@ -279,6 +279,8 @@ export const getChildPanelSettings = async (req, res) => {
         gracePeriodHours:    settings.childPanelGracePeriodHours    ?? 0,
         reminderHours:       settings.childPanelReminderHours       ?? 48,
         autoDeduct:          settings.childPanelAutoDeduct          ?? true,
+        platformResellerActivationFee: settings.platformResellerActivationFee ?? 5,
+         
       },
     });
   } catch (error) {
@@ -333,7 +335,8 @@ export const updateChildPanelDefaultFees = async (req, res) => {
       billingIntervalDays,
       gracePeriodHours,
       reminderHours,
-      autoDeduct
+      autoDeduct,
+      platformResellerActivationFee,
        
     } = req.body;
 
@@ -351,6 +354,9 @@ export const updateChildPanelDefaultFees = async (req, res) => {
     if (autoDeduct       !== undefined) settings.childPanelAutoDeduct       = Boolean(autoDeduct);
     if (billingIntervalDays !== undefined) {
   settings.childPanelBillingIntervalDays = Math.max(1, Number(billingIntervalDays));
+     }
+     if (platformResellerActivationFee !== undefined) {
+  settings.platformResellerActivationFee = Math.max(0, Number(platformResellerActivationFee));
      }
 
     // Validate and save tiered billing
@@ -608,5 +614,37 @@ export const resetChildPanelBilling = async (req, res) => {
   } catch (error) {
     console.error(error);
     res.status(500).json({ success: false, message: "Failed to reset billing" });
+  }
+};
+
+// ======================= UPDATE PLATFORM RESELLER FEE OVERRIDE =======================
+// Admin-only. null = inherit global Settings.platformResellerActivationFee.
+
+export const updatePlatformResellerFeeOverride = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { fee } = req.body;
+
+    const isEmpty = fee === null || fee === "";
+    const value = isEmpty ? null : Number(fee);
+
+    if (!isEmpty && (isNaN(value) || value < 0)) {
+      return res.status(400).json({ success: false, message: "Fee must be 0 or greater, or blank for global default" });
+    }
+
+    if (!isValidId(id)) {
+      return res.status(400).json({ success: false, message: "Invalid ID" });
+    }
+
+    const cp = await User.findOne({ _id: id, isChildPanel: true });
+    if (!cp) return res.status(404).json({ success: false, message: "Child panel not found" });
+
+    cp.platformResellerFeeOverride = value;
+    await cp.save();
+
+    res.json({ success: true, platformResellerFeeOverride: value });
+  } catch (error) {
+    console.error("UPDATE PLATFORM RESELLER FEE OVERRIDE ERROR:", error);
+    res.status(500).json({ success: false, message: "Failed to update fee override" });
   }
 };

@@ -568,6 +568,32 @@ childPanelBillingIntervalDays: {
       default: false,
     },
 
+    /*
+Per-CP override of the PLATFORM's anti-abuse fee. null = inherit
+Settings.platformResellerActivationFee. Admin-only — CP owners cannot
+see or edit this field themselves.
+*/
+platformResellerFeeOverride: {
+  type: Number,
+  default: null,
+  min: 0,
+},
+
+    /*
+true = this reseller's activation is on hold because the CP owner's wallet
+couldn't cover the platform's anti-abuse fee at activation time. The
+reseller's OWN fee has already been deducted — only the platform-to-CP
+leg is pending. Reseller is never shown why.
+*/
+resellerActivationPending: {
+  type: Boolean,
+  default: false,
+},
+resellerActivationPendingSince: {
+  type: Date,
+  default: null,
+},
+
     // null = inherit global Settings.childPanelGracePeriodHours
 childPanelGracePeriodHours: {
   type: Number,

@@ -435,6 +435,8 @@ export const payBillingFee = async (req, res) => {
     user.childPanelNextBilledAt  = new Date(now.getTime() + effectiveIntervalDays * 24 * 60 * 60 * 1000);
     user.childPanelOrdersThisCycle = 0;
     user.childPanelSubscriptionSuspended = false;
+    user.childPanelIsActive      = true;
+    user.childPanelSuspendReason = null;
 
     await user.save();
 

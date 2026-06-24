@@ -198,26 +198,7 @@ export const activateReseller = async (req, res) => {
     await Promise.all([wallet.save(), user.save()]);
     await User.findByIdAndUpdate(user._id, { balance: wallet.balance });
 
-    // ── Credit fee to CP owner's wallet (if CP activation) ───────────
-    if (isCP && activationFee > 0) {
-      const cpWallet = await Wallet.findOne({ user: cpOwner._id });
-      if (cpWallet) {
-        cpWallet.transactions.push({
-          type: "Reseller Activation Fee",
-          amount: Number(activationFee),
-          status: "Completed",
-          note: `Activation fee from reseller ${user.email}`,
-          reference: `RSP-ACT-${user._id}`,
-          createdAt: new Date(),
-        });
-        cpWallet.balance = calculateBalance(cpWallet.transactions);
-        await cpWallet.save();
-        await User.findByIdAndUpdate(cpOwner._id, {
-          balance: cpWallet.balance,
-          childPanelWallet: cpWallet.balance,
-        });
-      }
-    }
+    
 
     // ── NEW: Platform anti-abuse fee, silently charged to CP owner ────
     // This is SEPARATE from the CP's own fee above. The reseller's own

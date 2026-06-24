@@ -91,6 +91,8 @@ export const getAllChildPanels = async (req, res) => {
           childPanelMonthlyFee:    1,
           childPanelPerOrderFee:   1,
           childPanelLastBilledAt:  1,
+          childPanelNextBilledAt:         1,
+          childPanelSubscriptionSuspended: 1,
           childPanelPaymentMode:   1,
           childPanelServiceMode:   1,
           createdAt:               1,
@@ -646,5 +648,93 @@ export const updatePlatformResellerFeeOverride = async (req, res) => {
   } catch (error) {
     console.error("UPDATE PLATFORM RESELLER FEE OVERRIDE ERROR:", error);
     res.status(500).json({ success: false, message: "Failed to update fee override" });
+  }
+};
+
+/* ================================================
+   CREDIT CHILD PANEL WALLET
+   Admin manually tops up the CP owner's childPanelWallet.
+   After crediting, if the panel is subscription-suspended
+   and the wallet now covers the fee, auto-reactivate.
+================================================ */
+export const creditChildPanelWallet = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { amount, note } = req.body;
+
+    if (!isValidId(id)) {
+      return res.status(400).json({ success: false, message: "Invalid ID" });
+    }
+
+    const creditAmount = Number(amount);
+    if (!creditAmount || creditAmount <= 0) {
+      return res.status(400).json({ success: false, message: "Amount must be a positive number" });
+    }
+
+    const cp = await User.findById(id);
+    if (!cp || !cp.isChildPanel) {
+      return res.status(404).json({ success: false, message: "Child panel not found" });
+    }
+
+    // Credit the wallet
+    cp.childPanelWallet = parseFloat((cp.childPanelWallet + creditAmount).toFixed(2));
+
+    // ── Auto-reactivate if subscription-suspended and wallet now covers fee ──
+    let autoReactivated = false;
+
+    if (cp.childPanelSubscriptionSuspended) {
+      const settings = await Settings.findOne().lean();
+      let fee = 0;
+      const billingMode = cp.childPanelBillingMode || "monthly";
+
+      if (billingMode === "monthly" || billingMode === "both") {
+        const tiers  = settings?.childPanelMonthlyTiers ?? [];
+        const orders = cp.childPanelOrdersThisCycle ?? 0;
+        if (tiers.length > 0) {
+          const tier = tiers.find(
+            (t) => orders >= t.minOrders && (t.maxOrders === null || orders <= t.maxOrders)
+          );
+          fee += tier ? tier.fee : (cp.childPanelMonthlyFee ?? settings?.childPanelMonthlyFee ?? 20);
+        } else {
+          fee += cp.childPanelMonthlyFee ?? settings?.childPanelMonthlyFee ?? 20;
+        }
+      }
+      if (billingMode === "per_order" || billingMode === "both") {
+        fee += (cp.childPanelPerOrderFee ?? settings?.childPanelPerOrderFee ?? 0) *
+               (cp.childPanelOrdersThisCycle ?? 0);
+      }
+
+      if (fee > 0 && cp.childPanelWallet >= fee) {
+        const effectiveIntervalDays =
+          cp.childPanelBillingIntervalDays ??
+          Number(settings?.childPanelBillingIntervalDays ?? 30);
+        const now = new Date();
+
+        cp.childPanelWallet            = parseFloat((cp.childPanelWallet - fee).toFixed(2));
+        cp.childPanelLastBilledAt      = now;
+        cp.childPanelNextBilledAt      = new Date(now.getTime() + effectiveIntervalDays * 24 * 60 * 60 * 1000);
+        cp.childPanelOrdersThisCycle   = 0;
+        cp.childPanelSubscriptionSuspended = false;
+        cp.childPanelIsActive          = true;
+        cp.childPanelSuspendReason     = null;
+        autoReactivated = true;
+      }
+    }
+
+    await cp.save();
+
+    res.json({
+      success: true,
+      message: autoReactivated
+        ? `Credited $${creditAmount.toFixed(2)} and auto-deducted fee — panel reactivated`
+        : `Credited $${creditAmount.toFixed(2)} to panel wallet`,
+      newBalance: cp.childPanelWallet,
+      autoReactivated,
+      isActive: cp.childPanelIsActive,
+      note: note || null,
+    });
+  } catch (error) {
+    console.error("CREDIT WALLET ERROR:", error);
+    res.status(500).json({ success: false, message: "Failed to credit wallet" });
   }
 };

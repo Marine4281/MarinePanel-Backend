@@ -27,6 +27,7 @@ import {
   uploadCpOwnerSeoImage,
   getResellerSeo,
   getCpOwnerSeo,
+  getCrawlerHtml,
 } from "../controllers/seoController.js";
 
 const router = express.Router();
@@ -57,5 +58,8 @@ router.patch("/cp",                       protect, updateCpOwnerSeo);
 router.get(  "/cp",                       protect, getCpOwnerSeo);
 router.post( "/cp/logo",                  protect, uploadBrandLogo.single("image"),  uploadCpOwnerLogo);
 router.post( "/cp/seo-image",             protect, uploadSeoImage.single("image"),   uploadCpOwnerSeoImage);
+
+// ── OG HTML for crawlers (WhatsApp, Facebook, Telegram previews) ──
+router.get("/og-preview", detectResellerDomain, detectChildPanelDomain, getCrawlerHtml);
 
 export default router;

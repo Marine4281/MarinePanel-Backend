@@ -35,7 +35,8 @@ const walletSchema = new mongoose.Schema(
             "Commission",            
             "Commission Reversal",   
             "CP Commission",         
-            "CP Commission Reversal", 
+            "CP Commission Reversal",
+            "Reseller Activation Fee",
             "CP Deposit Earning" 
           ],
           required: true,

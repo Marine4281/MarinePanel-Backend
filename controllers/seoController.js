@@ -439,3 +439,65 @@ export const getCpOwnerSeo = async (req, res) => {
     res.status(500).json({ message: "Failed to fetch SEO" });
   }
 };
+// ====================================================================
+// CRAWLER HTML — returns a minimal HTML page with correct OG meta tags
+// WhatsApp/Facebook/Telegram hit this because they don't run JS
+// The frontend redirects crawlers to /api/seo/og-preview via Vercel config
+// ====================================================================
+export const getCrawlerHtml = async (req, res) => {
+  try {
+    let title, description, image, url, brandName;
+
+    if (req.childPanel) {
+      const cp  = req.childPanel;
+      const seo = cp.childPanelSeo || {};
+      brandName   = cp.childPanelBrandName || "Panel";
+      title       = seo.title       || brandName;
+      description = seo.description || "Fast & affordable SMM panel services.";
+      image       = seo.ogImage     || cp.childPanelLogo || "";
+      url         = seo.canonical   || `https://${cp.childPanelDomain || req.headers.host}`;
+    } else if (req.brand) {
+      const r   = req.brand;
+      const seo = r.resellerSeo || {};
+      brandName   = r.brandName || "Reseller Panel";
+      title       = seo.title       || brandName;
+      description = seo.description || "Fast & affordable SMM panel services.";
+      image       = seo.ogImage     || r.logo || "";
+      url         = seo.canonical   || `https://${r.domain || req.headers.host}`;
+    } else {
+      const settings = await Settings.findOne().lean();
+      const seo      = settings?.seo || {};
+      brandName   = "MarinePanel";
+      title       = seo.title       || "Marine Panel – #1 Cheap & Fast SMM Panel";
+      description = seo.description || "Buy Instagram followers, TikTok views and YouTube subscribers at the best prices.";
+      image       = seo.ogImage     || settings?.mainLogo || "";
+      url         = seo.canonical   || "https://marinepanel.online/";
+    }
+
+    const html = `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8" />
+  <title>${title}</title>
+  <meta name="description" content="${description}" />
+  <meta property="og:type"        content="website" />
+  <meta property="og:title"       content="${title}" />
+  <meta property="og:description" content="${description}" />
+  <meta property="og:url"         content="${url}" />
+  ${image ? `<meta property="og:image" content="${image}" />` : ""}
+  <meta name="twitter:card"        content="summary_large_image" />
+  <meta name="twitter:title"       content="${title}" />
+  <meta name="twitter:description" content="${description}" />
+  ${image ? `<meta name="twitter:image" content="${image}" />` : ""}
+  <meta http-equiv="refresh" content="0;url=${url}" />
+</head>
+<body>Redirecting...</body>
+</html>`;
+
+    res.setHeader("Content-Type", "text/html");
+    res.send(html);
+  } catch (err) {
+    console.error("getCrawlerHtml error:", err);
+    res.status(500).send("Error");
+  }
+};

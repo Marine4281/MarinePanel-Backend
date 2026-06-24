@@ -38,6 +38,6 @@ router.put("/:id/toggle-status",  protect, adminOnly, toggleChildPanelStatus);
 router.put("/:id/billing",        protect, adminOnly, updateChildPanelBilling);
 router.put("/:id/commission",     protect, adminOnly, updateChildPanelCommission);
 router.delete("/:id",             protect, adminOnly, deactivateChildPanel);
-router.patch("/:id/platform-reseller-fee", updatePlatformResellerFeeOverride);
+router.patch("/:id/platform-reseller-fee", protect, adminOnly, updatePlatformResellerFeeOverride);
 
 export default router;

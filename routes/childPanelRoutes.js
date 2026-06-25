@@ -13,7 +13,9 @@ import {
   updateChildPanelBranding,
   updateChildPanelDomain,
   updateChildPanelSettings,
-  getChildPanelBranding,           // ← was missing
+  getChildPanelBranding,   
+  getCPPlatformResellerFee,
+  getResellerActivationFeed, 
 } from "../controllers/childPanelController.js";
 
 import { protect } from "../middlewares/authMiddleware.js";
@@ -53,4 +55,9 @@ router.put("/domain", protect, childPanelOnly, updateChildPanelDomain);
 // Settings
 router.put("/settings", protect, childPanelOnly, updateChildPanelSettings);
 
+// Reseller activation feed
+router.get("/resellers/activation-feed", protect, childPanelOnly, getResellerActivationFeed);
+
+// Platform fee info (used for the info banner in the resellers page)
+router.get("/resellers/platform-fee", protect, childPanelOnly, getCPPlatformResellerFee);
 export default router;

@@ -4,6 +4,7 @@ import User from "../models/User.js";
 import Order from "../models/Order.js";
 import Settings from "../models/Settings.js";
 import Wallet from "../models/Wallet.js";
+import ResellerActivationEvent from "../models/ResellerActivationEvent.js";
 
 /* ================================================
    HELPERS

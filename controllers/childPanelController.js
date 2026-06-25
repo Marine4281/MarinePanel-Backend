@@ -337,20 +337,29 @@ export const getChildPanelDashboard = async (req, res) => {
     }
 
     res.json({
-      resellers: resellersCount,
-      users: usersCount,
-      orders: totalOrders,
-      pendingOrders,
-      revenue: totalRevenue,
-      earnings,
-      wallet: wallet?.balance || 0,
-      childPanelWallet: req.user.childPanelWallet || 0,
-      brandName: req.user.childPanelBrandName,
-      domain: req.user.childPanelDomain || req.user.childPanelSlug,
-      billingMode: req.user.childPanelBillingMode,
-      monthlyFee: req.user.childPanelMonthlyFee,
-      lastBilledAt: req.user.childPanelLastBilledAt,
-    });
+  resellers: resellersCount,
+  users: usersCount,
+  orders: totalOrders,
+  pendingOrders,
+  revenue: totalRevenue,
+  earnings,
+  wallet: wallet?.balance || 0,
+  childPanelWallet: req.user.childPanelWallet || 0,
+  brandName: req.user.childPanelBrandName,
+  domain: req.user.childPanelDomain || req.user.childPanelSlug,
+  billingMode: req.user.childPanelBillingMode,
+  monthlyFee: req.user.childPanelMonthlyFee,
+  lastBilledAt: req.user.childPanelLastBilledAt,
+  billing: {
+    mode:            req.user.childPanelBillingMode          ?? "monthly",
+    monthlyFee:      req.user.childPanelMonthlyFee           ?? 0,
+    perOrderFee:     req.user.childPanelPerOrderFee          ?? 0,
+    ordersThisCycle: req.user.childPanelOrdersThisCycle      ?? 0,
+    lastBilledAt:    req.user.childPanelLastBilledAt         ?? null,
+    nextBilledAt:    req.user.childPanelNextBilledAt         ?? null,
+    intervalDays:    req.user.childPanelBillingIntervalDays  ?? null,
+  },
+});
   } catch (error) {
     console.error("CHILD PANEL DASHBOARD ERROR:", error);
     res.status(500).json({ message: "Dashboard failed" });

@@ -738,3 +738,116 @@ export const creditChildPanelWallet = async (req, res) => {
     res.status(500).json({ success: false, message: "Failed to credit wallet" });
   }
 };
+/* ================================================
+   REOPEN / EXTEND SUBSCRIPTION
+   Modes:
+     "next_cycle"  — deduct fee and push nextBilledAt by one interval from now
+     "grace"       — extend grace deadline by N hours/days without charging
+================================================ */
+
+export const reopenChildPanelSubscription = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { mode, graceHours } = req.body;
+    // mode: "next_cycle" | "grace"
+    // graceHours: number (only used when mode === "grace")
+
+    if (!isValidId(id)) {
+      return res.status(400).json({ success: false, message: "Invalid ID" });
+    }
+
+    const [cp, settings] = await Promise.all([
+      User.findById(id),
+      Settings.findOne().lean(),
+    ]);
+
+    if (!cp || !cp.isChildPanel) {
+      return res.status(404).json({ success: false, message: "Child panel not found" });
+    }
+
+    const now = new Date();
+
+    if (mode === "next_cycle") {
+      // Resolve fee
+      let fee = 0;
+      const billingMode = cp.childPanelBillingMode || "monthly";
+
+      if (billingMode === "monthly" || billingMode === "both") {
+        const tiers  = settings?.childPanelMonthlyTiers ?? [];
+        const orders = cp.childPanelOrdersThisCycle ?? 0;
+        if (tiers.length > 0) {
+          const tier = tiers.find(
+            (t) => orders >= t.minOrders && (t.maxOrders === null || orders <= t.maxOrders)
+          );
+          fee += tier ? tier.fee : (cp.childPanelMonthlyFee ?? settings?.childPanelMonthlyFee ?? 20);
+        } else {
+          fee += cp.childPanelMonthlyFee ?? settings?.childPanelMonthlyFee ?? 20;
+        }
+      }
+      if (billingMode === "per_order" || billingMode === "both") {
+        fee += (cp.childPanelPerOrderFee ?? settings?.childPanelPerOrderFee ?? 0) *
+               (cp.childPanelOrdersThisCycle ?? 0);
+      }
+
+      const effectiveIntervalDays =
+        cp.childPanelBillingIntervalDays ??
+        Number(settings?.childPanelBillingIntervalDays ?? 30);
+
+      // Deduct fee if applicable and wallet has funds; skip deduction if fee=0 or billing=none
+      if (fee > 0 && cp.childPanelWallet < fee) {
+        // Allow admin to force-reopen even with insufficient wallet (skip deduction)
+        // — just push the cycle and log warning. Admin's choice.
+        console.warn(`[ReopenCP] CP ${cp._id} has insufficient wallet ($${cp.childPanelWallet}) for fee $${fee}. Reopening without deduction.`);
+      } else if (fee > 0) {
+        cp.childPanelWallet = parseFloat((cp.childPanelWallet - fee).toFixed(2));
+      }
+
+      cp.childPanelLastBilledAt          = now;
+      cp.childPanelNextBilledAt          = new Date(now.getTime() + effectiveIntervalDays * 24 * 60 * 60 * 1000);
+      cp.childPanelOrdersThisCycle       = 0;
+      cp.childPanelSubscriptionSuspended = false;
+      cp.childPanelIsActive              = true;
+      cp.childPanelSuspendReason         = null;
+
+      await cp.save();
+
+      return res.json({
+        success: true,
+        message: `Panel reopened. Next billing: ${cp.childPanelNextBilledAt.toISOString()}`,
+        nextBilledAt: cp.childPanelNextBilledAt,
+        isActive: true,
+        newWallet: cp.childPanelWallet,
+      });
+    }
+
+    if (mode === "grace") {
+      const hours = Number(graceHours);
+      if (!hours || hours <= 0) {
+        return res.status(400).json({ success: false, message: "graceHours must be a positive number" });
+      }
+
+      // Extend nextBilledAt by the grace hours from NOW (so grace deadline = new nextBilledAt + grace)
+      // More intuitive: set nextBilledAt = now + graceHours so the panel is live for that window
+      const graceExpiry = new Date(now.getTime() + hours * 60 * 60 * 1000);
+
+      cp.childPanelNextBilledAt          = graceExpiry;
+      cp.childPanelSubscriptionSuspended = false;
+      cp.childPanelIsActive              = true;
+      cp.childPanelSuspendReason         = null;
+
+      await cp.save();
+
+      return res.json({
+        success: true,
+        message: `Panel reopened with ${hours}h grace. Expires: ${graceExpiry.toISOString()}`,
+        nextBilledAt: graceExpiry,
+        isActive: true,
+      });
+    }
+
+    return res.status(400).json({ success: false, message: "mode must be 'next_cycle' or 'grace'" });
+  } catch (error) {
+    console.error("REOPEN SUBSCRIPTION ERROR:", error);
+    res.status(500).json({ success: false, message: "Failed to reopen subscription" });
+  }
+};

@@ -10,16 +10,21 @@
 import cron from "node-cron";
 import User from "../models/User.js";
 import Settings from "../models/Settings.js";
-
 const runBillingCycle = async () => {
   console.log("💳 [BillingCron] Running billing cycle...");
 
   try {
     const settings = await Settings.findOne().lean();
-    const globalGraceHours = settings?.childPanelGracePeriodHours ?? 0;
-    const globalAutoDeduct = settings?.childPanelAutoDeduct ?? true;
 
-    // Process all panels that have a next billing date
+    // ── Global defaults — explicit fallbacks matching CPFeesTab defaults ──
+    const globalGraceHours  = typeof settings?.childPanelGracePeriodHours === "number"
+      ? settings.childPanelGracePeriodHours
+      : 0;
+    const globalAutoDeduct  = typeof settings?.childPanelAutoDeduct === "boolean"
+      ? settings.childPanelAutoDeduct
+      : true;
+    const globalIntervalDays = Number(settings?.childPanelBillingIntervalDays ?? 30);
+
     const panels = await User.find({
       isChildPanel: true,
       childPanelNextBilledAt: { $ne: null },
@@ -33,12 +38,18 @@ const runBillingCycle = async () => {
     for (const cp of panels) {
       const nextBilledAt = new Date(cp.childPanelNextBilledAt);
 
-      // Resolve effective settings (per-CP override → global)
-      const effectiveGraceHours = cp.childPanelGracePeriodHours ?? globalGraceHours;
-      const effectiveAutoDeduct = cp.childPanelAutoDeduct ?? globalAutoDeduct;
-      const effectiveIntervalDays =
-        cp.childPanelBillingIntervalDays ??
-        Number(settings?.childPanelBillingIntervalDays ?? 30);
+      // ── Resolve effective settings per panel (null = use global) ──
+      const effectiveGraceHours = typeof cp.childPanelGracePeriodHours === "number"
+        ? cp.childPanelGracePeriodHours
+        : globalGraceHours;
+
+      const effectiveAutoDeduct = typeof cp.childPanelAutoDeduct === "boolean"
+        ? cp.childPanelAutoDeduct
+        : globalAutoDeduct;
+
+      const effectiveIntervalDays = typeof cp.childPanelBillingIntervalDays === "number"
+        ? cp.childPanelBillingIntervalDays
+        : globalIntervalDays;
 
       const graceDeadline = new Date(
         nextBilledAt.getTime() + effectiveGraceHours * 60 * 60 * 1000
@@ -71,13 +82,13 @@ const runBillingCycle = async () => {
       // ── Step 1: Auto-deduct when due ─────────────────────────────────
       if (isDue && effectiveAutoDeduct && !cp.childPanelSubscriptionSuspended) {
         if (fee > 0 && cp.childPanelWallet >= fee) {
-          cp.childPanelWallet            = parseFloat((cp.childPanelWallet - fee).toFixed(2));
-          cp.childPanelLastBilledAt      = now;
-          cp.childPanelNextBilledAt      = new Date(now.getTime() + effectiveIntervalDays * 24 * 60 * 60 * 1000);
-          cp.childPanelOrdersThisCycle   = 0;
+          cp.childPanelWallet                = parseFloat((cp.childPanelWallet - fee).toFixed(2));
+          cp.childPanelLastBilledAt          = now;
+          cp.childPanelNextBilledAt          = new Date(now.getTime() + effectiveIntervalDays * 24 * 60 * 60 * 1000);
+          cp.childPanelOrdersThisCycle       = 0;
           cp.childPanelSubscriptionSuspended = false;
-          cp.childPanelIsActive          = true; // ensure active
-          cp.childPanelSuspendReason     = null;
+          cp.childPanelIsActive              = true;
+          cp.childPanelSuspendReason         = null;
 
           await cp.save();
           deducted++;
@@ -85,39 +96,42 @@ const runBillingCycle = async () => {
           continue;
         }
 
-        // Wallet insufficient — suspend immediately when grace expires
+        // Wallet insufficient — suspend only when grace expires
         if (graceExpired) {
           cp.childPanelSubscriptionSuspended = true;
-          cp.childPanelIsActive          = false; // ← KEY: reflect in admin dashboard
-          cp.childPanelSuspendReason     = "Subscription fee unpaid — wallet insufficient. Please top up your wallet to reactivate.";
+          cp.childPanelIsActive              = false;
+          cp.childPanelSuspendReason         = `Subscription fee unpaid — wallet insufficient ($${(cp.childPanelWallet || 0).toFixed(2)} of $${fee} required). Please top up your wallet to reactivate.`;
           await cp.save();
           suspended++;
-          console.log(`🚫 [BillingCron] Suspended CP ${cp._id} (${cp.email}) — insufficient wallet after grace`);
+          console.log(`🚫 [BillingCron] Suspended CP ${cp._id} (${cp.email}) — insufficient wallet after ${effectiveGraceHours}h grace`);
           continue;
         }
+
+        // Still within grace — log and skip
+        console.log(`⏳ [BillingCron] CP ${cp._id} in grace period (${effectiveGraceHours}h). Grace deadline: ${graceDeadline.toISOString()}`);
+        continue;
       }
 
       // ── Step 2: Suspend if grace expired (non-auto-deduct panels) ────
-      if (isDue && graceExpired && !cp.childPanelSubscriptionSuspended) {
+      if (isDue && graceExpired && !effectiveAutoDeduct && !cp.childPanelSubscriptionSuspended) {
         cp.childPanelSubscriptionSuspended = true;
-        cp.childPanelIsActive          = false; // ← KEY
-        cp.childPanelSuspendReason     = "Subscription fee unpaid — panel suspended. Please pay your subscription fee to reactivate.";
+        cp.childPanelIsActive              = false;
+        cp.childPanelSuspendReason         = "Subscription fee unpaid — panel suspended. Please pay your subscription fee to reactivate.";
         await cp.save();
         suspended++;
-        console.log(`🚫 [BillingCron] Suspended CP ${cp._id} (${cp.email}) — grace expired`);
+        console.log(`🚫 [BillingCron] Suspended CP ${cp._id} (${cp.email}) — grace expired (manual pay mode)`);
         continue;
       }
 
       // ── Step 3: Auto-reactivate suspended panels with sufficient wallet ──
-      // This handles the case where admin topped up the wallet between cron runs
       if (cp.childPanelSubscriptionSuspended && fee > 0 && cp.childPanelWallet >= fee) {
-        cp.childPanelWallet            = parseFloat((cp.childPanelWallet - fee).toFixed(2));
-        cp.childPanelLastBilledAt      = now;
-        cp.childPanelNextBilledAt      = new Date(now.getTime() + effectiveIntervalDays * 24 * 60 * 60 * 1000);
-        cp.childPanelOrdersThisCycle   = 0;
+        cp.childPanelWallet                = parseFloat((cp.childPanelWallet - fee).toFixed(2));
+        cp.childPanelLastBilledAt          = now;
+        cp.childPanelNextBilledAt          = new Date(now.getTime() + effectiveIntervalDays * 24 * 60 * 60 * 1000);
+        cp.childPanelOrdersThisCycle       = 0;
         cp.childPanelSubscriptionSuspended = false;
-        cp.childPanelIsActive          = true;  // ← reactivate
-        cp.childPanelSuspendReason     = null;
+        cp.childPanelIsActive              = true;
+        cp.childPanelSuspendReason         = null;
 
         await cp.save();
         reactivated++;
@@ -132,7 +146,7 @@ const runBillingCycle = async () => {
     console.error("❌ [BillingCron] Error:", err);
   }
 };
-
+      
 export const startBillingCronJob = () => {
   console.log("⏱️ Billing cron started");
   cron.schedule("5 0 * * *", runBillingCycle);

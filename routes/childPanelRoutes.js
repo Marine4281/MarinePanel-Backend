@@ -13,9 +13,9 @@ import {
   updateChildPanelBranding,
   updateChildPanelDomain,
   updateChildPanelSettings,
-  getChildPanelBranding,   
+  getChildPanelBranding,
   getCPPlatformResellerFee,
-  getResellerActivationFeed, 
+  getResellerActivationFeed,
 } from "../controllers/childPanelController.js";
 
 import { protect } from "../middlewares/authMiddleware.js";
@@ -35,10 +35,12 @@ router.post("/activate", protect, activateChildPanel);
 // Dashboard
 router.get("/dashboard", protect, childPanelOnly, getChildPanelDashboard);
 
-// Resellers
-router.get("/resellers", protect, childPanelOnly, getChildPanelResellers);
+// Resellers — specific routes MUST come before /:id param routes
+router.get("/resellers/activation-feed", protect, childPanelOnly, getResellerActivationFeed);
+router.get("/resellers/platform-fee",    protect, childPanelOnly, getCPPlatformResellerFee);
+router.get("/resellers",                 protect, childPanelOnly, getChildPanelResellers);
 router.put("/resellers/:id/toggle-status", protect, childPanelOnly, toggleChildPanelResellerStatus);
-router.put("/resellers/:id/commission", protect, childPanelOnly, updateChildPanelResellerCommission);
+router.put("/resellers/:id/commission",    protect, childPanelOnly, updateChildPanelResellerCommission);
 
 // Users
 router.get("/users", protect, childPanelOnly, getChildPanelUsers);
@@ -55,9 +57,4 @@ router.put("/domain", protect, childPanelOnly, updateChildPanelDomain);
 // Settings
 router.put("/settings", protect, childPanelOnly, updateChildPanelSettings);
 
-// Reseller activation feed
-router.get("/resellers/activation-feed", protect, childPanelOnly, getResellerActivationFeed);
-
-// Platform fee info (used for the info banner in the resellers page)
-router.get("/resellers/platform-fee", protect, childPanelOnly, getCPPlatformResellerFee);
 export default router;

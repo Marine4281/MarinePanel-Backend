@@ -7,13 +7,14 @@ import {
   getChildPanelSettings,
   toggleChildPanelStatus,
   updateChildPanelBilling,
-  resetChildPanelBilling, 
+  resetChildPanelBilling,
   updateChildPanelCommission,
   updateChildPanelOffer,
   updateChildPanelDefaultFees,
   deactivateChildPanel,
   updatePlatformResellerFeeOverride,
   creditChildPanelWallet,
+  reopenChildPanelSubscription,
 } from "../controllers/childPanelAdminController.js";
 
 import { protect } from "../middlewares/authMiddleware.js";
@@ -27,12 +28,16 @@ router.get("/",                   protect, adminOnly, getAllChildPanels);
 // Global default settings (fees + tiers)
 router.get("/settings/fees",      protect, adminOnly, getChildPanelSettings);
 router.put("/settings/fees",      protect, adminOnly, updateChildPanelDefaultFees);
-router.post("/:id/credit-wallet", protect, adminOnly, creditChildPanelWallet); 
+router.post("/:id/credit-wallet", protect, adminOnly, creditChildPanelWallet);
 
 // Global offer/promo
 router.put("/settings/offer",     protect, adminOnly, updateChildPanelOffer);
-//RESET
-router.put("/:id/billing/reset", protect, adminOnly, resetChildPanelBilling);
+
+// Billing
+router.put("/:id/billing/reset",  protect, adminOnly, resetChildPanelBilling);
+
+// Reopen / extend subscription (NEW)
+router.post("/:id/reopen-subscription", protect, adminOnly, reopenChildPanelSubscription);
 
 // Per-panel operations
 router.get("/:id",                protect, adminOnly, getChildPanelDetails);

@@ -3,8 +3,25 @@ import Service from "../models/Service.js";
 import User from "../models/User.js";
 import ResellerService from "../models/ResellerService.js";
 import Settings from "../models/Settings.js";
-// ❌ REMOVE the CPService import — it doesn't exist
-// CP-owned services live in the same Service model with cpOwner field
+
+// Newest category on top, serviceId ascending within each category
+// Mirrors the same function in serviceController.js
+function sortByNewestCategoryFirst(services) {
+  const categoryMaxId = {};
+  services.forEach((s) => {
+    const cat = s.category || "General";
+    if (categoryMaxId[cat] === undefined || s.serviceId > categoryMaxId[cat]) {
+      categoryMaxId[cat] = s.serviceId;
+    }
+  });
+  return services.slice().sort((a, b) => {
+    const catDiff =
+      (categoryMaxId[b.category || "General"] ?? 0) -
+      (categoryMaxId[a.category || "General"] ?? 0);
+    if (catDiff !== 0) return catDiff;
+    return (a.serviceId ?? 0) - (b.serviceId ?? 0);
+  });
+}
 
 /* =========================================================
 GET ALL SERVICES (Reseller/Admin/End User)
@@ -49,24 +66,23 @@ export const getResellerServices = async (req, res) => {
       if (serviceMode === "platform" || serviceMode === "both") {
         const platformServices = await Service.find({ status: true, cpOwner: null })
           .select("name rate min max category platform visible serviceId isFree freeQuantity cooldownHours refillAllowed cancelAllowed serviceType description commissionOverride")
-          .sort({ createdAt: -1 })
+          .sort({ serviceId: 1 })
           .lean();
-        services.push(...platformServices);
+        services.push(...sortByNewestCategoryFirst(platformServices));
       }
 
       if (serviceMode === "own" || serviceMode === "both") {
-        // CP's own provider services — same Service model, cpOwner field set
         const ownServices = await Service.find({
           status: true,
           cpOwner: cpOwnerId,
         })
           .select("name rate min max category platform visible serviceId isFree freeQuantity cooldownHours refillAllowed cancelAllowed serviceType description cpOwner commissionOverride")
-          .sort({ createdAt: -1 })
+          .sort({ serviceId: 1 })
           .lean();
-        services.push(...ownServices);
+        services.push(...sortByNewestCategoryFirst(ownServices));
       }
 
-      // Deduplicate by _id (in case both modes return overlapping services)
+      // Deduplicate by _id
       const seen = new Set();
       services = services.filter((s) => {
         const key = s._id.toString();
@@ -75,11 +91,12 @@ export const getResellerServices = async (req, res) => {
         return true;
       });
     } else {
-      // Main platform reseller — platform services only (cpOwner: null)
-      services = await Service.find({ status: true, cpOwner: null })
+      // Main platform reseller — platform services only
+      const raw = await Service.find({ status: true, cpOwner: null })
         .select("name rate min max category platform visible serviceId isFree freeQuantity cooldownHours refillAllowed cancelAllowed serviceType isDefaultCategoryGlobal isDefaultCategoryPlatform description commissionOverride")
-        .sort({ createdAt: -1 })
+        .sort({ serviceId: 1 })
         .lean();
+      services = sortByNewestCategoryFirst(raw);
     }
 
     // Reseller-level overrides
@@ -106,7 +123,7 @@ export const getResellerServices = async (req, res) => {
         const finalRate  = systemRate + (systemRate * resellerCommission) / 100;
 
         const override = overridesMap[s._id.toString()];
-        const visible  = override?.visible  ?? s.visible  ?? true;
+        const visible  = override?.visible      ?? s.visible  ?? true;
         const name     = override?.customName     || s.name;
         const category = override?.customCategory || s.category || "General";
 
@@ -145,7 +162,7 @@ export const getResellerServices = async (req, res) => {
 };
 
 /* =========================================================
-UPDATE SERVICE VISIBILITY (unchanged)
+UPDATE SERVICE VISIBILITY
 ========================================================= */
 export const updateServiceVisibility = async (req, res) => {
   try {
@@ -168,7 +185,7 @@ export const updateServiceVisibility = async (req, res) => {
 };
 
 /* =========================================================
-UPDATE SERVICE NAME OR CATEGORY (unchanged)
+UPDATE SERVICE NAME OR CATEGORY
 ========================================================= */
 export const updateServiceName = async (req, res) => {
   try {
@@ -198,7 +215,7 @@ export const updateServiceName = async (req, res) => {
 };
 
 /* =========================================================
-SET RESELLER COMMISSION (unchanged)
+SET RESELLER COMMISSION
 ========================================================= */
 export const setResellerCommission = async (req, res) => {
   try {

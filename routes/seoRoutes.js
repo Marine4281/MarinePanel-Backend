@@ -28,6 +28,7 @@ import {
   getResellerSeo,
   getCpOwnerSeo,
   getCrawlerHtml,
+  renderSeoHtml,
 } from "../controllers/seoController.js";
 
 const router = express.Router();
@@ -62,4 +63,5 @@ router.post( "/cp/seo-image",             protect, uploadSeoImage.single("image"
 // ── OG HTML for crawlers (WhatsApp, Facebook, Telegram previews) ──
 router.get("/og-preview", detectResellerDomain, detectChildPanelDomain, getCrawlerHtml);
 
+router.get("/render", detectResellerDomain, detectChildPanelDomain, renderSeoHtml);
 export default router;

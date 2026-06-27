@@ -1,9 +1,50 @@
-// controllers/seoController.js  (NEW FILE)
+// controllers/seoController.js
 
 import Settings from "../models/Settings.js";
 import User     from "../models/User.js";
 import { cloudinary } from "../config/cloudinary.js";
 import logAdminAction from "../utils/logAdminAction.js";
+
+// ====================================================================
+// SHARED HELPER — resolves brand/SEO data based on req.childPanel /
+// req.brand (set by detectChildPanelDomain / detectResellerDomain)
+// Used by getCrawlerHtml (OG previews) and renderSeoHtml (bot SEO)
+// ====================================================================
+const resolveBrandSeo = async (req) => {
+  if (req.childPanel) {
+    const cp  = req.childPanel;
+    const seo = cp.childPanelSeo || {};
+    return {
+      brandName:   cp.childPanelBrandName || "Panel",
+      title:       seo.title       || cp.childPanelBrandName || "Panel",
+      description: seo.description || "Fast & affordable SMM panel services.",
+      image:       seo.ogImage     || cp.childPanelLogo || "",
+      url:         seo.canonical   || `https://${cp.childPanelDomain || req.headers.host}`,
+    };
+  }
+
+  if (req.brand) {
+    const r   = req.brand;
+    const seo = r.resellerSeo || {};
+    return {
+      brandName:   r.brandName || "Reseller Panel",
+      title:       seo.title       || r.brandName || "Reseller Panel",
+      description: seo.description || "Fast & affordable SMM panel services.",
+      image:       seo.ogImage     || r.logo || "",
+      url:         seo.canonical   || `https://${r.domain || req.headers.host}`,
+    };
+  }
+
+  const settings = await Settings.findOne().lean();
+  const seo      = settings?.seo || {};
+  return {
+    brandName:   "MarinePanel",
+    title:       seo.title       || "Marine Panel – #1 Cheap & Fast SMM Panel",
+    description: seo.description || "Buy Instagram followers, TikTok views and YouTube subscribers at the best prices.",
+    image:       seo.ogImage     || settings?.mainLogo || "",
+    url:         seo.canonical   || "https://marinepanel.online/",
+  };
+};
 
 // ====================================================================
 // PUBLIC — fetch SEO data based on domain (used by frontend useSEO hook)
@@ -439,40 +480,15 @@ export const getCpOwnerSeo = async (req, res) => {
     res.status(500).json({ message: "Failed to fetch SEO" });
   }
 };
+
 // ====================================================================
-// CRAWLER HTML — returns a minimal HTML page with correct OG meta tags
-// WhatsApp/Facebook/Telegram hit this because they don't run JS
-// The frontend redirects crawlers to /api/seo/og-preview via Vercel config
+// CRAWLER HTML — minimal HTML w/ OG meta + redirect, for link-unfurl
+// bots (WhatsApp/Facebook/Telegram) that just need a preview card and
+// then bounce. NOT used for search-engine indexing — see renderSeoHtml.
 // ====================================================================
 export const getCrawlerHtml = async (req, res) => {
   try {
-    let title, description, image, url, brandName;
-
-    if (req.childPanel) {
-      const cp  = req.childPanel;
-      const seo = cp.childPanelSeo || {};
-      brandName   = cp.childPanelBrandName || "Panel";
-      title       = seo.title       || brandName;
-      description = seo.description || "Fast & affordable SMM panel services.";
-      image       = seo.ogImage     || cp.childPanelLogo || "";
-      url         = seo.canonical   || `https://${cp.childPanelDomain || req.headers.host}`;
-    } else if (req.brand) {
-      const r   = req.brand;
-      const seo = r.resellerSeo || {};
-      brandName   = r.brandName || "Reseller Panel";
-      title       = seo.title       || brandName;
-      description = seo.description || "Fast & affordable SMM panel services.";
-      image       = seo.ogImage     || r.logo || "";
-      url         = seo.canonical   || `https://${r.domain || req.headers.host}`;
-    } else {
-      const settings = await Settings.findOne().lean();
-      const seo      = settings?.seo || {};
-      brandName   = "MarinePanel";
-      title       = seo.title       || "Marine Panel – #1 Cheap & Fast SMM Panel";
-      description = seo.description || "Buy Instagram followers, TikTok views and YouTube subscribers at the best prices.";
-      image       = seo.ogImage     || settings?.mainLogo || "";
-      url         = seo.canonical   || "https://marinepanel.online/";
-    }
+    const { title, description, image, url } = await resolveBrandSeo(req);
 
     const html = `<!DOCTYPE html>
 <html>
@@ -498,6 +514,57 @@ export const getCrawlerHtml = async (req, res) => {
     res.send(html);
   } catch (err) {
     console.error("getCrawlerHtml error:", err);
+    res.status(500).send("Error");
+  }
+};
+
+// ====================================================================
+// SEO RENDER — full crawlable HTML for search/AI bots (Googlebot,
+// Bingbot, GPTBot, PerplexityBot, etc.) that DON'T execute JS.
+// Hit by Vercel Routing Middleware, not by real visitors.
+// No redirect — bots need to actually read the content to index it.
+// ====================================================================
+const NOINDEX_PATHS = ["/login", "/register", "/dashboard", "/admin", "/forgot-password", "/reset-password"];
+
+export const renderSeoHtml = async (req, res) => {
+  try {
+    const path     = req.query.path || "/";
+    const noindex  = NOINDEX_PATHS.some((p) => path.startsWith(p));
+    const { title, description, image, url, brandName } = await resolveBrandSeo(req);
+
+    const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>${title}</title>
+  <meta name="description" content="${description}" />
+  ${noindex ? `<meta name="robots" content="noindex,nofollow" />` : ""}
+  <meta property="og:type"        content="website" />
+  <meta property="og:title"       content="${title}" />
+  <meta property="og:description" content="${description}" />
+  <meta property="og:url"         content="${url}" />
+  ${image ? `<meta property="og:image" content="${image}" />` : ""}
+  <link rel="canonical" href="${url}" />
+</head>
+<body>
+  <h1>${title}</h1>
+  <p>${description}</p>
+  <nav>
+    <a href="/">Home</a>
+    <a href="/services">Services</a>
+    <a href="/pricing">Pricing</a>
+    <a href="/login">Sign In</a>
+    <a href="/register">Create Account</a>
+  </nav>
+  <p>${brandName} offers automated social media marketing services — likes, followers, views, and more — with instant delivery and secure payments.</p>
+</body>
+</html>`;
+
+    res.setHeader("Cache-Control", "public, max-age=300, s-maxage=600");
+    res.setHeader("Content-Type", "text/html; charset=utf-8");
+    res.send(html);
+  } catch (err) {
+    console.error("renderSeoHtml error:", err);
     res.status(500).send("Error");
   }
 };

@@ -6,7 +6,6 @@ import User from "../models/User.js";
 import logCpAdminAction from "../utils/logCpAdminAction.js";
 import { formatProviderStatusDisplay } from "../utils/providerStatusMapper.js";
 import {
-  creditChildPanelCommission,
   reverseChildPanelCommission,
 } from "./orderController.js";
 
@@ -281,7 +280,12 @@ export const updateCPOrderStatus = async (req, res) => {
 
     if (status === "completed") {
       order.quantityDelivered = order.quantity;
-      await creditChildPanelCommission(order);
+      // No commission credit on completion — the CP owner's wallet is
+      // already only debited the platform's base rate (systemCharge),
+      // while the end-user's wallet is debited the marked-up finalRate.
+      // That gap is the CP owner's margin and is already realized via
+      // the smaller debit; crediting a separate commission transaction
+      // on top of that would double-pay it.
     }
 
     let refundData = null;
@@ -368,7 +372,7 @@ export const updateCPOrderProgress = async (req, res) => {
     order.quantityDelivered = delivered;
     if (delivered === order.quantity) {
       order.status = "completed";
-      await creditChildPanelCommission(order);
+      // No commission credit — see note in updateCPOrderStatus above.
     } else if (delivered > 0) {
       order.status = "processing";
     }

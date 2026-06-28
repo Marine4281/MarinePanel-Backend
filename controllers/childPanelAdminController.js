@@ -5,6 +5,7 @@ import Order from "../models/Order.js";
 import Settings from "../models/Settings.js";
 import mongoose from "mongoose";
 import Wallet from "../models/Wallet.js";
+import { resolveChildPanelFee, tryReactivateChildPanel } from "../utils/childPanelBilling.js";
 
 const calculateBalance = (transactions = []) =>
   transactions
@@ -427,7 +428,6 @@ export const deactivateChildPanel = async (req, res) => {
     cp.childPanelSlug        = null;
     cp.childPanelBrandName   = null;
     cp.childPanelActivatedAt = null;
-    cp.childPanelWallet      = 0;
     cp.childPanelOwner       = null;
 
     await cp.save();
@@ -707,67 +707,18 @@ export const creditChildPanelWallet = async (req, res) => {
       createdAt: new Date(),
     });
     wallet.balance = calculateBalance(wallet.transactions);
-
-    // ── Auto-reactivate if subscription-suspended and wallet now covers fee ──
-    let autoReactivated = false;
-
-    if (cp.childPanelSubscriptionSuspended) {
-      const settings = await Settings.findOne().lean();
-      let fee = 0;
-      const billingMode = cp.childPanelBillingMode || "monthly";
-
-      if (billingMode === "monthly" || billingMode === "both") {
-        const tiers  = settings?.childPanelMonthlyTiers ?? [];
-        const orders = cp.childPanelOrdersThisCycle ?? 0;
-        if (tiers.length > 0) {
-          const tier = tiers.find(
-            (t) => orders >= t.minOrders && (t.maxOrders === null || orders <= t.maxOrders)
-          );
-          fee += tier ? tier.fee : (cp.childPanelMonthlyFee ?? settings?.childPanelMonthlyFee ?? 20);
-        } else {
-          fee += cp.childPanelMonthlyFee ?? settings?.childPanelMonthlyFee ?? 20;
-        }
-      }
-      if (billingMode === "per_order" || billingMode === "both") {
-        fee += (cp.childPanelPerOrderFee ?? settings?.childPanelPerOrderFee ?? 0) *
-               (cp.childPanelOrdersThisCycle ?? 0);
-      }
-
-      if (fee > 0 && wallet.balance >= fee) {
-        const effectiveIntervalDays =
-          cp.childPanelBillingIntervalDays ??
-          Number(settings?.childPanelBillingIntervalDays ?? 30);
-        const now = new Date();
-
-        wallet.transactions.push({
-          type: "Admin Adjustment",
-          amount: -Number(fee),
-          status: "Completed",
-          note: "Child panel subscription fee — auto-deducted on top-up",
-          createdAt: new Date(),
-        });
-        wallet.balance = calculateBalance(wallet.transactions);
-
-        cp.childPanelLastBilledAt      = now;
-        cp.childPanelNextBilledAt      = new Date(now.getTime() + effectiveIntervalDays * 24 * 60 * 60 * 1000);
-        cp.childPanelOrdersThisCycle   = 0;
-        cp.childPanelSubscriptionSuspended = false;
-        cp.childPanelIsActive          = true;
-        cp.childPanelSuspendReason     = null;
-        autoReactivated = true;
-      }
-    }
-
     await wallet.save();
     await User.findByIdAndUpdate(cp._id, { balance: wallet.balance });
-    await cp.save();
+
+    const settings = await Settings.findOne().lean();
+    const { reactivated: autoReactivated, newBalance } = await tryReactivateChildPanel(cp, settings);
 
     res.json({
       success: true,
       message: autoReactivated
         ? `Credited $${creditAmount.toFixed(2)} and auto-deducted fee — panel reactivated`
         : `Credited $${creditAmount.toFixed(2)} to wallet`,
-      newBalance: wallet.balance,
+      newBalance,
       autoReactivated,
       isActive: cp.childPanelIsActive,
       note: note || null,
@@ -777,6 +728,8 @@ export const creditChildPanelWallet = async (req, res) => {
     res.status(500).json({ success: false, message: "Failed to credit wallet" });
   }
 };
+
+
 /* ================================================
    REOPEN / EXTEND SUBSCRIPTION
    Modes:
@@ -808,26 +761,7 @@ export const reopenChildPanelSubscription = async (req, res) => {
 
     if (mode === "next_cycle") {
       // Resolve fee
-      let fee = 0;
-      const billingMode = cp.childPanelBillingMode || "monthly";
-
-      if (billingMode === "monthly" || billingMode === "both") {
-        const tiers  = settings?.childPanelMonthlyTiers ?? [];
-        const orders = cp.childPanelOrdersThisCycle ?? 0;
-        if (tiers.length > 0) {
-          const tier = tiers.find(
-            (t) => orders >= t.minOrders && (t.maxOrders === null || orders <= t.maxOrders)
-          );
-          fee += tier ? tier.fee : (cp.childPanelMonthlyFee ?? settings?.childPanelMonthlyFee ?? 20);
-        } else {
-          fee += cp.childPanelMonthlyFee ?? settings?.childPanelMonthlyFee ?? 20;
-        }
-      }
-      if (billingMode === "per_order" || billingMode === "both") {
-        fee += (cp.childPanelPerOrderFee ?? settings?.childPanelPerOrderFee ?? 0) *
-               (cp.childPanelOrdersThisCycle ?? 0);
-      }
-
+      const fee = resolveChildPanelFee(cp, settings);
       const effectiveIntervalDays =
         cp.childPanelBillingIntervalDays ??
         Number(settings?.childPanelBillingIntervalDays ?? 30);

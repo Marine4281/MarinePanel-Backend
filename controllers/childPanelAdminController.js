@@ -556,6 +556,7 @@ export const getChildPanelDetails = async (req, res) => {
     const totalOrderCount = revenueAgg?.totalOrders  ?? 0;
     const totalRevenue    = revenueAgg?.totalRevenue  ?? 0;
     const totalEarnings   = revenueAgg?.totalEarnings ?? 0;
+    const wallet = await Wallet.findOne({ user: cp._id }).lean();
 
     res.json({
       success: true,
@@ -573,7 +574,7 @@ export const getChildPanelDetails = async (req, res) => {
           subscriptionSuspended: cp.childPanelSubscriptionSuspended ?? false,
         },
         stats: {
-          childPanelWallet: formatNumber(cp.childPanelWallet),
+          walletBalance: formatNumber(wallet?.balance || 0),
           totalOrders:      totalOrderCount,
           totalRevenue:     formatNumber(totalRevenue),
           totalEarnings:    formatNumber(totalEarnings),

@@ -4,6 +4,12 @@ import User from "../models/User.js";
 import Order from "../models/Order.js";
 import Settings from "../models/Settings.js";
 import mongoose from "mongoose";
+import Wallet from "../models/Wallet.js";
+
+const calculateBalance = (transactions = []) =>
+  transactions
+    .filter((t) => t.status === "Completed")
+    .reduce((acc, t) => acc + (Number(t.amount) || 0), 0);
 
 const isValidId = (id) => mongoose.Types.ObjectId.isValid(id);
 const formatNumber = (num) => Number(Number(num || 0).toFixed(4));
@@ -77,6 +83,18 @@ export const getAllChildPanels = async (req, res) => {
       },
 
       {
+        $lookup: {
+          from: "wallets",
+          let:  { cpId: "$_id" },
+          pipeline: [
+            { $match: { $expr: { $eq: ["$user", "$$cpId"] } } },
+            { $project: { balance: 1 } },
+          ],
+          as: "walletInfo",
+        },
+      },
+
+      {
         $project: {
           email:                   1,
           phone:                   1,
@@ -86,7 +104,7 @@ export const getAllChildPanels = async (req, res) => {
           childPanelIsActive:      1,
           childPanelSuspendReason: 1,
           childPanelActivatedAt:   1,
-          childPanelWallet:        1,
+          walletBalance: { $ifNull: [{ $arrayElemAt: ["$walletInfo.balance", 0] }, 0] },
           childPanelBillingMode:   1,
           childPanelMonthlyFee:    1,
           childPanelPerOrderFee:   1,
@@ -119,7 +137,6 @@ export const getAllChildPanels = async (req, res) => {
     res.status(500).json({ success: false, message: "Failed to fetch child panels" });
   }
 };
-
 
 /* ================================================
    TOGGLE CHILD PANEL STATUS  (suspend / activate)
@@ -653,7 +670,7 @@ export const updatePlatformResellerFeeOverride = async (req, res) => {
 
 /* ================================================
    CREDIT CHILD PANEL WALLET
-   Admin manually tops up the CP owner's childPanelWallet.
+   Admin manually tops up the CP owner's normal wallet.
    After crediting, if the panel is subscription-suspended
    and the wallet now covers the fee, auto-reactivate.
 ================================================ */
@@ -676,8 +693,19 @@ export const creditChildPanelWallet = async (req, res) => {
       return res.status(404).json({ success: false, message: "Child panel not found" });
     }
 
-    // Credit the wallet
-    cp.childPanelWallet = parseFloat((cp.childPanelWallet + creditAmount).toFixed(2));
+    let wallet = await Wallet.findOne({ user: cp._id });
+    if (!wallet) {
+      wallet = await Wallet.create({ user: cp._id, balance: 0, transactions: [] });
+    }
+
+    wallet.transactions.push({
+      type: "Admin Adjustment",
+      amount: creditAmount,
+      status: "Completed",
+      note: note || "Admin top-up",
+      createdAt: new Date(),
+    });
+    wallet.balance = calculateBalance(wallet.transactions);
 
     // ── Auto-reactivate if subscription-suspended and wallet now covers fee ──
     let autoReactivated = false;
@@ -704,13 +732,21 @@ export const creditChildPanelWallet = async (req, res) => {
                (cp.childPanelOrdersThisCycle ?? 0);
       }
 
-      if (fee > 0 && cp.childPanelWallet >= fee) {
+      if (fee > 0 && wallet.balance >= fee) {
         const effectiveIntervalDays =
           cp.childPanelBillingIntervalDays ??
           Number(settings?.childPanelBillingIntervalDays ?? 30);
         const now = new Date();
 
-        cp.childPanelWallet            = parseFloat((cp.childPanelWallet - fee).toFixed(2));
+        wallet.transactions.push({
+          type: "Admin Adjustment",
+          amount: -Number(fee),
+          status: "Completed",
+          note: "Child panel subscription fee — auto-deducted on top-up",
+          createdAt: new Date(),
+        });
+        wallet.balance = calculateBalance(wallet.transactions);
+
         cp.childPanelLastBilledAt      = now;
         cp.childPanelNextBilledAt      = new Date(now.getTime() + effectiveIntervalDays * 24 * 60 * 60 * 1000);
         cp.childPanelOrdersThisCycle   = 0;
@@ -721,14 +757,16 @@ export const creditChildPanelWallet = async (req, res) => {
       }
     }
 
+    await wallet.save();
+    await User.findByIdAndUpdate(cp._id, { balance: wallet.balance });
     await cp.save();
 
     res.json({
       success: true,
       message: autoReactivated
         ? `Credited $${creditAmount.toFixed(2)} and auto-deducted fee — panel reactivated`
-        : `Credited $${creditAmount.toFixed(2)} to panel wallet`,
-      newBalance: cp.childPanelWallet,
+        : `Credited $${creditAmount.toFixed(2)} to wallet`,
+      newBalance: wallet.balance,
       autoReactivated,
       isActive: cp.childPanelIsActive,
       note: note || null,
@@ -793,13 +831,29 @@ export const reopenChildPanelSubscription = async (req, res) => {
         cp.childPanelBillingIntervalDays ??
         Number(settings?.childPanelBillingIntervalDays ?? 30);
 
-      // Deduct fee if applicable and wallet has funds; skip deduction if fee=0 or billing=none
-      if (fee > 0 && cp.childPanelWallet < fee) {
+      let wallet = await Wallet.findOne({ user: cp._id });
+      if (!wallet) {
+        wallet = await Wallet.create({ user: cp._id, balance: 0, transactions: [] });
+      }
+
+      // Deduct fee if applicable and wallet has funds; skip deduction if fee=0 or insufficient
+      if (fee > 0 && wallet.balance < fee) {
         // Allow admin to force-reopen even with insufficient wallet (skip deduction)
         // — just push the cycle and log warning. Admin's choice.
-        console.warn(`[ReopenCP] CP ${cp._id} has insufficient wallet ($${cp.childPanelWallet}) for fee $${fee}. Reopening without deduction.`);
+        console.warn(`[ReopenCP] CP ${cp._id} has insufficient wallet ($${wallet.balance}) for fee $${fee}. Reopening without deduction.`);
       } else if (fee > 0) {
-        cp.childPanelWallet = parseFloat((cp.childPanelWallet - fee).toFixed(2));
+        wallet.transactions.push({
+          type: "Admin Adjustment",
+          amount: -Number(fee),
+          status: "Completed",
+          note: "Child panel subscription fee — admin reopen",
+          createdAt: new Date(),
+        });
+        wallet.balance = wallet.transactions
+          .filter((t) => t.status === "Completed")
+          .reduce((acc, t) => acc + (Number(t.amount) || 0), 0);
+        await wallet.save();
+        await User.findByIdAndUpdate(cp._id, { balance: wallet.balance });
       }
 
       cp.childPanelLastBilledAt          = now;
@@ -816,7 +870,7 @@ export const reopenChildPanelSubscription = async (req, res) => {
         message: `Panel reopened. Next billing: ${cp.childPanelNextBilledAt.toISOString()}`,
         nextBilledAt: cp.childPanelNextBilledAt,
         isActive: true,
-        newWallet: cp.childPanelWallet,
+        newWallet: wallet.balance,
       });
     }
 

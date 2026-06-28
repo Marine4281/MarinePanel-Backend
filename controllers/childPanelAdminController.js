@@ -6,6 +6,7 @@ import Settings from "../models/Settings.js";
 import mongoose from "mongoose";
 import Wallet from "../models/Wallet.js";
 import { resolveChildPanelFee, tryReactivateChildPanel } from "../utils/childPanelBilling.js";
+import { onCpWalletCredited } from "../utils/onCpWalletCredited.js";
 
 const calculateBalance = (transactions = []) =>
   transactions
@@ -728,9 +729,8 @@ export const creditChildPanelWallet = async (req, res) => {
     await wallet.save();
     await User.findByIdAndUpdate(cp._id, { balance: wallet.balance });
 
-    const settings = await Settings.findOne().lean();
-    const { reactivated: autoReactivated, newBalance } = await tryReactivateChildPanel(cp, settings);
-
+    const { reactivated: autoReactivated, newBalance, resumedResellers } = await onCpWalletCredited(cp, req.app.get("io"));
+    
     res.json({
       success: true,
       message: autoReactivated

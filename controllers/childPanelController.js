@@ -344,7 +344,7 @@ export const getChildPanelDashboard = async (req, res) => {
   revenue: totalRevenue,
   earnings,
   wallet: wallet?.balance || 0,
-  childPanelWallet: req.user.childPanelWallet || 0,
+
   brandName: req.user.childPanelBrandName,
   domain: req.user.childPanelDomain || req.user.childPanelSlug,
   billingMode: req.user.childPanelBillingMode,

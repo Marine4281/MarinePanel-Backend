@@ -11,35 +11,12 @@ import cron from "node-cron";
 import User from "../models/User.js";
 import Wallet from "../models/Wallet.js";
 import Settings from "../models/Settings.js";
+import { resolveChildPanelFee, tryReactivateChildPanel } from "../utils/childPanelBilling.js";
 
 const calculateBalance = (transactions = []) =>
   transactions
     .filter((t) => t.status === "Completed")
     .reduce((acc, t) => acc + (Number(t.amount) || 0), 0);
-
-const resolveFee = (cp, settings) => {
-  let fee = 0;
-  const billingMode = cp.childPanelBillingMode || "monthly";
-
-  if (billingMode === "monthly" || billingMode === "both") {
-    const tiers  = settings?.childPanelMonthlyTiers ?? [];
-    const orders = cp.childPanelOrdersThisCycle ?? 0;
-    if (tiers.length > 0) {
-      const tier = tiers.find(
-        (t) => orders >= t.minOrders && (t.maxOrders === null || orders <= t.maxOrders)
-      );
-      fee += tier ? tier.fee : (cp.childPanelMonthlyFee ?? settings?.childPanelMonthlyFee ?? 20);
-    } else {
-      fee += cp.childPanelMonthlyFee ?? settings?.childPanelMonthlyFee ?? 20;
-    }
-  }
-  if (billingMode === "per_order" || billingMode === "both") {
-    fee += (cp.childPanelPerOrderFee ?? settings?.childPanelPerOrderFee ?? 0) *
-           (cp.childPanelOrdersThisCycle ?? 0);
-  }
-
-  return fee;
-};
 
 // Deducts `fee` from the CP owner's normal wallet via the ledger,
 // keeps Wallet.balance and User.balance in sync, returns the new balance.
@@ -112,7 +89,7 @@ const runBillingCycle = async () => {
       const isDue        = now >= nextBilledAt;
       const graceExpired  = now >= graceDeadline;
 
-      const fee = resolveFee(cp, settings);
+      const fee = resolveChildPanelFee(cp, settings);
 
       // Current wallet balance for this CP owner
       const wallet = await Wallet.findOne({ user: cp._id }).lean();
@@ -168,23 +145,12 @@ const runBillingCycle = async () => {
       }
 
       // ── Step 3: Auto-reactivate suspended panels with sufficient wallet ──
-      if (cp.childPanelSubscriptionSuspended && fee > 0 && currentBalance >= fee) {
-        await deductFeeFromWallet(
-          cp._id,
-          fee,
-          `Child panel subscription fee — auto-reactivation`
-        );
-
-        cp.childPanelLastBilledAt          = now;
-        cp.childPanelNextBilledAt          = new Date(now.getTime() + effectiveIntervalDays * 24 * 60 * 60 * 1000);
-        cp.childPanelOrdersThisCycle       = 0;
-        cp.childPanelSubscriptionSuspended = false;
-        cp.childPanelIsActive              = true;
-        cp.childPanelSuspendReason         = null;
-
-        await cp.save();
-        reactivated++;
-        console.log(`✅ [BillingCron] Auto-reactivated CP ${cp._id} (${cp.email}) — wallet sufficient`);
+      if (cp.childPanelSubscriptionSuspended) {
+        const { reactivated: wasReactivated } = await tryReactivateChildPanel(cp, settings);
+        if (wasReactivated) {
+          reactivated++;
+          console.log(`✅ [BillingCron] Auto-reactivated CP ${cp._id} (${cp.email}) — wallet sufficient`);
+        }
       }
     }
 

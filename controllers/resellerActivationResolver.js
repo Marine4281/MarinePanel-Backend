@@ -98,7 +98,6 @@ export const trySettlePlatformResellerFee = async ({ cpOwnerId, resellerUser, cp
 
   await User.findByIdAndUpdate(cpOwner._id, {
     balance: cpWallet.balance,
-    childPanelWallet: cpWallet.balance,
   });
 
   const wasResumed = resellerUser.resellerActivationPending;

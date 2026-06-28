@@ -374,7 +374,7 @@ export const updateCPAutoDeduct = async (req, res) => {
 };
 
 // POST /cp/settings/pay-fee
-// CP owner manually pays their billing fee from their wallet
+// CP owner manually pays their billing fee from their normal wallet
 export const payBillingFee = async (req, res) => {
   try {
     const user = await User.findById(req.user._id);
@@ -418,11 +418,16 @@ export const payBillingFee = async (req, res) => {
       return res.status(400).json({ message: "No fee due" });
     }
 
-    if (user.childPanelWallet < fee) {
+    let wallet = await Wallet.findOne({ user: user._id });
+    if (!wallet) {
+      wallet = await Wallet.create({ user: user._id, balance: 0, transactions: [] });
+    }
+
+    if (wallet.balance < fee) {
       return res.status(400).json({
-        message: `Insufficient wallet balance. You need $${fee.toFixed(2)} but have $${user.childPanelWallet.toFixed(2)}.`,
+        message: `Insufficient wallet balance. You need $${fee.toFixed(2)} but have $${wallet.balance.toFixed(2)}.`,
         fee,
-        balance: user.childPanelWallet,
+        balance: wallet.balance,
       });
     }
 
@@ -430,7 +435,19 @@ export const payBillingFee = async (req, res) => {
       user.childPanelBillingIntervalDays ??
       Number(settings?.childPanelBillingIntervalDays ?? 30);
 
-    user.childPanelWallet = parseFloat((user.childPanelWallet - fee).toFixed(2));
+    wallet.transactions.push({
+      type: "Admin Adjustment",
+      amount: -Number(fee),
+      status: "Completed",
+      note: "Child panel subscription fee — paid by owner",
+      createdAt: new Date(),
+    });
+    wallet.balance = wallet.transactions
+      .filter((t) => t.status === "Completed")
+      .reduce((acc, t) => acc + (Number(t.amount) || 0), 0);
+    await wallet.save();
+    await User.findByIdAndUpdate(user._id, { balance: wallet.balance });
+
     user.childPanelLastBilledAt  = now;
     user.childPanelNextBilledAt  = new Date(now.getTime() + effectiveIntervalDays * 24 * 60 * 60 * 1000);
     user.childPanelOrdersThisCycle = 0;
@@ -444,11 +461,11 @@ export const payBillingFee = async (req, res) => {
       success: true,
       message: `$${fee.toFixed(2)} deducted. Next billing: ${user.childPanelNextBilledAt}`,
       fee,
-      newBalance: user.childPanelWallet,
+      newBalance: wallet.balance,
       nextBilledAt: user.childPanelNextBilledAt,
     });
   } catch (err) {
     console.error("CP PAY FEE ERROR:", err);
-    res.status(500).json({ message: "Failed to process payment" });
+    res.status(500).json({ message: "Failed to pay billing fee" });
   }
 };

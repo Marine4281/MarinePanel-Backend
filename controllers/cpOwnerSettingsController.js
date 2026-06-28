@@ -16,6 +16,7 @@
 
 import User from "../models/User.js";
 import logCpAdminAction from "../utils/logCpAdminAction.js";
+import { resolveChildPanelFee } from "../utils/childPanelBilling.js";
 
 // ======================= GET ALL SETTINGS =======================
 // Returns all configurable settings for this child panel owner
@@ -394,26 +395,8 @@ export const payBillingFee = async (req, res) => {
     const settings = await Settings.findOne().lean();
 
     // Resolve fee
-    const billingMode = user.childPanelBillingMode || "monthly";
-    let fee = 0;
-
-    if (billingMode === "monthly" || billingMode === "both") {
-      const tiers = settings?.childPanelMonthlyTiers ?? [];
-      const orders = user.childPanelOrdersThisCycle ?? 0;
-      if (tiers.length > 0) {
-        const tier = tiers.find(
-          (t) => orders >= t.minOrders && (t.maxOrders === null || orders <= t.maxOrders)
-        );
-        fee += tier ? tier.fee : (user.childPanelMonthlyFee ?? settings?.childPanelMonthlyFee ?? 20);
-      } else {
-        fee += user.childPanelMonthlyFee ?? settings?.childPanelMonthlyFee ?? 20;
-      }
-    }
-    if (billingMode === "per_order" || billingMode === "both") {
-      fee += (user.childPanelPerOrderFee ?? settings?.childPanelPerOrderFee ?? 0) *
-             (user.childPanelOrdersThisCycle ?? 0);
-    }
-
+    const fee = resolveChildPanelFee(user, settings);
+    
     if (fee <= 0) {
       return res.status(400).json({ message: "No fee due" });
     }

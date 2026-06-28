@@ -8,6 +8,7 @@ import PaymentMethod from "../models/PaymentMethod.js";
 import User from "../models/User.js";
 import Settings from "../models/Settings.js";
 import { tryReactivateChildPanel } from "../utils/childPanelBilling.js";
+import { onCpWalletCredited } from "../utils/onCpWalletCredited.js";
 
 // ===============================
 // CONFIG
@@ -222,10 +223,9 @@ export const handlePaystackWebhook = async (req, res) => {
     try {
       const depositor = await User.findById(transaction.user);
 
-      if (depositor && depositor.isChildPanel && depositor.childPanelSubscriptionSuspended) {
-        const settings = await Settings.findOne().lean();
-        const { reactivated, newBalance } = await tryReactivateChildPanel(depositor, settings);
-
+      if (depositor && depositor.isChildPanel) {
+        const { reactivated, newBalance, resumedResellers } = await onCpWalletCredited(depositor, io);
+        
         if (reactivated && io) {
           io.emit("wallet:update", {
             userId: depositor._id,
@@ -291,11 +291,10 @@ export const handlePaystackWebhook = async (req, res) => {
           transaction.childPanelCredited = true;
           await transaction.save();
 
-          // If the panel was suspended for non-payment, check whether
-          // this credit is now enough to auto-reactivate it.
-          const settings = await Settings.findOne().lean();
-          const { reactivated, newBalance } = await tryReactivateChildPanel(cpOwner, settings);
-
+          // Check whether this credit reactivates a suspended panel
+          // and/or resumes any resellers on hold for the platform fee.
+          const { reactivated, newBalance, resumedResellers } = await onCpWalletCredited(cpOwner, io);
+          
           // Emit to child panel owner
           if (io) {
             io.emit("wallet:update", {

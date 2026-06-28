@@ -452,10 +452,28 @@ export const getChildPanelDetails = async (req, res) => {
       return res.status(400).json({ success: false, message: "Invalid ID" });
     }
 
-    const cp = await User.findById(id).lean();
-    if (!cp || !cp.isChildPanel) {
+    const cpDoc = await User.findById(id);
+    if (!cpDoc || !cpDoc.isChildPanel) {
       return res.status(404).json({ success: false, message: "Child panel not found" });
     }
+
+    // Auto-suspend on read if billing has expired but the DB hasn't caught
+    // up yet (cron only runs once daily). This keeps the admin view in sync
+    // immediately, exactly like a manual suspend, without waiting for cron.
+    // Only triggers on billing expiry — never touches a manual suspension.
+    if (
+      cpDoc.childPanelNextBilledAt &&
+      new Date() > new Date(cpDoc.childPanelNextBilledAt) &&
+      !cpDoc.childPanelSubscriptionSuspended
+    ) {
+      cpDoc.childPanelSubscriptionSuspended = true;
+      cpDoc.childPanelIsActive = false;
+      cpDoc.childPanelSuspendReason =
+        "Subscription fee unpaid — panel suspended. Please pay your subscription fee to reactivate.";
+      await cpDoc.save();
+    }
+
+    const cp = cpDoc.toObject();
 
     // Resolve effective billing interval (panel override → global default)
     const settings = await Settings.findOne().lean();

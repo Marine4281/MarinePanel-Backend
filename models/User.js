@@ -493,11 +493,7 @@ childPanelBillingIntervalDays: {
   default: null,
 },
 
-    // Earnings wallet — credited from reseller order commissions
-    childPanelWallet: {
-      type: Number,
-      default: 0,
-    },
+    
 
     // Lifetime total earned by this child panel
     childPanelTotalEarned: {
@@ -523,7 +519,7 @@ childPanelBillingIntervalDays: {
       default: 25,
     },
 
-    // Minimum withdrawal from childPanelWallet
+    // Minimum withdrawal from the user's normal wallet balance
     childPanelWithdrawMin: {
       type: Number,
       default: 10,

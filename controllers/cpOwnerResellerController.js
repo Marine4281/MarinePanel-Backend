@@ -5,6 +5,7 @@
 // so it is impossible to read or modify resellers from another panel.
 // Mirrors resellerAdminController.js — same operations, different scope.
 
+import Settings from "../models/Settings.js";
 import User from "../models/User.js";
 import Order from "../models/Order.js";
 import Wallet from "../models/Wallet.js";

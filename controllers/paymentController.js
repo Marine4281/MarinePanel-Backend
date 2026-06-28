@@ -6,6 +6,8 @@ import Transaction from "../models/Transaction.js";
 import Wallet from "../models/Wallet.js";
 import PaymentMethod from "../models/PaymentMethod.js";
 import User from "../models/User.js";
+import Settings from "../models/Settings.js";
+import { tryReactivateChildPanel } from "../utils/childPanelBilling.js";
 
 // ===============================
 // CONFIG
@@ -58,18 +60,18 @@ export const initializePaystack = async (req, res) => {
     const reference = `MP-${Date.now()}-${user._id}`;
 
     // Resolve child panel owner if this user belongs to a child panel
-    // that uses platform payment mode
+    // that uses platform payment mode (i.e. this depositor is a
+    // RESELLER/end-user of a child panel, not the CP owner themself)
     let childPanelOwner = null;
 
     if (user.childPanelOwner) {
       const cpOwner = await User.findById(user.childPanelOwner).select(
-        "isChildPanel childPanelIsActive childPanelPaymentMode"
+        "isChildPanel childPanelPaymentMode"
       );
 
       if (
         cpOwner &&
         cpOwner.isChildPanel &&
-        cpOwner.childPanelIsActive &&
         cpOwner.childPanelPaymentMode === "platform"
       ) {
         childPanelOwner = cpOwner._id;
@@ -125,7 +127,11 @@ export const initializePaystack = async (req, res) => {
 //
 // Flow for child panel users using platform gateway:
 //   deposit → credit user wallet → credit child panel owner wallet
-//   (child panel owner must then withdraw — min set by main admin)
+//   → check if that credit covers the CP owner's overdue subscription
+//
+// Flow for a child panel OWNER depositing into their own wallet:
+//   deposit → credit user wallet → check if deposit + existing
+//   balance now covers their own overdue subscription
 //
 // childPanelCredited flag prevents double-crediting if webhook
 // fires more than once for the same reference.
@@ -169,6 +175,8 @@ export const handlePaystackWebhook = async (req, res) => {
       return res.status(400).send("Verification failed");
     }
 
+    const io = req.app.get("io");
+
     // ======================= CREDIT USER WALLET =======================
 
     let wallet = await Wallet.findOne({ user: transaction.user });
@@ -191,12 +199,12 @@ export const handlePaystackWebhook = async (req, res) => {
 
     wallet.balance = calculateBalance(wallet.transactions);
     await wallet.save();
+    await User.findByIdAndUpdate(transaction.user, { balance: wallet.balance });
 
     transaction.status = "Completed";
     await transaction.save();
 
     // Emit to user
-    const io = req.app.get("io");
     if (io) {
       io.emit("wallet:update", {
         userId: transaction.user,
@@ -205,11 +213,44 @@ export const handlePaystackWebhook = async (req, res) => {
       });
     }
 
-    // ======================= CREDIT CHILD PANEL WALLET =======================
+    // ======================= CASE A: DEPOSITOR IS A CHILD PANEL OWNER =======================
+    // The CP owner deposited into their own wallet. If their panel is
+    // currently subscription-suspended, check whether this deposit
+    // (combined with whatever was already in the wallet) now covers
+    // the overdue fee — if so, deduct it and reopen the panel.
+
+    try {
+      const depositor = await User.findById(transaction.user);
+
+      if (depositor && depositor.isChildPanel && depositor.childPanelSubscriptionSuspended) {
+        const settings = await Settings.findOne().lean();
+        const { reactivated, newBalance } = await tryReactivateChildPanel(depositor, settings);
+
+        if (reactivated && io) {
+          io.emit("wallet:update", {
+            userId: depositor._id,
+            balance: newBalance,
+          });
+          io.to(String(depositor._id)).emit("childPanelReactivated", {
+            message: "Your child panel subscription has been paid and reactivated.",
+          });
+        }
+      }
+    } catch (selfErr) {
+      // Log but don't fail the webhook — user wallet is already
+      // credited, reactivation can be retried via cron or manually.
+      console.error("CP SELF-DEPOSIT REACTIVATION ERROR:", selfErr.message);
+    }
+
+    // ======================= CASE B: DEPOSITOR IS A CP OWNER'S RESELLER =======================
     // Only runs if:
-    //   1. This deposit came from a child panel user
+    //   1. This deposit came from a reseller/end-user of a child panel
     //   2. That child panel uses platform payment mode
     //   3. It hasn't been credited already (idempotency guard)
+    //
+    // Credits the CP owner even if their panel is currently suspended —
+    // suspension shouldn't block them from receiving deposit earnings,
+    // and receiving funds is exactly what lets them pay off the fee.
 
     if (
       transaction.childPanelOwner &&
@@ -221,7 +262,6 @@ export const handlePaystackWebhook = async (req, res) => {
         if (
           cpOwner &&
           cpOwner.isChildPanel &&
-          cpOwner.childPanelIsActive &&
           cpOwner.childPanelPaymentMode === "platform"
         ) {
           // Child panel owner's wallet
@@ -245,17 +285,28 @@ export const handlePaystackWebhook = async (req, res) => {
 
           cpWallet.balance = calculateBalance(cpWallet.transactions);
           await cpWallet.save();
+          await User.findByIdAndUpdate(cpOwner._id, { balance: cpWallet.balance });
 
           // Mark as credited — prevents double credit on webhook retry
           transaction.childPanelCredited = true;
           await transaction.save();
 
+          // If the panel was suspended for non-payment, check whether
+          // this credit is now enough to auto-reactivate it.
+          const settings = await Settings.findOne().lean();
+          const { reactivated, newBalance } = await tryReactivateChildPanel(cpOwner, settings);
+
           // Emit to child panel owner
           if (io) {
             io.emit("wallet:update", {
               userId: cpOwner._id,
-              balance: cpWallet.balance,
+              balance: newBalance,
             });
+            if (reactivated) {
+              io.to(String(cpOwner._id)).emit("childPanelReactivated", {
+                message: "Your child panel subscription has been reactivated.",
+              });
+            }
           }
         }
       } catch (cpErr) {

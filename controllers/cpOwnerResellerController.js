@@ -605,3 +605,18 @@ export const markResellerActivationEventsSeen = async (req, res) => {
     res.status(500).json({ success: false, message: "Failed to mark seen" });
   }
 };
+
+export const getCPPlatformFee = async (req, res) => {
+  try {
+    const cpOwner = req.user;
+    // CP owner may have a custom override set by the platform admin;
+    // otherwise fall back to the global platform setting.
+    if (cpOwner.platformResellerFeeOverride != null) {
+      return res.json({ success: true, fee: Number(cpOwner.platformResellerFeeOverride) });
+    }
+    const settings = await Settings.findOne().lean();
+    res.json({ success: true, fee: Number(settings?.platformResellerActivationFee ?? 5) });
+  } catch (error) {
+    res.status(500).json({ success: false, message: "Failed to fetch platform fee" });
+  }
+};

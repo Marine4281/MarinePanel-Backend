@@ -113,7 +113,7 @@ export const childPanelOnly = (req, res, next) => {
 };
 
 // For the child panel OWNER managing their panel from the main platform
-export const cpOwnerOnly = (req, res, next) => {
+export const cpOwnerOnly = async (req, res, next) => {
   const user = req.user;
 
   if (!user) {
@@ -124,20 +124,31 @@ export const cpOwnerOnly = (req, res, next) => {
     return res.status(403).json({ message: "Access denied: Child panel owners only" });
   }
 
+  // Subscription expiry check — runs BEFORE the active check so an
+  // expired-but-still-marked-active panel gets auto-suspended right here,
+  // instead of waiting for the once-daily billing cron.
+  if (
+    user.childPanelNextBilledAt &&
+    new Date() > new Date(user.childPanelNextBilledAt) &&
+    !user.childPanelSubscriptionSuspended
+  ) {
+    user.childPanelSubscriptionSuspended = true;
+    user.childPanelIsActive = false;
+    user.childPanelSuspendReason =
+      "Subscription expired — please contact the platform admin to renew your plan.";
+    await user.save();
+
+    return res.status(403).json({
+      code: "SUBSCRIPTION_EXPIRED",
+      message: user.childPanelSuspendReason,
+      expiredAt: user.childPanelNextBilledAt,
+    });
+  }
+
   if (!user.childPanelIsActive) {
     return res.status(403).json({
       code: "PANEL_SUSPENDED",
       message: user.childPanelSuspendReason || "Your panel has been suspended. Contact support.",
-    });
-  }
-
-  // Subscription expiry check
-  if (user.childPanelNextBilledAt && new Date() > new Date(user.childPanelNextBilledAt)) {
-    return res.status(403).json({
-      code: "SUBSCRIPTION_EXPIRED",
-      message:
-        "Your subscription has expired. Please contact the platform admin to renew your plan.",
-      expiredAt: user.childPanelNextBilledAt,
     });
   }
 

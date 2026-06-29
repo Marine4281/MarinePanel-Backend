@@ -5,6 +5,7 @@ import Service from "../models/Service.js";
 import Settings from "../models/Settings.js";
 import ResellerService from "../models/ResellerService.js";
 import { getCache, setCache } from "../utils/cache.js";
+import User from "../models/User.js";
 
 // Newest category on top, provider order (serviceId asc) within each category
 function sortByNewestCategoryFirst(services) {
@@ -153,69 +154,82 @@ export const getServicesPublic = async (req, res) => {
     // RESELLER DOMAIN
     // ══════════════════════════════════════════════════════
     if (req.reseller) {
-      const reseller = req.reseller;
-      const resellerCommission = Number(reseller.resellerCommissionRate || 0);
+  const reseller = req.reseller;
+  const resellerCommission = Number(reseller.resellerCommissionRate || 0);
 
-      const settings = await Settings.findOne();
-      const adminCommission = Number(settings?.commission || 0);
+  const settings = await Settings.findOne();
+  const adminCommission = Number(settings?.commission || 0);
 
-      const services = sortByNewestCategoryFirst(
-  await Service.find({ status: true, cpOwner: null })
-    .sort({ serviceId: 1 })
-    .lean()
-);
+  // ── NEW: resolve CP layer if this reseller belongs to a child panel ──
+  let cpCommission = 0;
+  if (reseller.childPanelOwner) {
+    const cpOwner = await User.findById(reseller.childPanelOwner).select(
+      "childPanelCommissionRate isChildPanel childPanelIsActive"
+    );
+    if (cpOwner && cpOwner.isChildPanel && cpOwner.childPanelIsActive) {
+      cpCommission = Number(cpOwner.childPanelCommissionRate || 0);
+    }
+  }
 
-      const resellerOverrides = await ResellerService.find({
-        resellerId: reseller._id,
-      }).lean();
+  const services = sortByNewestCategoryFirst(
+    await Service.find({ status: true, cpOwner: null })
+      .sort({ serviceId: 1 })
+      .lean()
+  );
 
-      const overridesMap = {};
-      resellerOverrides.forEach((r) => {
-        overridesMap[r.serviceId.toString()] = r;
-      });
+  const resellerOverrides = await ResellerService.find({
+    resellerId: reseller._id,
+  }).lean();
 
-      const formattedServices = services
-        .map((s) => {
-          const providerRate = Number(s.rate || 0);
-          const systemRate   = providerRate + (providerRate * adminCommission)    / 100;
-          const finalRate    = systemRate   + (systemRate   * resellerCommission) / 100;
+  const overridesMap = {};
+  resellerOverrides.forEach((r) => {
+    overridesMap[r.serviceId.toString()] = r;
+  });
 
-          const override = overridesMap[s._id.toString()];
-          const visible  = override?.visible ?? (s.visible !== false);
+  const formattedServices = services
+    .map((s) => {
+      const providerRate = Number(s.rate || 0);
+      const systemRate   = providerRate + (providerRate * adminCommission) / 100;
+      const cpFinalRate   = systemRate   + (systemRate   * cpCommission)    / 100;
+      const finalRate     = cpFinalRate  + (cpFinalRate   * resellerCommission) / 100;
 
-          // Apply reseller name/category overrides at read time
-          const name     = override?.customName     || s.name;
-          const category = override?.customCategory || s.category || "General";
+      const override = overridesMap[s._id.toString()];
+      const visible  = override?.visible ?? (s.visible !== false);
 
-          return {
-            _id:       s._id,
-            serviceId: s.serviceId || s._id,
-            name,
-            category,
-            platform:    s.platform    || "General",
-            description: s.description || "",
-            icon:        s.icon        || "",
-            serviceType: s.serviceType || "Default",
-            isDefaultCategoryGlobal:   s.isDefaultCategoryGlobal   || false,
-            isDefaultCategoryPlatform: s.isDefaultCategoryPlatform || false,
-            isFree:        s.isFree        || false,
-            freeQuantity:  s.freeQuantity  || 0,
-            cooldownHours: s.cooldownHours || 0,
-            refillAllowed: s.refillAllowed || false,
-            cancelAllowed: s.cancelAllowed || false,
-            visible,
-            providerRate,
-            systemRate,
-            resellerRate: finalRate,
-            finalRate,
-            rate: finalRate,
-            min: Number(s.min ?? 1),
-            max: Number(s.max ?? 100000),
-          };
-        })
-        .filter((s) => s.visible !== false);
+      // Apply reseller name/category overrides at read time
+      const name     = override?.customName     || s.name;
+      const category = override?.customCategory || s.category || "General";
 
-      return res.status(200).json(formattedServices);
+      return {
+        _id:       s._id,
+        serviceId: s.serviceId || s._id,
+        name,
+        category,
+        platform:    s.platform    || "General",
+        description: s.description || "",
+        icon:        s.icon        || "",
+        serviceType: s.serviceType || "Default",
+        isDefaultCategoryGlobal:   s.isDefaultCategoryGlobal   || false,
+        isDefaultCategoryPlatform: s.isDefaultCategoryPlatform || false,
+        isFree:        s.isFree        || false,
+        freeQuantity:  s.freeQuantity  || 0,
+        cooldownHours: s.cooldownHours || 0,
+        refillAllowed: s.refillAllowed || false,
+        cancelAllowed: s.cancelAllowed || false,
+        visible,
+        providerRate,
+        systemRate,
+        cpFinalRate,
+        resellerRate: finalRate,
+        finalRate,
+        rate: finalRate,
+        min: Number(s.min ?? 1),
+        max: Number(s.max ?? 100000),
+      };
+    })
+    .filter((s) => s.visible !== false);
+
+  return res.status(200).json(formattedServices);
     }
 
     // ══════════════════════════════════════════════════════

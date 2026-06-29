@@ -53,6 +53,15 @@ export const getResellerServices = async (req, res) => {
     const settings = await Settings.findOne();
     const adminCommission = Number(settings?.commission || 0);
 
+    // ── NEW: resolve CP commission rate once, if this reseller belongs to a CP ──
+    let cpCommission = 0;
+    if (cpOwnerId) {
+      const cpOwnerRateDoc = await User.findById(cpOwnerId)
+        .select("childPanelCommissionRate")
+        .lean();
+      cpCommission = Number(cpOwnerRateDoc?.childPanelCommissionRate || 0);
+    }
+
     let services = [];
 
     if (cpOwnerId) {
@@ -65,7 +74,7 @@ export const getResellerServices = async (req, res) => {
 
       if (serviceMode === "platform" || serviceMode === "both") {
         const platformServices = await Service.find({ status: true, cpOwner: null })
-          .select("name rate min max category platform visible serviceId isFree freeQuantity cooldownHours refillAllowed cancelAllowed serviceType description commissionOverride")
+          .select("name rate min max category platform visible serviceId isFree freeQuantity cooldownHours refillAllowed cancelAllowed serviceType description cpOwner commissionOverride")
           .sort({ serviceId: 1 })
           .lean();
         services.push(...sortByNewestCategoryFirst(platformServices));
@@ -93,7 +102,7 @@ export const getResellerServices = async (req, res) => {
     } else {
       // Main platform reseller — platform services only
       const raw = await Service.find({ status: true, cpOwner: null })
-        .select("name rate min max category platform visible serviceId isFree freeQuantity cooldownHours refillAllowed cancelAllowed serviceType isDefaultCategoryGlobal isDefaultCategoryPlatform description commissionOverride")
+        .select("name rate min max category platform visible serviceId isFree freeQuantity cooldownHours refillAllowed cancelAllowed serviceType isDefaultCategoryGlobal isDefaultCategoryPlatform description cpOwner commissionOverride")
         .sort({ serviceId: 1 })
         .lean();
       services = sortByNewestCategoryFirst(raw);
@@ -114,13 +123,24 @@ export const getResellerServices = async (req, res) => {
       .map((s) => {
         const providerRate = Number(s.rate || 0);
 
-        let adminRate = adminCommission;
-        if (s.commissionOverride != null) {
-          adminRate = Number(s.commissionOverride);
+        // Base rate before reseller markup — depends on whether this is
+        // a CP-owned service (no admin layer) or a platform service
+        // (admin layer, then CP layer on top).
+        let baseRate;
+
+        if (s.cpOwner) {
+          // CP's own service — no platform/admin layer between CP and provider
+          baseRate = providerRate + (providerRate * cpCommission) / 100;
+        } else {
+          let adminRate = adminCommission;
+          if (s.commissionOverride != null) {
+            adminRate = Number(s.commissionOverride);
+          }
+          const systemRate = providerRate + (providerRate * adminRate) / 100;
+          baseRate = systemRate + (systemRate * cpCommission) / 100;
         }
 
-        const systemRate = providerRate + (providerRate * adminRate) / 100;
-        const finalRate  = systemRate + (systemRate * resellerCommission) / 100;
+        const finalRate = baseRate + (baseRate * resellerCommission) / 100;
 
         const override = overridesMap[s._id.toString()];
         const visible  = override?.visible      ?? s.visible  ?? true;
@@ -135,7 +155,7 @@ export const getResellerServices = async (req, res) => {
           platform: s.platform || "General",
           visible,
           providerRate,
-          systemRate,
+          systemRate: baseRate,
           resellerRate: finalRate,
           finalRate,
           rate: finalRate,

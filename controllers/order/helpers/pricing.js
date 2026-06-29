@@ -22,13 +22,26 @@ export const calculateOrderPricing = async ({
 
     const cpCommissionRate = Number(cpOwner?.childPanelCommissionRate || 0);
 
-    finalRate = providerRate + (providerRate * cpCommissionRate) / 100;
+    const cpFinalRate = providerRate + (providerRate * cpCommissionRate) / 100;
+    finalRate = cpFinalRate;
 
     // CP's own service — no platform layer between CP and provider
     systemCharge = (qty / 1000) * providerRate;
 
     if (cpOwner && cpCommissionRate > 0) {
-      childPanelCommission = (qty / 1000) * (finalRate - providerRate);
+      childPanelCommission = (qty / 1000) * (cpFinalRate - providerRate);
+    }
+
+    // Reseller markup is layered on TOP of the CP owner's final rate
+    if (user.resellerOwner) {
+      const reseller = await User.findById(user.resellerOwner);
+      const resellerRate = Number(reseller?.resellerCommissionRate || 0);
+
+      if (resellerRate > 0) {
+        const resellerFinalRate = cpFinalRate + (cpFinalRate * resellerRate) / 100;
+        resellerCommission = (qty / 1000) * (resellerFinalRate - cpFinalRate);
+        finalRate = resellerFinalRate;
+      }
     }
   } else {
     const settings = await Settings.findOne().lean();
@@ -60,27 +73,37 @@ export const calculateOrderPricing = async ({
     }
     // ────────────────────────────────────────────────────────────────────
 
-    const systemRate = providerRate + (providerRate * adminRate) / 100;
-    finalRate = systemRate;
+    // 1. Admin's final rate
+    const adminFinalRate = providerRate + (providerRate * adminRate) / 100;
+    finalRate = adminFinalRate;
 
     // Platform sell rate × qty — what the platform charges the CP owner
-    systemCharge = (qty / 1000) * systemRate;
+    systemCharge = (qty / 1000) * adminFinalRate;
 
-    if (user.resellerOwner) {
-      const reseller = await User.findById(user.resellerOwner);
-      const resellerRate = Number(reseller?.resellerCommissionRate || 0);
-
-      finalRate = systemRate + (systemRate * resellerRate) / 100;
-      resellerCommission = ((qty / 1000) * systemRate * resellerRate) / 100;
-    }
+    // 2. CP owner's final rate — markup on top of admin's final rate
+    let cpFinalRate = adminFinalRate;
 
     if (childPanelOwnerId) {
       const cpOwner = await User.findById(childPanelOwnerId);
       const cpCommissionRate = Number(cpOwner?.childPanelCommissionRate || 0);
 
       if (cpCommissionRate > 0) {
-        const finalCharge = (qty / 1000) * finalRate;
-        childPanelCommission = (finalCharge * cpCommissionRate) / 100;
+        cpFinalRate = adminFinalRate + (adminFinalRate * cpCommissionRate) / 100;
+        childPanelCommission = (qty / 1000) * (cpFinalRate - adminFinalRate);
+      }
+    }
+    finalRate = cpFinalRate;
+
+    // 3. Reseller's final rate — markup on top of CP owner's final rate
+    //    (or on top of admin's final rate, if there's no CP in the chain)
+    if (user.resellerOwner) {
+      const reseller = await User.findById(user.resellerOwner);
+      const resellerRate = Number(reseller?.resellerCommissionRate || 0);
+
+      if (resellerRate > 0) {
+        const resellerFinalRate = cpFinalRate + (cpFinalRate * resellerRate) / 100;
+        resellerCommission = (qty / 1000) * (resellerFinalRate - cpFinalRate);
+        finalRate = resellerFinalRate;
       }
     }
   }

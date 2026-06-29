@@ -37,13 +37,13 @@ export const getSyncOrders = async (req, res) => {
     if (status === "active") {
       query.$or = [{ status: { $in: ["pending", "processing"] }, syncPaused: { $ne: true } }];
     } else if (status === "paused") {
-      query.$or = undefined;
+      delete query.$or;
       query.syncPaused = true;
     } else if (status === "timed_out") {
-      query.$or = undefined;
+      delete query.$or;
       query.syncTimedOut = true;
     } else if (status) {
-      query.$or = undefined;
+      delete query.$or;
       query.status = status;
     }
 

@@ -15,6 +15,7 @@ const calculateBalance = (transactions = []) =>
 const formatOrder = (order) => ({
   _id: order._id,
   orderId: order.orderId,
+  customOrderId: order.customOrderId,
   service: order.service,
   link: order.link,
   quantity: order.quantity,
@@ -29,12 +30,16 @@ const formatOrder = (order) => ({
         email: order.userId.email,
         username: order.userId.email?.split("@")[0] || "",
         balance: order.userId.balance || 0,
+        country: order.userId.country || null,
+        countryCode: order.userId.countryCode || null,
       }
     : {
         _id: null,
         email: "Unknown",
         username: "",
         balance: 0,
+        country: null,
+        countryCode: null,
       },
 });
 
@@ -42,11 +47,11 @@ const formatOrder = (order) => ({
 // GET /api/admin/orders
 export const getAllOrders = async (req, res) => {
   try {
-    const { search = "", page = 1, limit = 10 } = req.query;
+    const { search = "", page = 1, limit = 10, country = "All" } = req.query;
     const pageNum = Number(page);
     const limitNum = Number(limit);
 
-    // ✅ FIXED: base query excludes orders belonging to child panel end users.
+    // ✅ base query excludes orders belonging to child panel end users.
     // CP orders are the CP owner's responsibility — admin should not see
     // individual CP users' orders. Only show main-platform orders.
     let orderQuery = { childPanelOwner: { $exists: false } };
@@ -64,6 +69,9 @@ export const getAllOrders = async (req, res) => {
       if (userIds.length > 0) orQueries.push({ userId: { $in: userIds } });
       if (mongoose.Types.ObjectId.isValid(search)) orQueries.push({ _id: search });
       orQueries.push({ orderId: { $regex: search, $options: "i" } });
+      if (!isNaN(Number(search)) && search.trim() !== "") {
+        orQueries.push({ customOrderId: Number(search) });
+      }
 
       orderQuery = {
         childPanelOwner: { $exists: false },
@@ -71,46 +79,74 @@ export const getAllOrders = async (req, res) => {
       };
     }
 
+    // ✅ Country filter — match on countryCode (normalized ISO-2, the
+    // documented "source of truth" on the User model), not the free-text
+    // `country` display label, which can drift from whatever the
+    // phone-input library returned at signup time.
+    if (country && country !== "All") {
+      const matchingUsers = await User.find({
+        countryCode: country.toUpperCase(),
+        childPanelOwner: { $exists: false },
+      }).select("_id");
+      const countryUserIds = matchingUsers.map((u) => u._id);
+
+      // Compose with any existing $or from search: both must hold (AND),
+      // so wrap in $and rather than overwriting userId if search already set it.
+      if (orderQuery.userId) {
+        orderQuery = {
+          $and: [
+            { ...orderQuery },
+            { userId: { $in: countryUserIds } },
+          ],
+        };
+      } else {
+        orderQuery.userId = { $in: countryUserIds };
+      }
+    }
+
     const totalOrders = await Order.countDocuments(orderQuery);
-    const totalPages = Math.ceil(totalOrders / limitNum);
+    const totalPages = Math.max(1, Math.ceil(totalOrders / limitNum));
 
     const ordersRaw = await Order.find(orderQuery)
-     .populate({ path: "userId", select: "email balance" })
-     .populate({ path: "childPanelOwner", select: "email balance" })
-     .sort({ createdAt: -1 })
-     .skip((pageNum - 1) * limitNum)
-     .limit(limitNum)
-     .lean();
+      .populate({ path: "userId", select: "email balance country countryCode" })
+      .populate({ path: "childPanelOwner", select: "email balance country countryCode" })
+      .sort({ createdAt: -1 })
+      .skip((pageNum - 1) * limitNum)
+      .limit(limitNum)
+      .lean();
 
     const orders = ordersRaw.map((order) => {
       // If this order belongs to a child panel, show the CP owner as the user
-     // Admin should not deal with CP end-users directly
-     const displayUser = order.childPanelOwner
-       ? order.childPanelOwner  // already populated below
-       : order.userId;
+      // Admin should not deal with CP end-users directly
+      const displayUser = order.childPanelOwner
+        ? order.childPanelOwner // already populated below
+        : order.userId;
 
-   return {
-    _id: order._id,
-    orderId: order.orderId,
-    service: order.service,
-    link: order.link,
-    quantity: order.quantity,
-    quantityDelivered: order.quantityDelivered || 0,
-    charge: order.charge,
-    status: order.status,
-    providerStatus: order.providerStatus,
-    createdAt: order.createdAt,
-    isChildPanelOrder: !!order.childPanelOwner,
-    user: displayUser
-      ? {
-          _id: displayUser._id,
-          email: displayUser.email,
-          username: displayUser.email?.split("@")[0] || "",
-          balance: displayUser.balance || 0,
-        }
-      : { _id: null, email: "Unknown", username: "", balance: 0 },
-  };
-});
+      return {
+        _id: order._id,
+        orderId: order.orderId,
+        customOrderId: order.customOrderId,
+        service: order.service,
+        link: order.link,
+        quantity: order.quantity,
+        quantityDelivered: order.quantityDelivered || 0,
+        charge: order.charge,
+        status: order.status,
+        providerStatus: order.providerStatus,
+        createdAt: order.createdAt,
+        isChildPanelOrder: !!order.childPanelOwner,
+        user: displayUser
+          ? {
+              _id: displayUser._id,
+              email: displayUser.email,
+              username: displayUser.email?.split("@")[0] || "",
+              balance: displayUser.balance || 0,
+              country: displayUser.country || null,
+              countryCode: displayUser.countryCode || null,
+            }
+          : { _id: null, email: "Unknown", username: "", balance: 0, country: null, countryCode: null },
+      };
+    });
 
     if (req.user?._id) {
       await logAdminAction({
@@ -123,7 +159,7 @@ export const getAllOrders = async (req, res) => {
       });
     }
 
-    res.json({ orders, totalPages });
+    res.json({ orders, totalPages, totalOrders, page: pageNum, limit: limitNum });
   } catch (err) {
     console.error(err);
     res.status(500).json({ message: "Failed to fetch orders" });

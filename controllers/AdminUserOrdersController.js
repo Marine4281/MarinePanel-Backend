@@ -164,7 +164,7 @@ const buildAdminBaseFilter = async () => {
 };
 
 /* ======================================================
-   GET ALL USER ORDERS (Search + Pagination)
+   GET ALL USER ORDERS (Search + Pagination + Country)
 ====================================================== */
 export const getUserOrders = async (req, res) => {
   try {
@@ -173,6 +173,7 @@ export const getUserOrders = async (req, res) => {
       status,
       fromDate,
       toDate,
+      country = "All",
       page = 1,
       limit = 10,
     } = req.query;
@@ -196,6 +197,17 @@ export const getUserOrders = async (req, res) => {
         end.setHours(23, 59, 59, 999);
         query.createdAt.$lte = end;
       }
+    }
+
+    // ✅ Country filter — match on countryCode (normalized ISO-2, the
+    // documented "source of truth" on the User model), not the free-text
+    // `country` display label.
+    let countryUserIds = null;
+    if (country && country !== "All") {
+      const matchingUsers = await User.find({
+        countryCode: country.toUpperCase(),
+      }).select("_id");
+      countryUserIds = matchingUsers.map((u) => u._id);
     }
 
     if (search && search.trim() !== "") {
@@ -246,10 +258,24 @@ export const getUserOrders = async (req, res) => {
       }
     }
 
+    // Compose the country constraint with whatever query shape we have so far.
+    if (countryUserIds !== null) {
+      const countryClause = {
+        $or: [
+          { userId: { $in: countryUserIds } },
+          { childPanelOwner: { $in: countryUserIds } },
+        ],
+      };
+
+      query = query.$and
+        ? { $and: [...query.$and, countryClause] }
+        : { $and: [query, countryClause] };
+    }
+
     const [orders, total] = await Promise.all([
       Order.find(query)
-        .populate("userId", "email balance")
-        .populate("childPanelOwner", "email balance")
+        .populate("userId", "email balance country countryCode")
+        .populate("childPanelOwner", "email balance country countryCode")
         .sort({ createdAt: -1 })
         .skip((pageNum - 1) * limitNum)
         .limit(limitNum)

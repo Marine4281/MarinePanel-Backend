@@ -6,6 +6,7 @@ import {
   creditResellerCommission,
   reverseResellerCommission,
 } from "./orderController.js";
+import { formatProviderStatusDisplay } from "../utils/providerStatusMapper.js";
 
 /* ======================================================
    HELPER: PROCESS REFUND
@@ -269,6 +270,7 @@ export const getUserOrders = async (req, res) => {
           ? (order.cpOwnerCharge ?? order.charge)
           : order.charge,
         endUserCharge: order.charge,
+        displayStatus: formatProviderStatusDisplay(order),
       };
     });
 

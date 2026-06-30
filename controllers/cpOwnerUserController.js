@@ -228,6 +228,7 @@ export const updateCPUserCommission = async (req, res) => {
 
 // ======================= PROMOTE TO ADMIN =======================
 
+
 export const promoteCPUser = async (req, res) => {
   try {
     const user = await User.findOneAndUpdate(
@@ -271,7 +272,6 @@ export const demoteCPUser = async (req, res) => {
     res.status(500).json({ message: "Demote failed" });
   }
 };
-
 // ======================= DEMOTE FROM ADMIN =======================
 
 export const demoteCPUser = async (req, res) => {

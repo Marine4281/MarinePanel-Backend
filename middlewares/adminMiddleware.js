@@ -37,34 +37,56 @@ export const childPanelOnly = async (req, res, next) => {
   try {
     const user = await User.findById(req.user.id);
 
-    if (!user || !user.isChildPanel) {
+    if (!user || (!user.isChildPanel && !user.isCpAdmin)) {
       return res.status(403).json({
         message: "Access denied. Child panel owners only.",
       });
     }
 
-    if (!user.childPanelIsActive) {
+    // For a CP admin (promoted end user), pull billing/suspension
+    // status from the actual panel owner, not from this user's own
+    // (empty) child panel fields.
+    let panelOwner = user;
+    if (user.isCpAdmin && !user.isChildPanel) {
+      if (!user.childPanelOwner) {
+        return res.status(403).json({
+          message: "Access denied. Child panel owners only.",
+        });
+      }
+      panelOwner = await User.findById(user.childPanelOwner);
+      if (!panelOwner || !panelOwner.isChildPanel) {
+        return res.status(403).json({
+          message: "Access denied. Child panel owners only.",
+        });
+      }
+    }
+
+    if (!panelOwner.childPanelIsActive) {
       return res.status(403).json({
         code: "PANEL_SUSPENDED",
         message:
-          user.childPanelSuspendReason ||
+          panelOwner.childPanelSuspendReason ||
           "Your panel has been suspended. Contact support.",
       });
     }
 
     if (
-      user.childPanelNextBilledAt &&
-      new Date() > new Date(user.childPanelNextBilledAt)
+      panelOwner.childPanelNextBilledAt &&
+      new Date() > new Date(panelOwner.childPanelNextBilledAt)
     ) {
       return res.status(403).json({
         code: "SUBSCRIPTION_EXPIRED",
         message:
           "Your subscription has expired. Please contact the platform admin to renew your plan.",
-        expiredAt: user.childPanelNextBilledAt,
+        expiredAt: panelOwner.childPanelNextBilledAt,
       });
     }
 
     req.user = user;
+    req.cpScopeId = user.isChildPanel
+      ? user._id.toString()
+      : user.childPanelOwner.toString();
+
     next();
   } catch (error) {
     console.error("childPanelOnly error:", error);
@@ -74,7 +96,6 @@ export const childPanelOnly = async (req, res, next) => {
     });
   }
 };
-
 /*
 ----------------------------------------------------------------
 CHILD PANEL OR ADMIN

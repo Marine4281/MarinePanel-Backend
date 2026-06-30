@@ -232,11 +232,11 @@ export const promoteCPUser = async (req, res) => {
   try {
     const user = await User.findOneAndUpdate(
       { _id: req.params.id, childPanelOwner: req.user._id },
-      { isAdmin: true },
+      { isCpAdmin: true },
       { new: true }
     );
     if (!user) return res.status(404).json({ message: "User not found" });
-    logCpAdminAction({ adminId: req.user._id, adminEmail: req.user.email, childPanelId: req.user._id,action: "PROMOTE_ADMIN", targetType: "User", targetId: user._id, description: `Promoted ${user.email} to admin`, ipAddress: req.ip }).catch(() => {});
+    logCpAdminAction({ adminId: req.user._id, adminEmail: req.user.email, childPanelId: req.user._id, action: "PROMOTE_ADMIN", targetType: "User", targetId: user._id, description: `Promoted ${user.email} to CP admin`, ipAddress: req.ip }).catch(() => {});
     res.json({
       ...user.toObject(),
       countryCode: normalizeCountryCode(user.countryCode),
@@ -247,6 +247,28 @@ export const promoteCPUser = async (req, res) => {
   } catch (err) {
     console.error("CP PROMOTE USER ERROR:", err);
     res.status(500).json({ message: "Promote failed" });
+  }
+};
+
+export const demoteCPUser = async (req, res) => {
+  try {
+    const user = await User.findOneAndUpdate(
+      { _id: req.params.id, childPanelOwner: req.user._id },
+      { isCpAdmin: false },
+      { new: true }
+    );
+    if (!user) return res.status(404).json({ message: "User not found" });
+    logCpAdminAction({ adminId: req.user._id, adminEmail: req.user.email, childPanelId: req.user._id, action: "DEMOTE_ADMIN", targetType: "User", targetId: user._id, description: `Demoted ${user.email} from CP admin`, ipAddress: req.ip }).catch(() => {});
+    res.json({
+      ...user.toObject(),
+      countryCode: normalizeCountryCode(user.countryCode),
+      name: user.email.split("@")[0],
+      lastSeen: formatLastSeen(user.lastSeen),
+      userTypes: getUserTypes(user),
+    });
+  } catch (err) {
+    console.error("CP DEMOTE USER ERROR:", err);
+    res.status(500).json({ message: "Demote failed" });
   }
 };
 

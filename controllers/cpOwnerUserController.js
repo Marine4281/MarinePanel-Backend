@@ -251,6 +251,9 @@ export const promoteCPUser = async (req, res) => {
   }
 };
 
+
+// ======================= DEMOTE FROM ADMIN =======================
+
 export const demoteCPUser = async (req, res) => {
   try {
     const user = await User.findOneAndUpdate(
@@ -260,29 +263,6 @@ export const demoteCPUser = async (req, res) => {
     );
     if (!user) return res.status(404).json({ message: "User not found" });
     logCpAdminAction({ adminId: req.user._id, adminEmail: req.user.email, childPanelId: req.user._id, action: "DEMOTE_ADMIN", targetType: "User", targetId: user._id, description: `Demoted ${user.email} from CP admin`, ipAddress: req.ip }).catch(() => {});
-    res.json({
-      ...user.toObject(),
-      countryCode: normalizeCountryCode(user.countryCode),
-      name: user.email.split("@")[0],
-      lastSeen: formatLastSeen(user.lastSeen),
-      userTypes: getUserTypes(user),
-    });
-  } catch (err) {
-    console.error("CP DEMOTE USER ERROR:", err);
-    res.status(500).json({ message: "Demote failed" });
-  }
-};
-// ======================= DEMOTE FROM ADMIN =======================
-
-export const demoteCPUser = async (req, res) => {
-  try {
-    const user = await User.findOneAndUpdate(
-      { _id: req.params.id, childPanelOwner: req.user._id },
-      { isAdmin: false },
-      { new: true }
-    );
-    if (!user) return res.status(404).json({ message: "User not found" });
-    logAdminAction({ adminId: req.user._id, adminEmail: req.user.email, action: "DEMOTE_ADMIN", targetType: "User", targetId: user._id, description: `Demoted ${user.email} from admin`, ipAddress: req.ip }).catch(() => {});
     res.json({
       ...user.toObject(),
       countryCode: normalizeCountryCode(user.countryCode),

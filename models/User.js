@@ -65,6 +65,11 @@ const userSchema = new mongoose.Schema(
       default: false,
     },
 
+    isCpAdmin: {
+       type: Boolean,
+       default: false,
+     },
+
     /*
     ----------------------------------------------------------------
     SCOPE

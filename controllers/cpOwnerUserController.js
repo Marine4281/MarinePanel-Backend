@@ -40,7 +40,7 @@ export const getCPUsers = async (req, res) => {
     const skip = (Number(page) - 1) * Number(limit);
 
     // Scope: all users belonging to this child panel (including resellers)
-    const query = { childPanelOwner: req.user._id };
+    const query = { childPanelOwner: req.cpOwnerId };
 
     if (search && search.trim()) {
       query.$or = [

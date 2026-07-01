@@ -90,7 +90,7 @@ export const getCPUserById = async (req, res) => {
 
     const user = await User.findOne({
       _id: req.params.id,
-      childPanelOwner: req.user._id,
+      childPanelOwner: req.cpOwnerId,
     }).select("-password");
 
     if (!user) return res.status(404).json({ message: "User not found" });
@@ -155,7 +155,7 @@ export const updateCPUserBalance = async (req, res) => {
 
     const user = await User.findOne({
       _id: req.params.id,
-      childPanelOwner: req.user._id,
+      childPanelOwner: req.cpOwnerId,
     });
     if (!user) return res.status(404).json({ message: "User not found" });
 
@@ -189,7 +189,7 @@ export const updateCPUserBalance = async (req, res) => {
     wallet.balance = calculateBalance(wallet.transactions);
     await wallet.save();
     await User.findByIdAndUpdate(user._id, { balance: wallet.balance });
-    logCpAdminAction({ adminId: req.user._id, adminEmail: req.user.email,childPanelId: req.user._id, action: "UPDATE_BALANCE", targetType: "User", targetId: user._id, description: `Updated balance for ${user.email}`, ipAddress: req.ip }).catch(() => {});
+    logCpAdminAction({ adminId: req.user._id, adminEmail: req.user.email,childPanelId: req.cpOwnerId, action: "UPDATE_BALANCE", targetType: "User", targetId: user._id, description: `Updated balance for ${user.email}`, ipAddress: req.ip }).catch(() => {});
 
     res.json({ balance: wallet.balance });
   } catch (err) {
@@ -211,13 +211,13 @@ export const updateCPUserCommission = async (req, res) => {
 
     const user = await User.findOne({
       _id: req.params.id,
-      childPanelOwner: req.user._id,
+      childPanelOwner: req.cpOwnerId,
     });
     if (!user) return res.status(404).json({ message: "User not found" });
 
     user.commissionOverride = rate;
     await user.save();
-    logCpAdminAction({ adminId: req.user._id, adminEmail: req.user.email,childPanelId: req.user._id, action: "UPDATE_USER_COMMISSION", targetType: "User", targetId: user._id, description: `Updated commission for ${user.email}`, ipAddress: req.ip }).catch(() => {});
+    logCpAdminAction({ adminId: req.user._id, adminEmail: req.user.email,childPanelId: req.cpOwnerId, action: "UPDATE_USER_COMMISSION", targetType: "User", targetId: user._id, description: `Updated commission for ${user.email}`, ipAddress: req.ip }).catch(() => {});
 
     res.json({ commissionOverride: rate });
   } catch (err) {
@@ -232,12 +232,12 @@ export const updateCPUserCommission = async (req, res) => {
 export const promoteCPUser = async (req, res) => {
   try {
     const user = await User.findOneAndUpdate(
-      { _id: req.params.id, childPanelOwner: req.user._id },
+      { _id: req.params.id, childPanelOwner: req.cpOwnerId },
       { isCpAdmin: true },
       { new: true }
     );
     if (!user) return res.status(404).json({ message: "User not found" });
-    logCpAdminAction({ adminId: req.user._id, adminEmail: req.user.email, childPanelId: req.user._id, action: "PROMOTE_ADMIN", targetType: "User", targetId: user._id, description: `Promoted ${user.email} to CP admin`, ipAddress: req.ip }).catch(() => {});
+    logCpAdminAction({ adminId: req.user._id, adminEmail: req.user.email, childPanelId: req.cpOwnerId, action: "PROMOTE_ADMIN", targetType: "User", targetId: user._id, description: `Promoted ${user.email} to CP admin`, ipAddress: req.ip }).catch(() => {});
     res.json({
       ...user.toObject(),
       countryCode: normalizeCountryCode(user.countryCode),
@@ -257,12 +257,12 @@ export const promoteCPUser = async (req, res) => {
 export const demoteCPUser = async (req, res) => {
   try {
     const user = await User.findOneAndUpdate(
-      { _id: req.params.id, childPanelOwner: req.user._id },
+      { _id: req.params.id, childPanelOwner: req.cpOwnerId },
       { isCpAdmin: false },
       { new: true }
     );
     if (!user) return res.status(404).json({ message: "User not found" });
-    logCpAdminAction({ adminId: req.user._id, adminEmail: req.user.email, childPanelId: req.user._id, action: "DEMOTE_ADMIN", targetType: "User", targetId: user._id, description: `Demoted ${user.email} from CP admin`, ipAddress: req.ip }).catch(() => {});
+    logCpAdminAction({ adminId: req.user._id, adminEmail: req.user.email, childPanelId: req.cpOwnerId, action: "DEMOTE_ADMIN", targetType: "User", targetId: user._id, description: `Demoted ${user.email} from CP admin`, ipAddress: req.ip }).catch(() => {});
     res.json({
       ...user.toObject(),
       countryCode: normalizeCountryCode(user.countryCode),
@@ -281,12 +281,12 @@ export const demoteCPUser = async (req, res) => {
 export const blockCPUser = async (req, res) => {
   try {
     const user = await User.findOneAndUpdate(
-      { _id: req.params.id, childPanelOwner: req.user._id },
+      { _id: req.params.id, childPanelOwner: req.cpOwnerId },
       { isBlocked: true },
       { new: true }
     );
     if (!user) return res.status(404).json({ message: "User not found" });
-    logCpAdminAction({ adminId: req.user._id, adminEmail: req.user.email, childPanelId: req.user._id,action: "BLOCK_USER", targetType: "User", targetId: user._id, description: `Blocked ${user.email}`, ipAddress: req.ip }).catch(() => {});
+    logCpAdminAction({ adminId: req.user._id, adminEmail: req.user.email, childPanelId: req.cpOwnerId,action: "BLOCK_USER", targetType: "User", targetId: user._id, description: `Blocked ${user.email}`, ipAddress: req.ip }).catch(() => {});
     res.json({
       ...user.toObject(),
       countryCode: normalizeCountryCode(user.countryCode),
@@ -305,12 +305,12 @@ export const blockCPUser = async (req, res) => {
 export const unblockCPUser = async (req, res) => {
   try {
     const user = await User.findOneAndUpdate(
-      { _id: req.params.id, childPanelOwner: req.user._id },
+      { _id: req.params.id, childPanelOwner: req.cpOwnerId },
       { isBlocked: false },
       { new: true }
     );
     if (!user) return res.status(404).json({ message: "User not found" });
-    logCpAdminAction({ adminId: req.user._id, adminEmail: req.user.email,childPanelId: req.user._id, action: "UNBLOCK_USER", targetType: "User", targetId: user._id, description: `Unblocked ${user.email}`, ipAddress: req.ip }).catch(() => {});
+    logCpAdminAction({ adminId: req.user._id, adminEmail: req.user.email,childPanelId: req.cpOwnerId, action: "UNBLOCK_USER", targetType: "User", targetId: user._id, description: `Unblocked ${user.email}`, ipAddress: req.ip }).catch(() => {});
     res.json({
       ...user.toObject(),
       countryCode: normalizeCountryCode(user.countryCode),
@@ -329,12 +329,12 @@ export const unblockCPUser = async (req, res) => {
 export const freezeCPUser = async (req, res) => {
   try {
     const user = await User.findOneAndUpdate(
-      { _id: req.params.id, childPanelOwner: req.user._id },
+      { _id: req.params.id, childPanelOwner: req.cpOwnerId },
       { isFrozen: true },
       { new: true }
     );
     if (!user) return res.status(404).json({ message: "User not found" });
-    logCpAdminAction({ adminId: req.user._id, adminEmail: req.user.email, childPanelId: req.user._id,action: "FREEZE_USER", targetType: "User", targetId: user._id, description: `Froze ${user.email}`, ipAddress: req.ip }).catch(() => {});
+    logCpAdminAction({ adminId: req.user._id, adminEmail: req.user.email, childPanelId: req.cpOwnerId,action: "FREEZE_USER", targetType: "User", targetId: user._id, description: `Froze ${user.email}`, ipAddress: req.ip }).catch(() => {});
     res.json({
       ...user.toObject(),
       countryCode: normalizeCountryCode(user.countryCode),
@@ -353,12 +353,12 @@ export const freezeCPUser = async (req, res) => {
 export const unfreezeCPUser = async (req, res) => {
   try {
     const user = await User.findOneAndUpdate(
-      { _id: req.params.id, childPanelOwner: req.user._id },
+      { _id: req.params.id, childPanelOwner: req.cpOwnerId },
       { isFrozen: false },
       { new: true }
     );
     if (!user) return res.status(404).json({ message: "User not found" });
-    logCpAdminAction({ adminId: req.user._id, adminEmail: req.user.email, childPanelId: req.user._id,action: "UNFREEZE_USER", targetType: "User", targetId: user._id, description: `Unfroze ${user.email}`, ipAddress: req.ip }).catch(() => {});
+    logCpAdminAction({ adminId: req.user._id, adminEmail: req.user.email, childPanelId: req.cpOwnerId,action: "UNFREEZE_USER", targetType: "User", targetId: user._id, description: `Unfroze ${user.email}`, ipAddress: req.ip }).catch(() => {});
     res.json({
       ...user.toObject(),
       countryCode: normalizeCountryCode(user.countryCode),
@@ -378,7 +378,7 @@ export const deleteCPUser = async (req, res) => {
   try {
     const user = await User.findOne({
       _id: req.params.id,
-      childPanelOwner: req.user._id,
+      childPanelOwner: req.cpOwnerId,
     });
     if (!user) return res.status(404).json({ message: "User not found" });
 
@@ -387,7 +387,7 @@ export const deleteCPUser = async (req, res) => {
       Order.deleteMany({ userId: user._id }),
       Wallet.deleteOne({ user: user._id }),
     ]);
-    logCpAdminAction({ adminId: req.user._id, adminEmail: req.user.email, childPanelId: req.user._id,action: "DELETE_USER", targetType: "User", targetId: userId, description: `Deleted user ${userId}`, ipAddress: req.ip }).catch(() => {});
+    logCpAdminAction({ adminId: req.user._id, adminEmail: req.user.email, childPanelId: req.cpOwnerId,action: "DELETE_USER", targetType: "User", targetId: userId, description: `Deleted user ${userId}`, ipAddress: req.ip }).catch(() => {});
 
     res.json({ message: "User deleted" });
   } catch (err) {
@@ -402,7 +402,7 @@ export const getCPUserOrders = async (req, res) => {
   try {
     const user = await User.findOne({
       _id: req.params.id,
-      childPanelOwner: req.user._id,
+      childPanelOwner: req.cpOwnerId,
     });
     if (!user) return res.status(404).json({ message: "User not found" });
 
@@ -435,7 +435,7 @@ export const getCPUserTransactions = async (req, res) => {
   try {
     const user = await User.findOne({
       _id: req.params.id,
-      childPanelOwner: req.user._id,
+      childPanelOwner: req.cpOwnerId,
     });
     if (!user) return res.status(404).json({ message: "User not found" });
 

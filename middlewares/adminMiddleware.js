@@ -33,68 +33,60 @@ Protects routes that only a child panel owner can access.
 Used on all /api/child-panel/* routes.
 ----------------------------------------------------------------
 */
-export const childPanelOnly = async (req, res, next) => {
-  try {
-    const user = await User.findById(req.user.id);
+// For the child panel OWNER managing their panel from the main platform
+export const cpOwnerOnly = async (req, res, next) => {
+  const user = req.user;
 
-    if (!user || (!user.isChildPanel && !user.isCpAdmin)) {
-      return res.status(403).json({
-        message: "Access denied. Child panel owners only.",
-      });
+  if (!user) {
+    return res.status(401).json({ message: "Not authorized" });
+  }
+
+  if (!user.isChildPanel && !user.isCpAdmin) {
+    return res.status(403).json({ message: "Access denied: Child panel owners only" });
+  }
+
+  // For a CP admin (promoted end user), load the actual panel owner
+  // to run billing/suspension checks against the real panel, not the sub-admin
+  let panelOwner = user;
+  if (user.isCpAdmin && !user.isChildPanel) {
+    if (!user.childPanelOwner) {
+      return res.status(403).json({ message: "Access denied: No panel associated" });
     }
-
-    // For a CP admin (promoted end user), pull billing/suspension
-    // status from the actual panel owner, not from this user's own
-    // (empty) child panel fields.
-    let panelOwner = user;
-    if (user.isCpAdmin && !user.isChildPanel) {
-      if (!user.childPanelOwner) {
-        return res.status(403).json({
-          message: "Access denied. Child panel owners only.",
-        });
-      }
-      panelOwner = await User.findById(user.childPanelOwner);
-      if (!panelOwner || !panelOwner.isChildPanel) {
-        return res.status(403).json({
-          message: "Access denied. Child panel owners only.",
-        });
-      }
+    panelOwner = await User.findById(user.childPanelOwner);
+    if (!panelOwner || !panelOwner.isChildPanel) {
+      return res.status(403).json({ message: "Access denied: Panel owner not found" });
     }
+  }
 
-    if (!panelOwner.childPanelIsActive) {
-      return res.status(403).json({
-        code: "PANEL_SUSPENDED",
-        message:
-          panelOwner.childPanelSuspendReason ||
-          "Your panel has been suspended. Contact support.",
-      });
-    }
+  // Subscription expiry check
+  if (
+    panelOwner.childPanelNextBilledAt &&
+    new Date() > new Date(panelOwner.childPanelNextBilledAt) &&
+    !panelOwner.childPanelSubscriptionSuspended
+  ) {
+    panelOwner.childPanelSubscriptionSuspended = true;
+    panelOwner.childPanelIsActive = false;
+    panelOwner.childPanelSuspendReason =
+      "Subscription expired — please contact the platform admin to renew your plan.";
+    await panelOwner.save();
 
-    if (
-      panelOwner.childPanelNextBilledAt &&
-      new Date() > new Date(panelOwner.childPanelNextBilledAt)
-    ) {
-      return res.status(403).json({
-        code: "SUBSCRIPTION_EXPIRED",
-        message:
-          "Your subscription has expired. Please contact the platform admin to renew your plan.",
-        expiredAt: panelOwner.childPanelNextBilledAt,
-      });
-    }
-
-    req.user = user;
-    req.cpScopeId = user.isChildPanel
-      ? user._id.toString()
-      : user.childPanelOwner.toString();
-
-    next();
-  } catch (error) {
-    console.error("childPanelOnly error:", error);
-
-    return res.status(500).json({
-      message: "Server error",
+    return res.status(403).json({
+      code: "SUBSCRIPTION_EXPIRED",
+      message: panelOwner.childPanelSuspendReason,
+      expiredAt: panelOwner.childPanelNextBilledAt,
     });
   }
+
+  if (!panelOwner.childPanelIsActive) {
+    return res.status(403).json({
+      code: "PANEL_SUSPENDED",
+      message: panelOwner.childPanelSuspendReason || "Your panel has been suspended. Contact support.",
+    });
+  }
+
+  // Attach the panel owner as req.childPanel so controllers can use it
+  req.childPanel = panelOwner;
+  next();
 };
 /*
 ----------------------------------------------------------------

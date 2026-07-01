@@ -120,38 +120,50 @@ export const cpOwnerOnly = async (req, res, next) => {
     return res.status(401).json({ message: "Not authorized" });
   }
 
-  if (!user.isChildPanel) {
+  if (!user.isChildPanel && !user.isCpAdmin) {
     return res.status(403).json({ message: "Access denied: Child panel owners only" });
   }
 
-  // Subscription expiry check — runs BEFORE the active check so an
-  // expired-but-still-marked-active panel gets auto-suspended right here,
-  // instead of waiting for the once-daily billing cron.
+  // For a CP admin (promoted end user), load the actual panel owner
+  // to run billing/suspension checks against the real panel, not the sub-admin
+  let panelOwner = user;
+  if (user.isCpAdmin && !user.isChildPanel) {
+    if (!user.childPanelOwner) {
+      return res.status(403).json({ message: "Access denied: No panel associated" });
+    }
+    panelOwner = await User.findById(user.childPanelOwner);
+    if (!panelOwner || !panelOwner.isChildPanel) {
+      return res.status(403).json({ message: "Access denied: Panel owner not found" });
+    }
+  }
+
+  // Subscription expiry check
   if (
-    user.childPanelNextBilledAt &&
-    new Date() > new Date(user.childPanelNextBilledAt) &&
-    !user.childPanelSubscriptionSuspended
+    panelOwner.childPanelNextBilledAt &&
+    new Date() > new Date(panelOwner.childPanelNextBilledAt) &&
+    !panelOwner.childPanelSubscriptionSuspended
   ) {
-    user.childPanelSubscriptionSuspended = true;
-    user.childPanelIsActive = false;
-    user.childPanelSuspendReason =
+    panelOwner.childPanelSubscriptionSuspended = true;
+    panelOwner.childPanelIsActive = false;
+    panelOwner.childPanelSuspendReason =
       "Subscription expired — please contact the platform admin to renew your plan.";
-    await user.save();
+    await panelOwner.save();
 
     return res.status(403).json({
       code: "SUBSCRIPTION_EXPIRED",
-      message: user.childPanelSuspendReason,
-      expiredAt: user.childPanelNextBilledAt,
+      message: panelOwner.childPanelSuspendReason,
+      expiredAt: panelOwner.childPanelNextBilledAt,
     });
   }
 
-  if (!user.childPanelIsActive) {
+  if (!panelOwner.childPanelIsActive) {
     return res.status(403).json({
       code: "PANEL_SUSPENDED",
-      message: user.childPanelSuspendReason || "Your panel has been suspended. Contact support.",
+      message: panelOwner.childPanelSuspendReason || "Your panel has been suspended. Contact support.",
     });
   }
 
-  req.childPanel = user;
+  // Attach the panel owner as req.childPanel so controllers can use it
+  req.childPanel = panelOwner;
   next();
 };

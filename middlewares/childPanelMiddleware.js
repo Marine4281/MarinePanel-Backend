@@ -13,30 +13,16 @@ export const detectChildPanelDomain = async (req, res, next) => {
 
     if (!host) return next();
 
-    // Remove port
     host = host.split(":")[0];
-
-    // Normalize
     host = host.toLowerCase().trim();
-
-    // Remove www
     host = host.replace(/^www\./, "");
 
-    // Skip main platform domain
     if (host === BASE_DOMAIN) return next();
-
-    // Skip if already detected as a reseller domain
     if (req.reseller) return next();
 
     let childPanel = null;
     let slug = null;
 
-    /*
-    -----------------------------
-    SUBDOMAIN CHECK
-    e.g. cp1.marinepanel.online
-    -----------------------------
-    */
     const parts = host.split(".");
     const baseParts = BASE_DOMAIN.split(".");
 
@@ -48,36 +34,18 @@ export const detectChildPanelDomain = async (req, res, next) => {
       slug = parts[0];
     }
 
-    /*
-    -----------------------------
-    1. CHECK CUSTOM DOMAIN FIRST
-    -----------------------------
-    */
     childPanel = await User.findOne({
       isChildPanel: true,
       childPanelDomain: host,
-      
     });
 
-    /*
-    -----------------------------
-    2. FALLBACK TO SLUG/SUBDOMAIN
-    (testing only)
-    -----------------------------
-    */
     if (!childPanel && slug) {
       childPanel = await User.findOne({
         isChildPanel: true,
         childPanelSlug: slug,
-        
       });
     }
 
-    /*
-    -----------------------------
-    ATTACH CHILD PANEL TO REQUEST
-    -----------------------------
-    */
     if (childPanel) {
       req.childPanel = childPanel;
 
@@ -163,7 +131,10 @@ export const cpOwnerOnly = async (req, res, next) => {
     });
   }
 
-  // Attach the panel owner as req.childPanel so controllers can use it
+  // Attach the panel owner and expose their _id as req.cpOwnerId
+  // so all controllers can scope queries correctly for both CP owners
+  // and promoted CP admins without needing to check isCpAdmin themselves
   req.childPanel = panelOwner;
+  req.cpOwnerId  = panelOwner._id;
   next();
 };

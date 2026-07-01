@@ -4,57 +4,35 @@ import User from "../models/User.js";
 import logCpAdminAction from "../utils/logCpAdminAction.js";
 import { resolveChildPanelFee } from "../utils/childPanelBilling.js";
 
-// Resolves the panel owner's _id whether the caller is the owner
-// themselves or a promoted CP admin acting on their behalf
-const getPanelOwnerId = (req) =>
-  req.user.isCpAdmin && req.user.childPanelOwner
-    ? req.user.childPanelOwner
-    : req.user._id;
-
 // ======================= GET ALL SETTINGS =======================
 export const getCPSettings = async (req, res) => {
   try {
-    const user = await User.findById(getPanelOwnerId(req)).select("-password");
+    const user = await User.findById(req.cpOwnerId).select("-password");
     if (!user) return res.status(404).json({ message: "User not found" });
 
     res.json({
-      // Branding
       brandName:  user.childPanelBrandName  || "",
       logo:       user.childPanelLogo       || "",
       themeColor: user.childPanelThemeColor || "#1e40af",
       slug:       user.childPanelSlug       || "",
       domain:     user.childPanelDomain     || "",
-
-      // Support
       supportWhatsapp:        user.childPanelSupportWhatsapp        || "",
       supportTelegram:        user.childPanelSupportTelegram        || "",
       supportWhatsappChannel: user.childPanelSupportWhatsappChannel || "",
-
-      // Reseller fees
       resellerActivationFee: user.childPanelResellerActivationFee ?? 25,
       withdrawMin:           user.childPanelWithdrawMin            ?? 10,
-
-      // Commission rate (read-only — set by main admin)
-      commissionRate: user.childPanelCommissionRate ?? 0,
-
-      // Payment & service modes
+      commissionRate:        user.childPanelCommissionRate         ?? 0,
       paymentMode: user.childPanelPaymentMode || "none",
       serviceMode: user.childPanelServiceMode || "none",
-
-      // Billing info (read-only — set by main admin)
       billingMode:  user.childPanelBillingMode  || "monthly",
       monthlyFee:   user.childPanelMonthlyFee   ?? 0,
       perOrderFee:  user.childPanelPerOrderFee  ?? 0,
       lastBilledAt: user.childPanelLastBilledAt || null,
-
-      // Billing status
       nextBilledAt:          user.childPanelNextBilledAt          || null,
       subscriptionSuspended: user.childPanelSubscriptionSuspended ?? false,
       autoDeduct:            user.childPanelAutoDeduct,
       gracePeriodHours:      user.childPanelGracePeriodHours,
       reminderHours:         user.childPanelReminderHours,
-
-      // Template
       templateId:      user.childPanelTemplateId      || null,
       landingTemplate: user.childPanelLandingTemplate || "default",
     });
@@ -69,7 +47,7 @@ export const updateCPBranding = async (req, res) => {
   try {
     const { brandName, logo, themeColor } = req.body;
 
-    const user = await User.findById(getPanelOwnerId(req));
+    const user = await User.findById(req.cpOwnerId);
     if (!user) return res.status(404).json({ message: "User not found" });
 
     if (brandName  !== undefined) user.childPanelBrandName  = brandName;
@@ -91,7 +69,7 @@ export const updateCPSupportLinks = async (req, res) => {
   try {
     const { supportWhatsapp, supportTelegram, supportWhatsappChannel } = req.body;
 
-    const user = await User.findById(getPanelOwnerId(req));
+    const user = await User.findById(req.cpOwnerId);
     if (!user) return res.status(404).json({ message: "User not found" });
 
     if (supportWhatsapp        !== undefined) user.childPanelSupportWhatsapp        = supportWhatsapp;
@@ -99,7 +77,6 @@ export const updateCPSupportLinks = async (req, res) => {
     if (supportWhatsappChannel !== undefined) user.childPanelSupportWhatsappChannel = supportWhatsappChannel;
 
     await user.save();
-
     res.json({ success: true, message: "Support links updated" });
   } catch (err) {
     console.error("CP UPDATE SUPPORT LINKS ERROR:", err);
@@ -112,7 +89,7 @@ export const updateCPResellerFees = async (req, res) => {
   try {
     const { resellerActivationFee, withdrawMin } = req.body;
 
-    const user = await User.findById(getPanelOwnerId(req));
+    const user = await User.findById(req.cpOwnerId);
     if (!user) return res.status(404).json({ message: "User not found" });
 
     if (resellerActivationFee !== undefined) {
@@ -130,7 +107,6 @@ export const updateCPResellerFees = async (req, res) => {
     }
 
     await user.save();
-
     res.json({
       success: true,
       message: "Reseller fees updated",
@@ -151,7 +127,7 @@ export const updateCPPaymentMode = async (req, res) => {
     if (!["platform", "own", "none"].includes(paymentMode))
       return res.status(400).json({ message: "Invalid payment mode" });
 
-    const user = await User.findById(getPanelOwnerId(req));
+    const user = await User.findById(req.cpOwnerId);
     if (!user) return res.status(404).json({ message: "User not found" });
 
     user.childPanelPaymentMode = paymentMode;
@@ -173,12 +149,11 @@ export const updateCPServiceMode = async (req, res) => {
     if (!["platform", "own", "both", "none"].includes(serviceMode))
       return res.status(400).json({ message: "Invalid service mode" });
 
-    const user = await User.findById(getPanelOwnerId(req));
+    const user = await User.findById(req.cpOwnerId);
     if (!user) return res.status(404).json({ message: "User not found" });
 
     user.childPanelServiceMode = serviceMode;
     await user.save();
-
     res.json({ success: true, message: "Service mode updated", serviceMode: user.childPanelServiceMode });
   } catch (err) {
     console.error("CP UPDATE SERVICE MODE ERROR:", err);
@@ -201,7 +176,7 @@ export const updateCPDomain = async (req, res) => {
       .split("/")[0]
       .trim();
 
-    const user = await User.findById(getPanelOwnerId(req));
+    const user = await User.findById(req.cpOwnerId);
     if (!user || !user.isChildPanel)
       return res.status(404).json({ message: "Child panel not found" });
 
@@ -232,12 +207,11 @@ export const updateCPTemplate = async (req, res) => {
     if (templateId !== null && templateId !== undefined && !VALID.includes(templateId))
       return res.status(400).json({ message: `Invalid template. Must be one of: ${VALID.join(", ")} or null` });
 
-    const user = await User.findById(getPanelOwnerId(req));
+    const user = await User.findById(req.cpOwnerId);
     if (!user) return res.status(404).json({ message: "User not found" });
 
     user.childPanelTemplateId = templateId ?? null;
     await user.save();
-
     res.json({ success: true, message: templateId ? "Template updated" : "Template removed", templateId: user.childPanelTemplateId });
   } catch (err) {
     console.error("CP UPDATE TEMPLATE ERROR:", err);
@@ -253,12 +227,11 @@ export const updateCPLandingTemplate = async (req, res) => {
     if (!VALID.includes(landingTemplate))
       return res.status(400).json({ message: `Invalid template. Must be one of: ${VALID.join(", ")}` });
 
-    const user = await User.findById(getPanelOwnerId(req));
+    const user = await User.findById(req.cpOwnerId);
     if (!user) return res.status(404).json({ message: "User not found" });
 
     user.childPanelLandingTemplate = landingTemplate;
     await user.save();
-
     logCpAdminAction({ adminId: req.user._id, adminEmail: req.user.email, childPanelId: user._id, action: "UPDATE_LANDING_TEMPLATE", targetType: "Settings", description: `Landing template set to: ${landingTemplate}`, ipAddress: req.ip }).catch(() => {});
 
     res.json({ success: true, landingTemplate: user.childPanelLandingTemplate });
@@ -275,12 +248,11 @@ export const updateCPAutoDeduct = async (req, res) => {
     if (typeof autoDeduct !== "boolean")
       return res.status(400).json({ message: "autoDeduct must be true or false" });
 
-    const user = await User.findById(getPanelOwnerId(req));
+    const user = await User.findById(req.cpOwnerId);
     if (!user) return res.status(404).json({ message: "User not found" });
 
     user.childPanelAutoDeduct = autoDeduct;
     await user.save();
-
     res.json({ success: true, message: `Auto-deduct ${autoDeduct ? "enabled" : "disabled"}`, autoDeduct });
   } catch (err) {
     console.error("CP UPDATE AUTO-DEDUCT ERROR:", err);
@@ -291,7 +263,7 @@ export const updateCPAutoDeduct = async (req, res) => {
 // ======================= PAY BILLING FEE =======================
 export const payBillingFee = async (req, res) => {
   try {
-    const user = await User.findById(getPanelOwnerId(req));
+    const user = await User.findById(req.cpOwnerId);
     if (!user || !user.isChildPanel)
       return res.status(404).json({ message: "Child panel not found" });
 
@@ -344,10 +316,10 @@ export const payBillingFee = async (req, res) => {
     await user.save();
 
     res.json({
-      success:     true,
-      message:     `$${fee.toFixed(2)} deducted. Next billing: ${user.childPanelNextBilledAt}`,
+      success:      true,
+      message:      `$${fee.toFixed(2)} deducted. Next billing: ${user.childPanelNextBilledAt}`,
       fee,
-      newBalance:  wallet.balance,
+      newBalance:   wallet.balance,
       nextBilledAt: user.childPanelNextBilledAt,
     });
   } catch (err) {

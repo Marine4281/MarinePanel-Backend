@@ -1,9 +1,4 @@
 // controllers/cpOwnerFinancialController.js
-//
-// Financial dashboard for Child Panel Owners.
-// Mirrors admin financialController.js but scoped to THIS
-// child panel's users, resellers, orders, and wallet only.
-// No child-panel-of-child-panel support (that doesn't exist).
 
 import axios from "axios";
 import User from "../models/User.js";
@@ -31,17 +26,16 @@ const buildDateGte = (range, customStart) => {
 // ─── GET /api/cp/financial/summary ────────────────────────────────
 export const getCPFinancialSummary = async (req, res) => {
   try {
-    const cpOwner = req.user; // the logged-in CP owner
+    const ownerId    = req.cpOwnerId;
+    const panelOwner = req.childPanel;
 
-    // Users who belong to this CP owner
-    const cpUsers = await User.find({ childPanelOwner: cpOwner._id })
+    const cpUsers = await User.find({ childPanelOwner: ownerId })
       .select("_id isReseller")
       .lean();
-    const cpUserIds = cpUsers.map((u) => u._id);
+    const cpUserIds     = cpUsers.map((u) => u._id);
     const cpResellerIds = cpUsers.filter((u) => u.isReseller).map((u) => u._id);
 
-    // Provider wallet balances for THIS CP's providers
-    const cpProviders = await ProviderProfile.find({ cpOwner: cpOwner._id }).lean();
+    const cpProviders = await ProviderProfile.find({ cpOwner: ownerId }).lean();
     const providerBalances = await Promise.all(
       cpProviders.map(async (p) => {
         try {
@@ -57,39 +51,35 @@ export const getCPFinancialSummary = async (req, res) => {
       })
     );
 
-    // Balance used today by CP's users
     const todayOrders = await Order.find({
-      userId: { $in: cpUserIds },
+      userId:    { $in: cpUserIds },
       createdAt: { $gte: startOfDay() },
     }).select("charge").lean();
     const balanceUsedToday = todayOrders.reduce((s, o) => s + (o.charge || 0), 0);
 
-    // Total wallet balance of CP's users
     const userWallets = await Wallet.find({ user: { $in: cpUserIds } }).lean();
     const totalUsersWalletBalance = userWallets.reduce(
       (s, w) => s + Math.max(0, calcBalance(w.transactions)), 0
     );
 
-    // CP owner's own wallet balance
-    const ownerWallet = await Wallet.findOne({ user: cpOwner._id }).lean();
+    const ownerWallet  = await Wallet.findOne({ user: ownerId }).lean();
     const ownerBalance = Math.max(0, calcBalance(ownerWallet?.transactions ?? []));
 
-    // Reseller summary
-    const resellerWallets = await Wallet.find({ user: { $in: cpResellerIds } }).lean();
+    const resellerWallets      = await Wallet.find({ user: { $in: cpResellerIds } }).lean();
     const resellerTotalBalance = resellerWallets.reduce(
       (s, w) => s + Math.max(0, calcBalance(w.transactions)), 0
     );
 
     res.json({
       providerBalances,
-      balanceUsedToday:       Number(balanceUsedToday.toFixed(4)),
+      balanceUsedToday:        Number(balanceUsedToday.toFixed(4)),
       totalUsersWalletBalance: Number(totalUsersWalletBalance.toFixed(4)),
-      ownerBalance:           Number(ownerBalance.toFixed(4)),
+      ownerBalance:            Number(ownerBalance.toFixed(4)),
       reseller: {
         total:        cpResellerIds.length,
         totalBalance: Number(resellerTotalBalance.toFixed(4)),
       },
-      commission: cpOwner.childPanelCommission ?? 0,
+      commission: panelOwner.childPanelCommission ?? 0,
     });
   } catch (err) {
     console.error("CP FINANCIAL SUMMARY ERROR:", err);
@@ -100,16 +90,18 @@ export const getCPFinancialSummary = async (req, res) => {
 // ─── GET /api/cp/financial/profit ─────────────────────────────────
 export const getCPProfit = async (req, res) => {
   try {
-    const cpOwner = req.user;
+    const ownerId    = req.cpOwnerId;
+    const panelOwner = req.childPanel;
     const { range = "thisMonth", customStart, customEnd, country = "All" } = req.query;
 
-    // Get all user IDs under this CP owner
-    const cpUsers = await User.find({ childPanelOwner: cpOwner._id }).select("_id country").lean();
+    const cpUsers = await User.find({ childPanelOwner: ownerId })
+      .select("_id country countryCode")
+      .lean();
     const cpUserIds = cpUsers.map((u) => u._id);
 
     let matchStage = {
-      userId:     { $in: cpUserIds },
-      status:     "completed",
+      userId:      { $in: cpUserIds },
+      status:      "completed",
       isFreeOrder: { $ne: true },
     };
 
@@ -119,14 +111,14 @@ export const getCPProfit = async (req, res) => {
       if (range === "custom" && customEnd) matchStage.createdAt.$lte = new Date(customEnd);
     }
 
-    // Country filter: build a set of userIds in that country
-    let filteredUserIds = cpUserIds;
     if (country !== "All") {
-      filteredUserIds = cpUsers.filter((u) => u.country === country || u.countryCode === country).map((u) => u._id);
+      const filteredUserIds = cpUsers
+        .filter((u) => u.country === country || u.countryCode === country)
+        .map((u) => u._id);
       matchStage.userId = { $in: filteredUserIds };
     }
 
-    const currentCommission = cpOwner.childPanelCommission ?? 0;
+    const currentCommission = panelOwner.childPanelCommission ?? 0;
 
     const [summary, chart] = await Promise.all([
       Order.aggregate([
@@ -153,7 +145,7 @@ export const getCPProfit = async (req, res) => {
         { $match: matchStage },
         {
           $group: {
-            _id: { $dateToString: { format: "%Y-%m-%d", date: "$createdAt" } },
+            _id:         { $dateToString: { format: "%Y-%m-%d", date: "$createdAt" } },
             dailyCharge: { $sum: "$charge" },
             dailyProfit: {
               $sum: {
@@ -171,12 +163,9 @@ export const getCPProfit = async (req, res) => {
       ]),
     ]);
 
-    const totalProfit = summary[0]?.totalProfit ?? 0;
-    const totalCharge = summary[0]?.totalCharge ?? 0;
-
     res.json({
-      profit:       Number(totalProfit.toFixed(4)),
-      grossRevenue: Number(totalCharge.toFixed(4)),
+      profit:       Number((summary[0]?.totalProfit ?? 0).toFixed(4)),
+      grossRevenue: Number((summary[0]?.totalCharge ?? 0).toFixed(4)),
       totalOrders:  summary[0]?.totalOrders ?? 0,
       commission:   currentCommission,
       chart: chart.map((d) => ({
@@ -194,11 +183,11 @@ export const getCPProfit = async (req, res) => {
 // ─── GET /api/cp/financial/users ──────────────────────────────────
 export const getCPFinancialUsers = async (req, res) => {
   try {
-    const cpOwner = req.user;
+    const ownerId = req.cpOwnerId;
     const { page = 1, limit = 20 } = req.query;
     const skip = (Number(page) - 1) * Number(limit);
 
-    const cpUsersRaw = await User.find({ childPanelOwner: cpOwner._id })
+    const cpUsersRaw = await User.find({ childPanelOwner: ownerId })
       .select("email phone country countryCode createdAt isReseller isSuspended")
       .lean();
 
@@ -210,7 +199,7 @@ export const getCPFinancialUsers = async (req, res) => {
       .map((u) => ({ ...u, balance: Math.max(0, walletMap[u._id.toString()] ?? 0) }))
       .sort((a, b) => b.balance - a.balance);
 
-    const total = users.length;
+    const total     = users.length;
     const paginated = users.slice(skip, skip + Number(limit));
 
     res.json({ data: paginated, total, page: Number(page), pages: Math.ceil(total / Number(limit)) });
@@ -220,15 +209,14 @@ export const getCPFinancialUsers = async (req, res) => {
   }
 };
 
-
 // ─── GET /api/cp/financial/reseller-earnings ──────────────────────
 export const getCPResellerEarnings = async (req, res) => {
   try {
-    const cpOwner = req.user;
+    const ownerId = req.cpOwnerId;
     const { page = 1, limit = 20 } = req.query;
     const skip = (Number(page) - 1) * Number(limit);
 
-    const resellers = await User.find({ childPanelOwner: cpOwner._id, isReseller: true })
+    const resellers = await User.find({ childPanelOwner: ownerId, isReseller: true })
       .select("_id email phone country createdAt isSuspended")
       .lean();
 
@@ -260,10 +248,10 @@ export const getCPResellerEarnings = async (req, res) => {
       const stats = statsMap[id] ?? {};
       return {
         ...r,
-        walletBalance:  walletMap[id] ?? 0,
-        totalOrders:    stats.totalOrders ?? 0,
-        totalCharge:    Number((stats.totalCharge ?? 0).toFixed(4)),
-        totalEarnings:  Number((stats.totalCommission ?? 0).toFixed(4)),
+        walletBalance: walletMap[id] ?? 0,
+        totalOrders:   stats.totalOrders ?? 0,
+        totalCharge:   Number((stats.totalCharge    ?? 0).toFixed(4)),
+        totalEarnings: Number((stats.totalCommission ?? 0).toFixed(4)),
       };
     });
 
@@ -272,7 +260,9 @@ export const getCPResellerEarnings = async (req, res) => {
     const total = data.length;
     res.json({
       data: data.slice(skip, skip + Number(limit)),
-      total, page: Number(page), pages: Math.ceil(total / Number(limit)),
+      total,
+      page:  Number(page),
+      pages: Math.ceil(total / Number(limit)),
     });
   } catch (err) {
     console.error("CP RESELLER EARNINGS ERROR:", err);
@@ -281,22 +271,19 @@ export const getCPResellerEarnings = async (req, res) => {
 };
 
 // ─── GET /api/cp/financial/withdrawals ────────────────────────────
-// CP owner sees withdrawal requests from THEIR resellers, just like
-// admin sees CP owner withdrawal requests.
 export const getCPWithdrawals = async (req, res) => {
   try {
-    const cpOwner = req.user;
+    const ownerId = req.cpOwnerId;
     const { status, page = 1, limit = 20 } = req.query;
     const skip = (Number(page) - 1) * Number(limit);
 
-    // Get all resellers under this CP owner
     const resellers = await User.find({
-      childPanelOwner: cpOwner._id,
-      isReseller: true,
+      childPanelOwner: ownerId,
+      isReseller:      true,
     }).select("_id email").lean();
 
-    const resellerIds = resellers.map((r) => r._id);
-    const resellerMap = {};
+    const resellerIds  = resellers.map((r) => r._id);
+    const resellerMap  = {};
     resellers.forEach((r) => { resellerMap[r._id.toString()] = r; });
 
     const wallets = await Wallet.find({ user: { $in: resellerIds } }).lean();
@@ -322,7 +309,7 @@ export const getCPWithdrawals = async (req, res) => {
 
     all.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
 
-    const total = all.length;
+    const total     = all.length;
     const paginated = all.slice(skip, skip + Number(limit));
 
     res.json({ data: paginated, total, page: Number(page), pages: Math.ceil(total / Number(limit)) });
@@ -331,14 +318,14 @@ export const getCPWithdrawals = async (req, res) => {
     res.status(500).json({ message: "Server error" });
   }
 };
+
 // ─── POST /api/cp/financial/withdrawals/:userId/:txId/approve ─────
 export const cpApproveWithdrawal = async (req, res) => {
   try {
-    const cpOwner = req.user;
+    const ownerId          = req.cpOwnerId;
     const { userId, txId } = req.params;
 
-    // Verify this reseller belongs to this CP owner
-    const reseller = await User.findOne({ _id: userId, childPanelOwner: cpOwner._id, isReseller: true });
+    const reseller = await User.findOne({ _id: userId, childPanelOwner: ownerId, isReseller: true });
     if (!reseller) return res.status(403).json({ message: "Not authorized" });
 
     const wallet = await Wallet.findOne({ user: userId });
@@ -348,7 +335,7 @@ export const cpApproveWithdrawal = async (req, res) => {
     if (!tx || tx.type !== "Withdrawal") return res.status(404).json({ message: "Withdrawal not found" });
     if (tx.status !== "Pending") return res.status(400).json({ message: "Withdrawal is not pending" });
 
-    tx.status = "Completed";
+    tx.status      = "Completed";
     wallet.balance = wallet.transactions
       .filter((t) => t.status === "Completed")
       .reduce((s, t) => s + (Number(t.amount) || 0), 0);
@@ -368,11 +355,11 @@ export const cpApproveWithdrawal = async (req, res) => {
 // ─── POST /api/cp/financial/withdrawals/:userId/:txId/reject ──────
 export const cpRejectWithdrawal = async (req, res) => {
   try {
-    const cpOwner = req.user;
+    const ownerId          = req.cpOwnerId;
     const { userId, txId } = req.params;
-    const { reason } = req.body;
+    const { reason }       = req.body;
 
-    const reseller = await User.findOne({ _id: userId, childPanelOwner: cpOwner._id, isReseller: true });
+    const reseller = await User.findOne({ _id: userId, childPanelOwner: ownerId, isReseller: true });
     if (!reseller) return res.status(403).json({ message: "Not authorized" });
 
     const wallet = await Wallet.findOne({ user: userId });
@@ -382,7 +369,6 @@ export const cpRejectWithdrawal = async (req, res) => {
     if (!tx || tx.type !== "Withdrawal") return res.status(404).json({ message: "Withdrawal not found" });
     if (tx.status !== "Pending") return res.status(400).json({ message: "Withdrawal is not pending" });
 
-    // Refund: reverse the deduction by adding a positive Completed transaction
     tx.status = "Failed";
     wallet.transactions.push({
       type:      "Withdrawal Refund",
@@ -411,16 +397,16 @@ export const cpRejectWithdrawal = async (req, res) => {
 // ─── PATCH /api/cp/financial/withdrawals/:userId/:txId/status ─────
 export const cpSetWithdrawalStatus = async (req, res) => {
   try {
-    const cpOwner = req.user;
+    const ownerId          = req.cpOwnerId;
     const { userId, txId } = req.params;
-    const { status } = req.body;
+    const { status }       = req.body;
 
     const allowed = ["Completed", "Failed", "Processing"];
     if (!allowed.includes(status)) {
       return res.status(400).json({ message: "Invalid status. Use: Completed, Failed, Processing" });
     }
 
-    const reseller = await User.findOne({ _id: userId, childPanelOwner: cpOwner._id, isReseller: true });
+    const reseller = await User.findOne({ _id: userId, childPanelOwner: ownerId, isReseller: true });
     if (!reseller) return res.status(403).json({ message: "Not authorized" });
 
     const wallet = await Wallet.findOne({ user: userId });
@@ -430,7 +416,7 @@ export const cpSetWithdrawalStatus = async (req, res) => {
     if (!tx || tx.type !== "Withdrawal") return res.status(404).json({ message: "Withdrawal not found" });
 
     const previous = tx.status;
-    tx.status = status;
+    tx.status      = status;
 
     wallet.balance = wallet.transactions
       .filter((t) => t.status === "Completed")

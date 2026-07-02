@@ -39,7 +39,7 @@ async function getNextServiceId() {
 // ──────────────────────────────────────────────
 export const getCPServices = async (req, res) => {
   try {
-    const user = await User.findById(req.user._id)
+    const user = await User.findById(req.cpOwnerId)
       .select("childPanelCommissionRate")
       .lean();
     const commission = Number(user?.childPanelCommissionRate ?? 0);
@@ -47,36 +47,36 @@ export const getCPServices = async (req, res) => {
     const settings = await Settings.findOne().lean();
     const adminCommission = Number(settings?.commission ?? 0);
 
-    const services = await Service.find({ cpOwner: req.user._id })
+    const services = await Service.find({ cpOwner: req.cpOwnerId })
       .sort({ serviceId: 1 })
       .lean();
 
     const withFinal = services.map((s) => {
-  const costRate  = Number(s.rate || 0);
-  const finalRate = costRate + (costRate * commission) / 100;
-  return {
-    ...s,
-    cpCommission: commission,
-    adminCommission,
-    finalRate,
-  };
-});
+      const costRate  = Number(s.rate || 0);
+      const finalRate = costRate + (costRate * commission) / 100;
+      return {
+        ...s,
+        cpCommission: commission,
+        adminCommission,
+        finalRate,
+      };
+    });
 
-const categoryMaxId = {};
-withFinal.forEach((s) => {
-  const cat = s.category || "Uncategorized";
-  if (categoryMaxId[cat] === undefined || s.serviceId > categoryMaxId[cat]) {
-    categoryMaxId[cat] = s.serviceId;
-  }
-});
+    const categoryMaxId = {};
+    withFinal.forEach((s) => {
+      const cat = s.category || "Uncategorized";
+      if (categoryMaxId[cat] === undefined || s.serviceId > categoryMaxId[cat]) {
+        categoryMaxId[cat] = s.serviceId;
+      }
+    });
 
-const sorted = withFinal.slice().sort((a, b) => {
-  const catDiff = categoryMaxId[b.category] - categoryMaxId[a.category];
-  if (catDiff !== 0) return catDiff;
-  return (a.serviceId ?? 0) - (b.serviceId ?? 0);
-});
+    const sorted = withFinal.slice().sort((a, b) => {
+      const catDiff = categoryMaxId[b.category] - categoryMaxId[a.category];
+      if (catDiff !== 0) return catDiff;
+      return (a.serviceId ?? 0) - (b.serviceId ?? 0);
+    });
 
-res.json(sorted);
+    res.json(sorted);
   } catch (err) {
     console.error("CP GET SERVICES ERROR:", err);
     res.status(500).json({ message: "Failed to fetch services" });
@@ -160,19 +160,19 @@ export const addCPService = async (req, res) => {
 
     if (isDefault) {
       await Service.updateMany(
-        { category, cpOwner: req.user._id },
+        { category, cpOwner: req.cpOwnerId },
         { $set: { isDefault: false } }
       );
     }
     if (isDefaultCategoryGlobal) {
       await Service.updateMany(
-        { cpOwner: req.user._id },
+        { cpOwner: req.cpOwnerId },
         { $set: { isDefaultCategoryGlobal: false } }
       );
     }
     if (isDefaultCategoryPlatform) {
       await Service.updateMany(
-        { platform, cpOwner: req.user._id },
+        { platform, cpOwner: req.cpOwnerId },
         { $set: { isDefaultCategoryPlatform: false } }
       );
     }
@@ -199,7 +199,7 @@ export const addCPService = async (req, res) => {
       isDefault: Boolean(isDefault),
       isDefaultCategoryGlobal: Boolean(isDefaultCategoryGlobal),
       isDefaultCategoryPlatform: Boolean(isDefaultCategoryPlatform),
-      cpOwner: req.user._id,
+      cpOwner: req.cpOwnerId,
       provider: "manual",
       providerServiceId: `manual-${serviceId}`,
       providerProfileId: req.user._id,
@@ -220,7 +220,7 @@ export const updateCPService = async (req, res) => {
   try {
     const service = await Service.findOne({
       _id: req.params.id,
-      cpOwner: req.user._id,
+      cpOwner: req.cpOwnerId,
     });
 
     if (!service) return res.status(404).json({ message: "Service not found" });
@@ -284,7 +284,7 @@ export const updateCPService = async (req, res) => {
 
     if (isDefaultCategoryGlobal) {
       await Service.updateMany(
-        { cpOwner: req.user._id, _id: { $ne: service._id } },
+        { cpOwner: req.cpOwnerId, _id: { $ne: service._id } },
         { $set: { isDefaultCategoryGlobal: false } }
       );
       service.isDefaultCategoryGlobal = true;
@@ -343,7 +343,7 @@ export const deleteCPService = async (req, res) => {
 // ──────────────────────────────────────────────
 export const toggleCPServiceStatus = async (req, res) => {
   try {
-    const service = await Service.findOne({ _id: req.params.id, cpOwner: req.user._id });
+    const service = await Service.findOne({ _id: req.params.id, cpOwner: req.cpOwnerId });
     if (!service) return res.status(404).json({ message: "Service not found" });
     service.status = !service.status;
     await service.save();
@@ -362,7 +362,7 @@ export const bulkToggleCPServices = async (req, res) => {
   try {
     const { ids } = req.body;
     if (!ids?.length) return res.status(400).json({ message: "No ids provided" });
-    const services = await Service.find({ _id: { $in: ids }, cpOwner: req.user._id });
+    const services = await Service.find({ _id: { $in: ids }, cpOwner: req.cpOwnerId });
     await Promise.all(services.map((s) => { s.status = !s.status; return s.save(); }));
     res.json({ message: "Toggled", count: services.length });
   } catch (err) {
@@ -379,7 +379,7 @@ export const bulkDeleteCPServices = async (req, res) => {
   try {
     const { ids } = req.body;
     if (!ids?.length) return res.status(400).json({ message: "No ids provided" });
-    const result = await Service.deleteMany({ _id: { $in: ids }, cpOwner: req.user._id });
+    const result = await Service.deleteMany({ _id: { $in: ids }, cpOwner: req.cpOwnerId });
     res.json({ message: "Deleted", count: result.deletedCount });
   } catch (err) {
     console.error("CP BULK DELETE ERROR:", err);
@@ -393,7 +393,7 @@ export const bulkDeleteCPServices = async (req, res) => {
 // ──────────────────────────────────────────────
 export const getCPCommission = async (req, res) => {
   try {
-    const user = await User.findById(req.user._id).select("childPanelCommissionRate").lean();
+    const user = await User.findById(req.cpOwnerId).select("childPanelCommissionRate").lean();
     res.json({ commission: user?.childPanelCommissionRate ?? 0 });
   } catch (err) {
     console.error("CP GET COMMISSION ERROR:", err);
@@ -410,7 +410,7 @@ export const setCPCommission = async (req, res) => {
     const { commission } = req.body;
     const rate = Number(commission);
     if (isNaN(rate) || rate < 0) return res.status(400).json({ message: "Invalid commission rate" });
-    await User.findByIdAndUpdate(req.user._id, { childPanelCommissionRate: rate });
+    await User.findByIdAndUpdate(req.cpOwnerId, { childPanelCommissionRate: rate });
     res.json({ message: "Commission updated", commission: rate });
   } catch (err) {
     console.error("CP SET COMMISSION ERROR:", err);
@@ -428,7 +428,7 @@ export const getCPRateChanges = async (req, res) => {
   try {
     // Only check services that came from real provider APIs (not manual)
     const services = await Service.find({
-      cpOwner: req.user._id,
+      cpOwner: req.cpOwnerId,
       provider: { $ne: "manual" },
     }).lean();
 
@@ -436,7 +436,7 @@ export const getCPRateChanges = async (req, res) => {
 
     // Group by providerProfileId
     const profileIds = [...new Set(services.map((s) => s.providerProfileId?.toString()).filter(Boolean))];
-    const profiles   = await ProviderProfile.find({ _id: { $in: profileIds }, cpOwner: req.user._id }).lean();
+    const profiles   = await ProviderProfile.find({ _id: { $in: profileIds }, cpOwner: req.cpOwnerId }).lean();
     const profileMap = {};
     profiles.forEach((p) => { profileMap[p._id.toString()] = p; });
 
@@ -500,7 +500,7 @@ export const syncCPServiceRate = async (req, res) => {
     const rate = Number(newRate);
     if (isNaN(rate)) return res.status(400).json({ message: "Invalid rate" });
 
-    const service = await Service.findOne({ _id: req.params.id, cpOwner: req.user._id });
+    const service = await Service.findOne({ _id: req.params.id, cpOwner: req.cpOwnerId });
     if (!service) return res.status(404).json({ message: "Service not found" });
 
     service.previousRate   = service.rate;
@@ -527,7 +527,7 @@ export const syncAllCPRates = async (req, res) => {
 
     const results = await Promise.allSettled(
       changes.map(async ({ _id, newRate }) => {
-        const service = await Service.findOne({ _id, cpOwner: req.user._id });
+        const service = await Service.findOne({ _id, cpOwner: req.cpOwnerId });
         if (!service) return;
         service.previousRate   = service.rate;
         service.rate           = Number(newRate);
@@ -553,7 +553,7 @@ export const syncAllCPRates = async (req, res) => {
 export const getCPDeletedSync = async (req, res) => {
   try {
     const services = await Service.find({
-      cpOwner: req.user._id,
+      cpOwner: req.cpOwnerId,
       providerProfileId: { $exists: true, $ne: null },
       providerServiceId: { $exists: true, $ne: null, $not: /^manual-/ },
     }).lean();
@@ -561,7 +561,7 @@ export const getCPDeletedSync = async (req, res) => {
     if (!services.length) return res.json([]);
 
     const profileIds = [...new Set(services.map((s) => s.providerProfileId?.toString()).filter(Boolean))];
-    const profiles   = await ProviderProfile.find({ _id: { $in: profileIds }, cpOwner: req.user._id }).lean();
+    const profiles   = await ProviderProfile.find({ _id: { $in: profileIds }, cpOwner: req.cpOwnerId }).lean();
 
     const liveServiceIds = {};
     await Promise.allSettled(
@@ -635,7 +635,7 @@ export const importCPPlatformServices = async (req, res) => {
 
     // Avoid duplicating services the CP already has (match by source _id stored in providerServiceId)
     const existingRefs = await Service.find({
-      cpOwner: req.user._id,
+      cpOwner: req.cpOwnerId,
       provider: "platform",
     })
       .select("providerServiceId")

@@ -275,13 +275,29 @@ export const activateChildPanel = async (req, res) => {
 
 export const getChildPanelDashboard = async (req, res) => {
   try {
-    const ownerId   = req.cpOwnerId;
-    const panelOwner = req.childPanel; // set by cpOwnerOnly middleware
+    const ownerId    = req.cpOwnerId;
+    const panelOwner = req.childPanel;
 
     const [resellersCount, usersCount, orders, wallet] = await Promise.all([
-      User.countDocuments({ isReseller: true, childPanelOwner: ownerId }),
-      User.countDocuments({ childPanelOwner: ownerId }),
+      // Only resellers belonging to this panel
+      User.countDocuments({
+        isReseller:      true,
+        childPanelOwner: ownerId,
+      }),
+
+      // Only regular end users — exclude resellers, CP admins,
+      // CP owners, and blocked users from the count
+      User.countDocuments({
+        childPanelOwner: ownerId,
+        isReseller:      false,
+        isChildPanel:    false,
+        isCpAdmin:       false,
+      }),
+
+      // Orders scoped to this panel
       Order.find({ childPanelOwner: ownerId }).lean(),
+
+      // Wallet belongs to the panel owner, not the CP admin
       Wallet.findOne({ user: ownerId }).lean(),
     ]);
 
@@ -291,9 +307,9 @@ export const getChildPanelDashboard = async (req, res) => {
     let pendingOrders = 0;
 
     for (const order of orders) {
-      if (order.status === "completed") totalRevenue += Number(order.charge || 0);
-      if (order.childPanelEarningsCredited) earnings += Number(order.childPanelCommission || 0);
-      if (order.status === "pending") pendingOrders++;
+      if (order.status === "completed")          totalRevenue += Number(order.charge || 0);
+      if (order.childPanelEarningsCredited)      earnings     += Number(order.childPanelCommission || 0);
+      if (order.status === "pending")            pendingOrders++;
     }
 
     res.json({

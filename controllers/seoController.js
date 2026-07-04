@@ -382,9 +382,11 @@ export const uploadResellerSeoImage = async (req, res) => {
 // ====================================================================
 export const updateCpOwnerSeo = async (req, res) => {
   try {
+    if (!req.user?.isChildPanel) return res.status(403).json({ message: "Access denied" });
+
     const { title, description, keywords, twitterCard, canonical } = req.body;
 
-    const user = await User.findById(req.cpOwnerId);
+    const user = await User.findById(req.user._id);
     if (!user) return res.status(404).json({ message: "User not found" });
 
     if (!user.childPanelSeo) user.childPanelSeo = {};
@@ -403,14 +405,6 @@ export const updateCpOwnerSeo = async (req, res) => {
   }
 };
 
-export const getCpOwnerSeo = async (req, res) => {
-  try {
-    const user = await User.findById(req.cpOwnerId).lean();
-    res.json({ seo: user?.childPanelSeo || {} });
-  } catch (err) {
-    res.status(500).json({ message: "Failed to fetch SEO" });
-  }
-};
 // ====================================================================
 // CP OWNER — upload child panel logo (direct upload)
 // ====================================================================

@@ -8,7 +8,7 @@ import Service from "../models/Service.js";
 // GET /api/cp/categories
 export const getCPCategoryMeta = async (req, res) => {
   try {
-    const cpOwner = req.cpOwnerId;
+    const cpOwner = req.user._id;
 
     // Build list from this CP's actual services
     const allCats = await Service.aggregate([
@@ -55,7 +55,7 @@ export const getCPCategoryMeta = async (req, res) => {
 // POST /api/cp/categories
 export const saveCPCategoryMeta = async (req, res) => {
   try {
-    const cpOwner = req.cpOwnerId;
+    const cpOwner = req.user._id;
     const items   = req.body;
 
     if (!Array.isArray(items) || items.length === 0)
@@ -81,7 +81,7 @@ export const saveCPCategoryMeta = async (req, res) => {
 // Returns all services for a given category (tapping a category lists its services)
 export const getCPCategoryServices = async (req, res) => {
   try {
-    const cpOwner  = req.cpOwnerId;
+    const cpOwner  = req.user._id;
     const category = decodeURIComponent(req.params.category);
 
     const services = await Service.find({ cpOwner, category })

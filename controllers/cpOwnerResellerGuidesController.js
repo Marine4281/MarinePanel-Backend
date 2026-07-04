@@ -44,7 +44,7 @@ export const createCPResellerGuide = async (req, res) => {
       order:     order ?? 0,
       visible:   visible ?? true,
       placement: placement || "activation",
-      cpOwner:   req.cpOwnerId,
+      cpOwner:   req.user._id,
     });
 
     res.json(guide);
@@ -75,7 +75,7 @@ export const updateCPResellerGuide = async (req, res) => {
 
     // cpOwner scoped — CP owner can only edit their own guides
     const guide = await ResellerGuide.findOneAndUpdate(
-      { _id: req.params.id, cpOwner: req.cpOwnerId },
+      { _id: req.params.id, cpOwner: req.user._id },
       updates,
       { new: true, runValidators: true }
     );
@@ -96,7 +96,7 @@ export const deleteCPResellerGuide = async (req, res) => {
   try {
     const guide = await ResellerGuide.findOneAndDelete({
       _id: req.params.id,
-      cpOwner: req.cpOwnerId,
+      cpOwner: req.user._id,
     });
 
     if (!guide) return res.status(404).json({ message: "Guide not found" });

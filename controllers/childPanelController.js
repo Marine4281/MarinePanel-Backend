@@ -27,6 +27,7 @@ const calculateBalance = (transactions) => {
 
 /* ================================================
    GET CHILD PANEL ACTIVATION FEE
+   Returns current fee — shows offer price if active
 ================================================ */
 
 export const getChildPanelActivationFee = async (req, res) => {
@@ -59,6 +60,9 @@ export const getChildPanelActivationFee = async (req, res) => {
 
 /* ================================================
    RESERVED SLUGS
+   These can never be used as child panel slugs.
+   They either conflict with platform routes,
+   DNS records we own, or common abuse targets.
 ================================================ */
 const RESERVED_SLUGS = new Set([
   "api", "admin", "www", "mail", "app", "panel", "support",
@@ -70,14 +74,16 @@ const RESERVED_SLUGS = new Set([
 
 /* ================================================
    ACTIVATE CHILD PANEL
-   Always scoped to req.user._id — this is the
-   user activating their own panel, not a CP admin action
+   User pays activation fee from their wallet
+   Gets their own child panel with a slug for testing
+   or custom domain for production
 ================================================ */
 export const activateChildPanel = async (req, res) => {
   try {
     const userId = req.user._id;
     const { brandName, slug, customDomain } = req.body;
 
+    // ── 1. Basic validation ──────────────────────────
     if (!brandName || !brandName.trim()) {
       return res.status(400).json({ message: "Brand name is required" });
     }
@@ -89,6 +95,7 @@ export const activateChildPanel = async (req, res) => {
       return res.status(400).json({ message: "Already a child panel owner" });
     }
 
+    // ── 2. Build & validate slug ─────────────────────
     const finalSlug = (slug || brandName)
       .toLowerCase()
       .trim()
@@ -107,12 +114,15 @@ export const activateChildPanel = async (req, res) => {
       });
     }
 
+    // ── 3. Reserved slug check (SEC-1) ───────────────
     if (RESERVED_SLUGS.has(finalSlug)) {
       return res.status(400).json({
         message: `"${finalSlug}" is a reserved name and cannot be used. Please choose another.`,
       });
     }
 
+    // ── 4. Uniqueness: check against BOTH resellers
+    //       and existing child panels (SEC-1) ─────────
     const slugConflict = await User.findOne({
       $or: [
         { isReseller: true, brandSlug: finalSlug },
@@ -126,11 +136,13 @@ export const activateChildPanel = async (req, res) => {
       });
     }
 
+    // ── 5. Custom domain validation ──────────────────
     let cleanDomain = null;
 
     if (customDomain && customDomain.trim()) {
       cleanDomain = normalizeDomain(customDomain.trim());
 
+      // Must not be the main platform domain or any subdomain of it
       const PLATFORM_DOMAIN = "marinepanel.online";
       if (
         cleanDomain === PLATFORM_DOMAIN ||
@@ -141,6 +153,7 @@ export const activateChildPanel = async (req, res) => {
         });
       }
 
+      // Must look like a real domain (basic format check)
       const domainPattern = /^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z]{2,})+$/;
       if (!domainPattern.test(cleanDomain)) {
         return res.status(400).json({
@@ -148,6 +161,7 @@ export const activateChildPanel = async (req, res) => {
         });
       }
 
+      // Must not be already registered to another child panel or reseller
       const domainConflict = await User.findOne({
         $or: [
           { isChildPanel: true, childPanelDomain: cleanDomain },
@@ -162,6 +176,7 @@ export const activateChildPanel = async (req, res) => {
       }
     }
 
+    // ── 6. Load settings & resolve fees ─────────────
     const settings = await Settings.findOne().lean();
 
     const offerActive =
@@ -177,11 +192,12 @@ export const activateChildPanel = async (req, res) => {
       ? Number(settings.childPanelOfferMonthlyFee ?? 0)
       : Number(settings?.childPanelMonthlyFee ?? 20);
 
-    const billingMode  = settings?.childPanelBillingMode || "monthly";
-    const perOrderFee  = Number(settings?.childPanelPerOrderFee ?? 0);
-    const withdrawMin  = Number(settings?.childPanelWithdrawMin ?? 10);
+    const billingMode = settings?.childPanelBillingMode || "monthly";
+    const perOrderFee = Number(settings?.childPanelPerOrderFee ?? 0);
+    const withdrawMin = Number(settings?.childPanelWithdrawMin ?? 10);
     const platformDomain = settings?.platformDomain || "marinepanel.online";
 
+    // ── 7. Wallet balance check ──────────────────────
     const wallet = await Wallet.findOne({ user: userId });
     if (!wallet) return res.status(404).json({ message: "Wallet not found" });
 
@@ -191,11 +207,12 @@ export const activateChildPanel = async (req, res) => {
       });
     }
 
+    // ── 8. Deduct activation fee ─────────────────────
     wallet.transactions.push({
-      type:      "CP Activation Fee",
-      amount:    -activationFee,
-      status:    "Completed",
-      note:      `Child panel activation fee${offerActive ? " (offer price)" : ""}`,
+      type: "CP Activation Fee",
+      amount: -activationFee,
+      status: "Completed",
+      note: `Child panel activation fee${offerActive ? " (offer price)" : ""}`,
       reference: `CP-ACT-${userId}-${Date.now()}`,
       createdAt: new Date(),
     });
@@ -203,59 +220,72 @@ export const activateChildPanel = async (req, res) => {
     wallet.balance = calculateBalance(wallet.transactions);
     await wallet.save();
 
-    const intervalDays = Number(settings?.childPanelBillingIntervalDays ?? 30);
-    const now          = new Date();
-    const nextBill     = new Date(now.getTime() + intervalDays * 24 * 60 * 60 * 1000);
+    // ── 9. Stamp child panel fields on user ──────────
+    user.isChildPanel = true;
+    user.childPanelEnabled = true;          // backward-compat field
+    user.childPanelIsActive = true;
+    user.childPanelActivatedAt = new Date();
+    user.childPanelBrandName = brandName.trim();
+    user.childPanelSlug = finalSlug;
+    user.childPanelDomain = cleanDomain;    // null if no custom domain given
 
-    user.isChildPanel                    = true;
-    user.childPanelEnabled               = true;
-    user.childPanelIsActive              = true;
-    user.childPanelActivatedAt           = now;
-    user.childPanelBrandName             = brandName.trim();
-    user.childPanelSlug                  = finalSlug;
-    user.childPanelDomain                = cleanDomain;
-    user.childPanelBillingMode           = billingMode;
-    user.childPanelMonthlyFee            = monthlyFee;
-    user.childPanelPerOrderFee           = perOrderFee;
-    user.childPanelLastBilledAt          = now;
-    user.childPanelNextBilledAt          = nextBill;
-    user.childPanelBillingIntervalDays   = null;
-    user.childPanelFeeIsCustom           = false;
-    user.childPanelWithdrawMin           = withdrawMin;
+
+     // Billing — inherited from admin settings at time of activation
+     const intervalDays = Number(settings?.childPanelBillingIntervalDays ?? 30);
+     const now = new Date();
+     const nextBill = new Date(now.getTime() + intervalDays * 24 * 60 * 60 * 1000);
+
+      user.childPanelBillingMode          = billingMode;
+      user.childPanelMonthlyFee           = monthlyFee;
+      user.childPanelPerOrderFee          = perOrderFee;
+      user.childPanelLastBilledAt         = now;
+      user.childPanelNextBilledAt         = nextBill;
+      user.childPanelBillingIntervalDays  = null; // null = use global default
+      user.childPanelFeeIsCustom          = false;
+     
+    // Defaults the CP owner can change later from their settings page
+    user.childPanelWithdrawMin = withdrawMin;
     user.childPanelResellerActivationFee = 25;
-    user.childPanelCommissionRate        = 0;
-    user.childPanelPaymentMode           = "none";
-    user.childPanelServiceMode           = "none";
+    user.childPanelCommissionRate = 0;
+    user.childPanelPaymentMode = "none";
+    user.childPanelServiceMode = "none";
 
     await user.save();
+
+    // ── 10. Keep User.balance in sync ────────────────
     await User.findByIdAndUpdate(userId, { balance: wallet.balance });
 
+    // ── 11. Refresh CORS domain cache if custom domain ──
     if (cleanDomain) {
       try {
         const { refreshChildDomains } = await import("../app.js");
         await refreshChildDomains();
       } catch (cacheErr) {
+        // Non-fatal — CORS cache will sync on next restart
         console.warn("CORS cache refresh skipped:", cacheErr.message);
       }
     }
 
+    // ── 12. Respond ──────────────────────────────────
     const panelUrl = cleanDomain
       ? `https://${cleanDomain}`
       : `https://${finalSlug}.${platformDomain}`;
 
     res.status(201).json({
-      message:          "Child panel activated successfully",
-      slug:             finalSlug,
-      domain:           cleanDomain || `${finalSlug}.${platformDomain}`,
+      message: "Child panel activated successfully",
+      slug: finalSlug,
+      domain: cleanDomain || `${finalSlug}.${platformDomain}`,
       panelUrl,
       remainingBalance: wallet.balance,
       billingMode,
       monthlyFee,
-      offerApplied:     offerActive,
+      offerApplied: offerActive,
     });
+
   } catch (error) {
     console.error("CHILD PANEL ACTIVATION ERROR:", error);
 
+    // Surface Mongoose duplicate-key errors cleanly
     if (error.code === 11000) {
       const field = Object.keys(error.keyPattern || {})[0] || "field";
       return res.status(400).json({
@@ -269,72 +299,67 @@ export const activateChildPanel = async (req, res) => {
 
 /* ================================================
    DASHBOARD
-   Uses req.cpOwnerId for queries and req.childPanel
-   for billing fields so CP admins see panel owner data
+   Stats scoped to this child panel owner
 ================================================ */
 
 export const getChildPanelDashboard = async (req, res) => {
   try {
-    const ownerId    = req.cpOwnerId;
-    const panelOwner = req.childPanel;
+    const ownerId = req.user._id;
 
     const [resellersCount, usersCount, orders, wallet] = await Promise.all([
-      // Only resellers belonging to this panel
-      User.countDocuments({
-        isReseller:      true,
-        childPanelOwner: ownerId,
-      }),
+      // Resellers that belong to this child panel
+      User.countDocuments({ isReseller: true, childPanelOwner: ownerId }),
 
-      // Only regular end users — exclude resellers, CP admins,
-      // CP owners, and blocked users from the count
-      User.countDocuments({
-        childPanelOwner: ownerId,
-        isReseller:      false,
-        isChildPanel:    false,
-        isCpAdmin:       false,
-      }),
+      // All users under those resellers
+      User.countDocuments({ childPanelOwner: ownerId }),
 
-      // Orders scoped to this panel
+      // All orders on this child panel
       Order.find({ childPanelOwner: ownerId }).lean(),
 
-      // Wallet belongs to the panel owner, not the CP admin
       Wallet.findOne({ user: ownerId }).lean(),
     ]);
 
-    let totalOrders   = orders.length;
-    let totalRevenue  = 0;
-    let earnings      = 0;
+    let totalOrders = orders.length;
+    let totalRevenue = 0;
+    let earnings = 0;
     let pendingOrders = 0;
 
     for (const order of orders) {
-      if (order.status === "completed")          totalRevenue += Number(order.charge || 0);
-      if (order.childPanelEarningsCredited)      earnings     += Number(order.childPanelCommission || 0);
-      if (order.status === "pending")            pendingOrders++;
+      if (order.status === "completed") {
+        totalRevenue += Number(order.charge || 0);
+      }
+      if (order.childPanelEarningsCredited) {
+        earnings += Number(order.childPanelCommission || 0);
+      }
+      if (order.status === "pending") {
+        pendingOrders++;
+      }
     }
 
     res.json({
-      resellers:    resellersCount,
-      users:        usersCount,
-      orders:       totalOrders,
-      pendingOrders,
-      revenue:      totalRevenue,
-      earnings,
-      wallet:       wallet?.balance || 0,
-      brandName:    panelOwner.childPanelBrandName,
-      domain:       panelOwner.childPanelDomain || panelOwner.childPanelSlug,
-      billingMode:  panelOwner.childPanelBillingMode,
-      monthlyFee:   panelOwner.childPanelMonthlyFee,
-      lastBilledAt: panelOwner.childPanelLastBilledAt,
-      billing: {
-        mode:            panelOwner.childPanelBillingMode         ?? "monthly",
-        monthlyFee:      panelOwner.childPanelMonthlyFee          ?? 0,
-        perOrderFee:     panelOwner.childPanelPerOrderFee         ?? 0,
-        ordersThisCycle: panelOwner.childPanelOrdersThisCycle     ?? 0,
-        lastBilledAt:    panelOwner.childPanelLastBilledAt        ?? null,
-        nextBilledAt:    panelOwner.childPanelNextBilledAt        ?? null,
-        intervalDays:    panelOwner.childPanelBillingIntervalDays ?? null,
-      },
-    });
+  resellers: resellersCount,
+  users: usersCount,
+  orders: totalOrders,
+  pendingOrders,
+  revenue: totalRevenue,
+  earnings,
+  wallet: wallet?.balance || 0,
+
+  brandName: req.user.childPanelBrandName,
+  domain: req.user.childPanelDomain || req.user.childPanelSlug,
+  billingMode: req.user.childPanelBillingMode,
+  monthlyFee: req.user.childPanelMonthlyFee,
+  lastBilledAt: req.user.childPanelLastBilledAt,
+  billing: {
+    mode:            req.user.childPanelBillingMode          ?? "monthly",
+    monthlyFee:      req.user.childPanelMonthlyFee           ?? 0,
+    perOrderFee:     req.user.childPanelPerOrderFee          ?? 0,
+    ordersThisCycle: req.user.childPanelOrdersThisCycle      ?? 0,
+    lastBilledAt:    req.user.childPanelLastBilledAt         ?? null,
+    nextBilledAt:    req.user.childPanelNextBilledAt         ?? null,
+    intervalDays:    req.user.childPanelBillingIntervalDays  ?? null,
+  },
+});
   } catch (error) {
     console.error("CHILD PANEL DASHBOARD ERROR:", error);
     res.status(500).json({ message: "Dashboard failed" });
@@ -347,24 +372,30 @@ export const getChildPanelDashboard = async (req, res) => {
 
 export const getChildPanelResellers = async (req, res) => {
   try {
-    const page  = Number(req.query.page)  || 1;
+    const page = Number(req.query.page) || 1;
     const limit = Number(req.query.limit) || 20;
-    const skip  = (page - 1) * limit;
+    const skip = (page - 1) * limit;
 
     const [resellers, total] = await Promise.all([
-      User.find({ isReseller: true, childPanelOwner: req.cpOwnerId })
+      User.find({ isReseller: true, childPanelOwner: req.user._id })
         .select("-password")
         .sort({ createdAt: -1 })
         .skip(skip)
         .limit(limit)
         .lean(),
-      User.countDocuments({ isReseller: true, childPanelOwner: req.cpOwnerId }),
+
+      User.countDocuments({ isReseller: true, childPanelOwner: req.user._id }),
     ]);
 
     res.json({
       success: true,
       data: resellers,
-      pagination: { page, limit, total, pages: Math.ceil(total / limit) },
+      pagination: {
+        page,
+        limit,
+        total,
+        pages: Math.ceil(total / limit),
+      },
     });
   } catch (error) {
     res.status(500).json({ message: "Failed to fetch resellers" });
@@ -377,24 +408,30 @@ export const getChildPanelResellers = async (req, res) => {
 
 export const getChildPanelUsers = async (req, res) => {
   try {
-    const page  = Number(req.query.page)  || 1;
+    const page = Number(req.query.page) || 1;
     const limit = Number(req.query.limit) || 20;
-    const skip  = (page - 1) * limit;
+    const skip = (page - 1) * limit;
 
     const [users, total] = await Promise.all([
-      User.find({ childPanelOwner: req.cpOwnerId, isReseller: false })
+      User.find({ childPanelOwner: req.user._id, isReseller: false })
         .select("-password")
         .sort({ createdAt: -1 })
         .skip(skip)
         .limit(limit)
         .lean(),
-      User.countDocuments({ childPanelOwner: req.cpOwnerId, isReseller: false }),
+
+      User.countDocuments({ childPanelOwner: req.user._id, isReseller: false }),
     ]);
 
     res.json({
       success: true,
       data: users,
-      pagination: { page, limit, total, pages: Math.ceil(total / limit) },
+      pagination: {
+        page,
+        limit,
+        total,
+        pages: Math.ceil(total / limit),
+      },
     });
   } catch (error) {
     res.status(500).json({ message: "Failed to fetch users" });
@@ -408,11 +445,11 @@ export const getChildPanelUsers = async (req, res) => {
 export const getChildPanelOrders = async (req, res) => {
   try {
     const { status, from, to } = req.query;
-    const page  = Number(req.query.page)  || 1;
+    const page = Number(req.query.page) || 1;
     const limit = Number(req.query.limit) || 20;
-    const skip  = (page - 1) * limit;
+    const skip = (page - 1) * limit;
 
-    const query = { childPanelOwner: req.cpOwnerId };
+    const query = { childPanelOwner: req.user._id };
 
     if (status) query.status = status;
 
@@ -428,19 +465,25 @@ export const getChildPanelOrders = async (req, res) => {
 
     const [orders, total] = await Promise.all([
       Order.find(query)
-        .populate("userId",       "email phone")
-        .populate("resellerOwner","email brandName")
+        .populate("userId", "email phone")
+        .populate("resellerOwner", "email brandName")
         .sort({ createdAt: -1 })
         .skip(skip)
         .limit(limit)
         .lean(),
+
       Order.countDocuments(query),
     ]);
 
     res.json({
       success: true,
       data: orders,
-      pagination: { page, limit, total, pages: Math.ceil(total / limit) },
+      pagination: {
+        page,
+        limit,
+        total,
+        pages: Math.ceil(total / limit),
+      },
     });
   } catch (error) {
     res.status(500).json({ message: "Failed to fetch orders" });
@@ -449,6 +492,7 @@ export const getChildPanelOrders = async (req, res) => {
 
 /* ================================================
    TOGGLE RESELLER STATUS
+   Child panel owner can suspend/activate their resellers
 ================================================ */
 
 export const toggleChildPanelResellerStatus = async (req, res) => {
@@ -458,7 +502,7 @@ export const toggleChildPanelResellerStatus = async (req, res) => {
     const reseller = await User.findOne({
       _id: id,
       isReseller: true,
-      childPanelOwner: req.cpOwnerId,
+      childPanelOwner: req.user._id,
     });
 
     if (!reseller) {
@@ -468,6 +512,7 @@ export const toggleChildPanelResellerStatus = async (req, res) => {
     reseller.isSuspended = !reseller.isSuspended;
     await reseller.save();
 
+    // Suspend users under this reseller if suspending
     if (reseller.isSuspended) {
       await User.updateMany(
         { resellerOwner: reseller._id, isSuspended: false },
@@ -486,22 +531,26 @@ export const toggleChildPanelResellerStatus = async (req, res) => {
 
 /* ================================================
    UPDATE RESELLER COMMISSION
+   Child panel owner sets commission for their resellers
 ================================================ */
 
 export const updateChildPanelResellerCommission = async (req, res) => {
   try {
-    const { id }         = req.params;
+    const { id } = req.params;
     const { commission } = req.body;
 
     const rate = Number(commission);
+
     if (isNaN(rate) || rate < 0 || rate > 100) {
-      return res.status(400).json({ message: "Commission must be between 0 and 100" });
+      return res.status(400).json({
+        message: "Commission must be between 0 and 100",
+      });
     }
 
     const reseller = await User.findOne({
       _id: id,
       isReseller: true,
-      childPanelOwner: req.cpOwnerId,
+      childPanelOwner: req.user._id,
     });
 
     if (!reseller) {
@@ -532,17 +581,18 @@ export const updateChildPanelBranding = async (req, res) => {
       supportWhatsappChannel,
     } = req.body;
 
-    const user = await User.findById(req.cpOwnerId);
+    const user = await User.findById(req.user._id);
     if (!user) return res.status(404).json({ message: "User not found" });
 
-    if (brandName              !== undefined) user.childPanelBrandName             = brandName;
-    if (logo                   !== undefined) user.childPanelLogo                  = logo;
-    if (themeColor             !== undefined) user.childPanelThemeColor            = themeColor;
-    if (supportWhatsapp        !== undefined) user.childPanelSupportWhatsapp       = supportWhatsapp;
-    if (supportTelegram        !== undefined) user.childPanelSupportTelegram       = supportTelegram;
+    if (brandName) user.childPanelBrandName = brandName;
+    if (logo !== undefined) user.childPanelLogo = logo;
+    if (themeColor) user.childPanelThemeColor = themeColor;
+    if (supportWhatsapp !== undefined) user.childPanelSupportWhatsapp = supportWhatsapp;
+    if (supportTelegram !== undefined) user.childPanelSupportTelegram = supportTelegram;
     if (supportWhatsappChannel !== undefined) user.childPanelSupportWhatsappChannel = supportWhatsappChannel;
 
     await user.save();
+
     res.json({ success: true, message: "Branding updated" });
   } catch (error) {
     res.status(500).json({ message: "Failed to update branding" });
@@ -551,19 +601,21 @@ export const updateChildPanelBranding = async (req, res) => {
 
 /* ================================================
    UPDATE CHILD PANEL DOMAIN
+   Switch between slug (testing) and custom domain (production)
 ================================================ */
 
 export const updateChildPanelDomain = async (req, res) => {
   try {
     const { customDomain } = req.body;
 
-    const user = await User.findById(req.cpOwnerId);
+    const user = await User.findById(req.user._id);
     if (!user || !user.isChildPanel) {
       return res.status(404).json({ message: "Child panel not found" });
     }
 
     const cleanDomain = normalizeDomain(customDomain);
 
+    // Check domain not already taken by another child panel
     const exists = await User.findOne({
       childPanelDomain: cleanDomain,
       _id: { $ne: user._id },
@@ -576,7 +628,11 @@ export const updateChildPanelDomain = async (req, res) => {
     user.childPanelDomain = cleanDomain;
     await user.save();
 
-    res.json({ success: true, message: "Domain updated", domain: cleanDomain });
+    res.json({
+      success: true,
+      message: "Domain updated",
+      domain: cleanDomain,
+    });
   } catch (error) {
     res.status(500).json({ message: "Failed to update domain" });
   }
@@ -584,34 +640,36 @@ export const updateChildPanelDomain = async (req, res) => {
 
 /* ================================================
    UPDATE CHILD PANEL SETTINGS
+   Child panel owner sets their own reseller fees
 ================================================ */
 
 export const updateChildPanelSettings = async (req, res) => {
   try {
     const { resellerActivationFee, commissionRate, withdrawMin } = req.body;
 
-    const user = await User.findById(req.cpOwnerId);
+    const user = await User.findById(req.user._id);
     if (!user) return res.status(404).json({ message: "User not found" });
 
-    if (resellerActivationFee !== undefined)
+    if (resellerActivationFee !== undefined) {
       user.childPanelResellerActivationFee = Number(resellerActivationFee);
-    if (commissionRate !== undefined)
+    }
+    if (commissionRate !== undefined) {
       user.childPanelCommissionRate = Number(commissionRate);
-    if (withdrawMin !== undefined)
+    }
+    if (withdrawMin !== undefined) {
       user.childPanelWithdrawMin = Number(withdrawMin);
+    }
 
     await user.save();
+
     res.json({ success: true, message: "Settings updated" });
   } catch (error) {
     res.status(500).json({ message: "Failed to update settings" });
   }
 };
 
-/* ================================================
-   GET CHILD PANEL BRANDING
-   Public — called by frontend to get branding for current domain
-================================================ */
-
+// GET /child-panel/branding
+// Public — called by frontend to get branding for current domain
 export const getChildPanelBranding = async (req, res) => {
   try {
     if (!req.childPanel) {
@@ -621,13 +679,13 @@ export const getChildPanelBranding = async (req, res) => {
     const cp = req.childPanel;
 
     res.json({
-      brandName:       cp.childPanelBrandName       || "Panel",
-      logo:            cp.childPanelLogo            || null,
-      themeColor:      cp.childPanelThemeColor      || "#1e40af",
-      slug:            cp.childPanelSlug            || null,
-      domain:          cp.childPanelDomain          || null,
-      templateId:      cp.childPanelTemplateId      || null,
-      landingTemplate: cp.childPanelLandingTemplate || "default",
+      brandName:      cp.childPanelBrandName  || "Panel",
+      logo:           cp.childPanelLogo       || null,
+      themeColor:     cp.childPanelThemeColor || "#1e40af",
+      slug:           cp.childPanelSlug       || null,
+      domain:         cp.childPanelDomain     || null,
+      templateId:     cp.childPanelTemplateId || null,
+      landingTemplate: cp.childPanelLandingTemplate || "default", // ← ADD THIS LINE
       support: {
         whatsapp:        cp.childPanelSupportWhatsapp        || null,
         telegram:        cp.childPanelSupportTelegram        || null,
@@ -651,16 +709,17 @@ export const getResellerActivationFeed = async (req, res) => {
     const skip  = (page - 1) * limit;
 
     const [data, total] = await Promise.all([
-      ResellerActivationEvent.find({ childPanelOwner: req.cpOwnerId })
+      ResellerActivationEvent.find({ childPanelOwner: req.user._id })
         .sort({ createdAt: -1 })
         .skip(skip)
         .limit(limit)
         .lean(),
-      ResellerActivationEvent.countDocuments({ childPanelOwner: req.cpOwnerId }),
+      ResellerActivationEvent.countDocuments({ childPanelOwner: req.user._id }),
     ]);
 
+    // Mark all fetched events as seen
     await ResellerActivationEvent.updateMany(
-      { childPanelOwner: req.cpOwnerId, seen: false },
+      { childPanelOwner: req.user._id, seen: false },
       { $set: { seen: true } }
     );
 
@@ -672,14 +731,13 @@ export const getResellerActivationFeed = async (req, res) => {
 };
 
 /* ================================================
-   PLATFORM RESELLER FEE
+   PLATFORM RESELLER FEE (for CP info banner)
 ================================================ */
 
 export const getCPPlatformResellerFee = async (req, res) => {
   try {
-    // Use req.childPanel (panel owner doc set by middleware) so CP admins
-    // see the correct override, not their own empty user doc
-    const cpOwner = req.childPanel;
+    const cpOwner = req.user;
+    // CP owner may have a custom override set by the platform admin
     if (cpOwner.platformResellerFeeOverride != null) {
       return res.json({ fee: Number(cpOwner.platformResellerFeeOverride) });
     }

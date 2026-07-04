@@ -13,16 +13,30 @@ export const detectChildPanelDomain = async (req, res, next) => {
 
     if (!host) return next();
 
+    // Remove port
     host = host.split(":")[0];
+
+    // Normalize
     host = host.toLowerCase().trim();
+
+    // Remove www
     host = host.replace(/^www\./, "");
 
+    // Skip main platform domain
     if (host === BASE_DOMAIN) return next();
+
+    // Skip if already detected as a reseller domain
     if (req.reseller) return next();
 
     let childPanel = null;
     let slug = null;
 
+    /*
+    -----------------------------
+    SUBDOMAIN CHECK
+    e.g. cp1.marinepanel.online
+    -----------------------------
+    */
     const parts = host.split(".");
     const baseParts = BASE_DOMAIN.split(".");
 
@@ -34,18 +48,36 @@ export const detectChildPanelDomain = async (req, res, next) => {
       slug = parts[0];
     }
 
+    /*
+    -----------------------------
+    1. CHECK CUSTOM DOMAIN FIRST
+    -----------------------------
+    */
     childPanel = await User.findOne({
       isChildPanel: true,
       childPanelDomain: host,
+      
     });
 
+    /*
+    -----------------------------
+    2. FALLBACK TO SLUG/SUBDOMAIN
+    (testing only)
+    -----------------------------
+    */
     if (!childPanel && slug) {
       childPanel = await User.findOne({
         isChildPanel: true,
         childPanelSlug: slug,
+        
       });
     }
 
+    /*
+    -----------------------------
+    ATTACH CHILD PANEL TO REQUEST
+    -----------------------------
+    */
     if (childPanel) {
       req.childPanel = childPanel;
 
@@ -88,53 +120,38 @@ export const cpOwnerOnly = async (req, res, next) => {
     return res.status(401).json({ message: "Not authorized" });
   }
 
-  if (!user.isChildPanel && !user.isCpAdmin) {
+  if (!user.isChildPanel) {
     return res.status(403).json({ message: "Access denied: Child panel owners only" });
   }
 
-  // For a CP admin (promoted end user), load the actual panel owner
-  // to run billing/suspension checks against the real panel, not the sub-admin
-  let panelOwner = user;
-  if (user.isCpAdmin && !user.isChildPanel) {
-    if (!user.childPanelOwner) {
-      return res.status(403).json({ message: "Access denied: No panel associated" });
-    }
-    panelOwner = await User.findById(user.childPanelOwner);
-    if (!panelOwner || !panelOwner.isChildPanel) {
-      return res.status(403).json({ message: "Access denied: Panel owner not found" });
-    }
-  }
-
-  // Subscription expiry check
+  // Subscription expiry check — runs BEFORE the active check so an
+  // expired-but-still-marked-active panel gets auto-suspended right here,
+  // instead of waiting for the once-daily billing cron.
   if (
-    panelOwner.childPanelNextBilledAt &&
-    new Date() > new Date(panelOwner.childPanelNextBilledAt) &&
-    !panelOwner.childPanelSubscriptionSuspended
+    user.childPanelNextBilledAt &&
+    new Date() > new Date(user.childPanelNextBilledAt) &&
+    !user.childPanelSubscriptionSuspended
   ) {
-    panelOwner.childPanelSubscriptionSuspended = true;
-    panelOwner.childPanelIsActive = false;
-    panelOwner.childPanelSuspendReason =
+    user.childPanelSubscriptionSuspended = true;
+    user.childPanelIsActive = false;
+    user.childPanelSuspendReason =
       "Subscription expired — please contact the platform admin to renew your plan.";
-    await panelOwner.save();
+    await user.save();
 
     return res.status(403).json({
       code: "SUBSCRIPTION_EXPIRED",
-      message: panelOwner.childPanelSuspendReason,
-      expiredAt: panelOwner.childPanelNextBilledAt,
+      message: user.childPanelSuspendReason,
+      expiredAt: user.childPanelNextBilledAt,
     });
   }
 
-  if (!panelOwner.childPanelIsActive) {
+  if (!user.childPanelIsActive) {
     return res.status(403).json({
       code: "PANEL_SUSPENDED",
-      message: panelOwner.childPanelSuspendReason || "Your panel has been suspended. Contact support.",
+      message: user.childPanelSuspendReason || "Your panel has been suspended. Contact support.",
     });
   }
 
-  // Attach the panel owner and expose their _id as req.cpOwnerId
-  // so all controllers can scope queries correctly for both CP owners
-  // and promoted CP admins without needing to check isCpAdmin themselves
-  req.childPanel = panelOwner;
-  req.cpOwnerId  = panelOwner._id;
+  req.childPanel = user;
   next();
 };

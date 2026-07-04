@@ -4,7 +4,7 @@ import express from "express";
 import { protect }             from "../middlewares/authMiddleware.js";
 import { adminOnly }             from "../middlewares/adminMiddleware.js";
 import { detectResellerDomain } from "../middlewares/resellerDomainMiddleware.js";
-import { detectChildPanelDomain, cpOwnerOnly } from "../middlewares/childPanelMiddleware.js";
+import { detectChildPanelDomain } from "../middlewares/childPanelMiddleware.js";
 import {
   uploadGallery,
   uploadBrandLogo,
@@ -55,13 +55,10 @@ router.post( "/reseller/seo-image",       protect, uploadSeoImage.single("image"
 router.get("/reseller", protect, getResellerSeo);
 
 // ── CHILD PANEL OWNER ────────────────────────────────────────────
-// cpOwnerOnly resolves req.cpOwnerId/req.childPanel for both the real
-// owner AND promoted CP admins — controllers must scope off req.cpOwnerId,
-// never req.user._id, or promoted admins get 403s / wrong-record reads.
-router.patch("/cp",                       protect, cpOwnerOnly, updateCpOwnerSeo);
-router.get(  "/cp",                       protect, cpOwnerOnly, getCpOwnerSeo);
-router.post( "/cp/logo",                  protect, cpOwnerOnly, uploadBrandLogo.single("image"),  uploadCpOwnerLogo);
-router.post( "/cp/seo-image",             protect, cpOwnerOnly, uploadSeoImage.single("image"),   uploadCpOwnerSeoImage);
+router.patch("/cp",                       protect, updateCpOwnerSeo);
+router.get(  "/cp",                       protect, getCpOwnerSeo);
+router.post( "/cp/logo",                  protect, uploadBrandLogo.single("image"),  uploadCpOwnerLogo);
+router.post( "/cp/seo-image",             protect, uploadSeoImage.single("image"),   uploadCpOwnerSeoImage);
 
 // ── OG HTML for crawlers (WhatsApp, Facebook, Telegram previews) ──
 router.get("/og-preview", detectResellerDomain, detectChildPanelDomain, getCrawlerHtml);

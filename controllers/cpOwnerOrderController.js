@@ -125,7 +125,7 @@ export const getCPOrders = async (req, res) => {
     const pageNum = Math.max(1, Number(page));
     const limitNum = Math.max(1, Number(limit));
 
-    let orderQuery = { childPanelOwner: req.cpOwnerId };
+    let orderQuery = { childPanelOwner: req.user._id };
 
     if (status) orderQuery.status = status;
 
@@ -144,7 +144,7 @@ export const getCPOrders = async (req, res) => {
 
       const users = await User.find({
         email: { $regex: clean, $options: "i" },
-        childPanelOwner: req.cpOwnerId,
+        childPanelOwner: req.user._id,
       }).select("_id");
 
       const userIds = users.map((u) => u._id);
@@ -162,7 +162,7 @@ export const getCPOrders = async (req, res) => {
       if (userIds.length > 0) orQueries.push({ endUserId: { $in: userIds } });
 
       orderQuery = {
-        childPanelOwner: req.cpOwnerId,
+        childPanelOwner: req.user._id,
         ...(status ? { status } : {}),
         $or: orQueries,
       };
@@ -193,7 +193,7 @@ export const getCPOrders = async (req, res) => {
 export const getCPOrderStats = async (req, res) => {
   try {
     const { search, status, fromDate, toDate } = req.query;
-    const ownerId = req.cpOwnerId;
+    const ownerId = req.user._id;
 
     const match = { childPanelOwner: ownerId };
 
@@ -264,7 +264,7 @@ export const updateCPOrderStatus = async (req, res) => {
 
     const order = await Order.findOne({
       _id: req.params.id,
-      childPanelOwner: req.cpOwnerId,
+      childPanelOwner: req.user._id,
     })
       .populate({ path: "endUserId", select: "email balance" })
       .populate({ path: "userId", select: "email balance" });
@@ -325,7 +325,7 @@ export const updateCPOrderStatus = async (req, res) => {
     logCpAdminAction({
       adminId: req.user._id,
       adminEmail: req.user.email,
-      childPanelId: req.cpOwnerId,
+      childPanelId: req.user._id,
       action: "COMPLETE_ORDER",
       targetType: "Order",
       targetId: order._id,
@@ -352,7 +352,7 @@ export const updateCPOrderProgress = async (req, res) => {
 
     const order = await Order.findOne({
       _id: req.params.id,
-      childPanelOwner: req.cpOwnerId,
+      childPanelOwner: req.user._id,
     })
       .populate({ path: "endUserId", select: "email balance" })
       .populate({ path: "userId", select: "email balance" });
@@ -399,7 +399,7 @@ export const refundCPOrder = async (req, res) => {
 
     const order = await Order.findOne({
       _id: req.params.id,
-      childPanelOwner: req.cpOwnerId,
+      childPanelOwner: req.user._id,
     })
       .populate({ path: "endUserId", select: "email balance" })
       .populate({ path: "userId", select: "email balance" });
@@ -443,7 +443,7 @@ export const refundCPOrder = async (req, res) => {
     logCpAdminAction({
       adminId: req.user._id,
       adminEmail: req.user.email,
-      childPanelId: req.cpOwnerId,
+      childPanelId: req.user._id,
       action: "REFUND_ORDER",
       targetType: "Order",
       targetId: order._id,

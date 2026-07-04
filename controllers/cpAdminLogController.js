@@ -9,17 +9,15 @@ const EXCLUDED_ACTIONS = [
 // GET /api/cp/logs
 export const getCpAdminLogs = async (req, res) => {
   try {
-    // Scope to the panel, not just the logged-in user —
-    // so CP admins see all panel logs, not just their own actions
-    const ownerId = req.cpOwnerId;
+    const cpOwnerId = req.user._id; // set by cpOwnerOnly middleware in app.js
 
     let { page = 1, limit = 50, action, actions, admin, dateFrom, dateTo } = req.query;
 
     page  = Math.max(1, parseInt(page,  10) || 1);
     limit = Math.max(1, Math.min(100, parseInt(limit, 10) || 50));
 
-    // Scope to this CP panel (covers owner + any promoted CP admins)
-    const query = { childPanelId: ownerId };
+    // Scoped to this CP owner's own actions only
+    const query = { admin: cpOwnerId };
 
     // ── Action filter ─────────────────────────────────────────────
     if (action) {
@@ -39,10 +37,9 @@ export const getCpAdminLogs = async (req, res) => {
       query.action = { $nin: EXCLUDED_ACTIONS };
     }
 
-    // ── Admin search — filter by who performed the action ─────────
+    // ── Admin search (sub-admins if you add them later) ───────────
     if (admin?.trim()) {
       const matched = await User.find({
-        childPanelOwner: ownerId, // only search within this panel's users
         $or: [
           { name:  { $regex: admin.trim(), $options: "i" } },
           { email: { $regex: admin.trim(), $options: "i" } },

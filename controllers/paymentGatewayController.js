@@ -22,6 +22,10 @@ const safeGateway = (gw) => ({
   description:              gw.description,
   paymentMode:              gw.paymentMode,
   binanceId:                gw.binanceId,
+  binanceName:              gw.binanceName,
+  qrImageUrl:               gw.qrImageUrl,
+  manualType:               gw.manualType,
+  manualConfig:             gw.manualConfig,
   paymentInstructions:      gw.paymentInstructions,
   processingCurrency:       gw.processingCurrency,
   processingCurrencySymbol: gw.processingCurrencySymbol,
@@ -40,7 +44,6 @@ const safeGateway = (gw) => ({
   providerProfile:          gw.providerProfile,
   owner:                    gw.owner,
   createdAt:                gw.createdAt,
-  // providerType for display only — never credentials
   providerType:             gw.providerProfile?.providerType || null,
 });
 
@@ -496,7 +499,8 @@ export const adminCreateGateway = async (req, res) => {
   try {
     const {
       name, description, paymentMode,
-      providerProfile, binanceId, paymentInstructions,
+      providerProfile, binanceId, binanceName, qrImageUrl,
+      manualType, manualConfig, paymentInstructions,
       processingCurrency, processingCurrencySymbol,
       exchangeRate, feeType, feePercentage, feeFixed,
       minDeposit, adminNote, cpNote,
@@ -514,6 +518,10 @@ export const adminCreateGateway = async (req, res) => {
       paymentMode:              paymentMode              || "hosted",
       providerProfile:          providerProfile          || null,
       binanceId:                binanceId                || "",
+      binanceName:              binanceName              || "",
+      qrImageUrl:               qrImageUrl               || "",
+      manualType:               manualType               || null,
+      manualConfig:             manualConfig             || {},
       paymentInstructions:      paymentInstructions      || "",
       processingCurrency:       processingCurrency       || "USD",
       processingCurrencySymbol: processingCurrencySymbol || "$",
@@ -543,7 +551,8 @@ export const adminUpdateGateway = async (req, res) => {
 
     const fields = [
       "name", "description", "paymentMode", "providerProfile",
-      "binanceId", "paymentInstructions",
+      "binanceId", "binanceName", "qrImageUrl",
+      "manualType", "manualConfig", "paymentInstructions",
       "processingCurrency", "processingCurrencySymbol", "exchangeRate",
       "feeType", "feePercentage", "feeFixed", "minDeposit",
       "adminNote", "cpNote", "isActive", "isVisible",
@@ -556,15 +565,6 @@ export const adminUpdateGateway = async (req, res) => {
     res.json({ message: "Gateway updated", gateway: safeGateway(gw) });
   } catch (err) {
     res.status(500).json({ message: "Failed to update gateway" });
-  }
-};
-
-export const adminDeleteGateway = async (req, res) => {
-  try {
-    await PaymentGateway.findByIdAndDelete(req.params.id);
-    res.json({ message: "Gateway deleted" });
-  } catch (err) {
-    res.status(500).json({ message: "Failed to delete gateway" });
   }
 };
 
@@ -699,7 +699,8 @@ export const createCpGateway = async (req, res) => {
   try {
     const {
       name, description, paymentMode,
-      providerProfile, binanceId, paymentInstructions,
+      providerProfile, binanceId, binanceName, qrImageUrl,
+      manualType, manualConfig, paymentInstructions,
       processingCurrency, processingCurrencySymbol,
       exchangeRate, feeType, feePercentage, feeFixed,
       minDeposit, cpNote, isVisible,
@@ -707,7 +708,6 @@ export const createCpGateway = async (req, res) => {
 
     if (!name) return res.status(400).json({ message: "name is required" });
 
-    // Validate providerProfile belongs to platform and is visibleToCp
     if (providerProfile) {
       const provider = await PaymentProvider.findOne({
         _id:         providerProfile,
@@ -729,6 +729,10 @@ export const createCpGateway = async (req, res) => {
       paymentMode:              paymentMode              || "hosted",
       providerProfile:          providerProfile          || null,
       binanceId:                binanceId                || "",
+      binanceName:              binanceName              || "",
+      qrImageUrl:               qrImageUrl               || "",
+      manualType:               manualType               || null,
+      manualConfig:             manualConfig             || {},
       paymentInstructions:      paymentInstructions      || "",
       processingCurrency:       processingCurrency       || "USD",
       processingCurrencySymbol: processingCurrencySymbol || "$",
@@ -749,7 +753,6 @@ export const createCpGateway = async (req, res) => {
   }
 };
 
-// ─── CP OWNER: UPDATE OWN GATEWAY ────────────────────────────────────
 export const updateCpGateway = async (req, res) => {
   try {
     const gw = await PaymentGateway.findOne({ _id: req.params.id, owner: req.user._id });
@@ -757,7 +760,8 @@ export const updateCpGateway = async (req, res) => {
 
     const allowed = [
       "name", "description", "paymentMode",
-      "binanceId", "paymentInstructions",
+      "binanceId", "binanceName", "qrImageUrl",
+      "manualType", "manualConfig", "paymentInstructions",
       "processingCurrency", "processingCurrencySymbol", "exchangeRate",
       "feeType", "feePercentage", "feeFixed", "minDeposit",
       "cpNote", "isActive", "isVisible",
@@ -771,7 +775,6 @@ export const updateCpGateway = async (req, res) => {
     res.status(500).json({ message: "Failed to update gateway" });
   }
 };
-
 // ─── CP OWNER: DELETE OWN GATEWAY ────────────────────────────────────
 export const deleteCpGateway = async (req, res) => {
   try {

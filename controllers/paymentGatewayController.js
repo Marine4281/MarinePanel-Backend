@@ -559,12 +559,24 @@ export const adminUpdateGateway = async (req, res) => {
       "adminHidden", "visibleToCp",
     ];
 
-    fields.forEach((f) => { if (req.body[f] !== undefined) gw[f] = req.body[f]; });
+    // These fields must be null, not "", or Mongoose rejects them
+    // (providerProfile is an ObjectId ref, manualType is an enum with null default)
+    const nullIfEmpty = ["providerProfile", "manualType"];
+
+    fields.forEach((f) => {
+      if (req.body[f] !== undefined) {
+        let val = req.body[f];
+        if (nullIfEmpty.includes(f) && val === "") val = null;
+        gw[f] = val;
+      }
+    });
+
     await gw.save();
 
     res.json({ message: "Gateway updated", gateway: safeGateway(gw) });
   } catch (err) {
-    res.status(500).json({ message: "Failed to update gateway" });
+    console.error("adminUpdateGateway error:", err.message);
+    res.status(500).json({ message: err.message || "Failed to update gateway" });
   }
 };
 
@@ -776,14 +788,23 @@ export const updateCpGateway = async (req, res) => {
       "cpNote", "isActive", "isVisible",
     ];
 
-    allowed.forEach((f) => { if (req.body[f] !== undefined) gw[f] = req.body[f]; });
+    allowed.forEach((f) => {
+      if (req.body[f] !== undefined) {
+        let val = req.body[f];
+        if (f === "manualType" && val === "") val = null;
+        gw[f] = val;
+      }
+    });
+
     await gw.save();
 
     res.json({ message: "Gateway updated", gateway: safeGateway(gw) });
   } catch (err) {
-    res.status(500).json({ message: "Failed to update gateway" });
+    console.error("updateCpGateway error:", err.message);
+    res.status(500).json({ message: err.message || "Failed to update gateway" });
   }
 };
+
 // ─── CP OWNER: DELETE OWN GATEWAY ────────────────────────────────────
 export const deleteCpGateway = async (req, res) => {
   try {

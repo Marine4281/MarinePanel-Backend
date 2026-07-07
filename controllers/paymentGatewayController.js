@@ -568,6 +568,15 @@ export const adminUpdateGateway = async (req, res) => {
   }
 };
 
+export const adminDeleteGateway = async (req, res) => {
+  try {
+    await PaymentGateway.findByIdAndDelete(req.params.id);
+    res.json({ message: "Gateway deleted" });
+  } catch (err) {
+    res.status(500).json({ message: "Failed to delete gateway" });
+  }
+};
+
 export const adminToggleHidden = async (req, res) => {
   try {
     const gw = await PaymentGateway.findById(req.params.id);

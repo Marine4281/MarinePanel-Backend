@@ -62,6 +62,23 @@ const paymentGatewaySchema = new mongoose.Schema(
     feePercentage: { type: Number, default: 0, min: 0 },
     feeFixed: { type: Number, default: 0, min: 0 },
 
+    // ─── MANUAL SUB-TYPE (only used when paymentMode === "manual") ──
+    manualType: {
+      type: String,
+      enum: [null, "mpesa", "momo", "airtel", "bank", "other"],
+      default: null,
+    },
+    manualConfig: {
+      number:        { type: String, default: "" }, // phone number (mpesa/momo/airtel/other)
+      holderName:    { type: String, default: "" }, // optional name shown to sender
+      bankName:      { type: String, default: "" }, // bank mode only
+      accountNumber: { type: String, default: "" }, // bank mode only
+      accountName:   { type: String, default: "" }, // bank mode only
+    },
+
+    // ─── BINANCE MANUAL EXTRAS ────────────────────────────────────────
+    binanceName: { type: String, default: "" }, // admin's name, shown to sender
+    qrImageUrl:  { type: String, default: "" }, // Binance QR code image URL
     // ─── NOTES ───────────────────────────────────────────────
     adminNote: { type: String, default: "", trim: true }, // admin writes, CP reads
     cpNote:    { type: String, default: "", trim: true }, // CP owner writes for users

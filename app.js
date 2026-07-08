@@ -60,7 +60,6 @@ import cpOwnerOrderRoutes from "./routes/cpOwnerOrderRoutes.js";
 import cpOwnerResellerRoutes from "./routes/cpOwnerResellerRoutes.js";
 import cpOwnerProviderRoutes from "./routes/cpOwnerProviderRoutes.js";
 import cpOwnerSettingsRoutes from "./routes/cpOwnerSettingsRoutes.js";
-import cpOwnerWithdrawalRoutes from "./routes/cpOwnerWithdrawalRoutes.js";
 import cpOwnerServiceRoutes from "./routes/cpOwnerServiceRoutes.js";
 import cpOwnerFinancialRoutes from "./routes/cpOwnerFinancialRoutes.js";
 import cpOwnerResellerGuidesRoutes from "./routes/cpOwnerResellerGuidesRoutes.js";
@@ -266,7 +265,6 @@ app.use("/api/cp/resellers", authMiddleware, cpOwnerOnly, updateLastSeen, cpOwne
 app.use("/api/cp/providers", authMiddleware, cpOwnerOnly, updateLastSeen, cpOwnerProviderRoutes);
 app.use("/api/cp/settings", authMiddleware, cpOwnerOnly, updateLastSeen, cpOwnerSettingsRoutes);
 app.use("/api/cp/services", authMiddleware, cpOwnerOnly, updateLastSeen, cpOwnerServiceRoutes);
-app.use("/api/cp/withdrawals", authMiddleware, childPanelOnly, updateLastSeen, cpOwnerWithdrawalRoutes);
 app.use("/api/child-panel/guides", childPanelGuideRoutes);
 app.use("/api/cp/financial", authMiddleware, cpOwnerOnly, updateLastSeen, cpOwnerFinancialRoutes);
 app.use("/api/cp/reseller-guides", authMiddleware, cpOwnerOnly, updateLastSeen, cpOwnerResellerGuidesRoutes);

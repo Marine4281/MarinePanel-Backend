@@ -24,7 +24,7 @@ export const getQuote = async (req, res) => {
     const usd       = Number(usdAmount);
     const localBase = Math.round(usd * gw.exchangeRate * 100) / 100;
     const { depositAmount, fee, total } = calculateFee(
-      localBase, gw.feeType, gw.feePercentage, gw.feeFixed
+      localBase, gw.depositFeeType, gw.depositFeePercentage, gw.depositFeeFixed
     );
 
     res.json({
@@ -174,7 +174,7 @@ export const initializePayment = async (req, res) => {
 
     const credentials = decryptCredentials(gw.providerProfile.credentials);
     const localBase   = Math.round(usd * gw.exchangeRate * 100) / 100;
-    const { total }   = calculateFee(localBase, gw.feeType, gw.feePercentage, gw.feeFixed);
+    const { total }   = calculateFee(localBase, gw.depositFeeType, gw.depositFeePercentage, gw.depositFeeFixed);
     const reference   = `MP-${Date.now()}-${user._id}`;
     const callbackUrl = `${process.env.FRONTEND_URL}/payment/success`;
 

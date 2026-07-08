@@ -54,6 +54,11 @@ const walletSchema = new mongoose.Schema(
           default: "Completed",   // ✅ refunds & orders usually complete instantly
         },
 
+        reference: {
+          type: String,
+          index: true,
+         },
+
         createdAt: { 
           type: Date, 
           default: Date.now 

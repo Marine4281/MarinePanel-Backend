@@ -86,3 +86,35 @@ export const verifyWebhook = (credentials, req) => {
 
 export const extractReference = (body) =>
   body?.bizData ? JSON.parse(body.bizData)?.merchantTradeNo : null;
+
+export const payout = async (credentials, { amount, reference, recipient }) => {
+  if (!recipient?.walletAddress) throw new Error("Recipient wallet address is required");
+
+  const timestamp = Date.now();
+  const params = new URLSearchParams({
+    coin:        recipient.network || "USDT",
+    address:     recipient.walletAddress,
+    amount:      Number(amount).toFixed(2),
+    withdrawOrderId: reference,
+    timestamp:   timestamp.toString(),
+  });
+  if (recipient.addressTag) params.append("addressTag", recipient.addressTag);
+
+  const signature = crypto
+    .createHmac("sha256", credentials.secretKey)
+    .update(params.toString())
+    .digest("hex");
+  params.append("signature", signature);
+
+  const response = await axios.post(
+    `https://api.binance.com/sapi/v1/capital/withdraw/apply?${params.toString()}`,
+    null,
+    { headers: { "X-MBX-APIKEY": credentials.apiKey } }
+  );
+
+  return {
+    success:           true,
+    status:             "pending",
+    providerReference: response.data.id,
+  };
+};

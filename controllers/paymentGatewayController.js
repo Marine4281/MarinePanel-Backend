@@ -19,6 +19,9 @@ export {
   adminApproveDeposit,
   adminRejectDeposit,
   adminGetPendingDeposits,
+  cpGetPendingDeposits,
+  cpApproveDeposit,
+  cpRejectDeposit,
 } from "./depositController.js";
 
 export {

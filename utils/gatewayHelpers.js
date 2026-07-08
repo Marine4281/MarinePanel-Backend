@@ -3,7 +3,11 @@ import Wallet from "../models/Wallet.js";
 
 export const calcBalance = (transactions = []) =>
   transactions
-    .filter((t) => t.status === "Completed")
+    .filter(
+      (t) =>
+        t.status === "Completed" ||
+        (t.status === "Pending" && t.type === "Withdrawal") // instant deduction, honest label
+    )
     .reduce((acc, t) => acc + (Number(t.amount) || 0), 0);
 
 export const safeGateway = (gw) => ({

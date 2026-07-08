@@ -4,9 +4,11 @@ import PaymentGateway from "../models/PaymentGateway.js";
 import { safeGateway } from "../utils/gatewayHelpers.js";
 
 // ─── ADMIN: GATEWAY CRUD ─────────────────────────────────────────────
+// Platform-level gateways only (owner: null). CP-owned gateways are
+// managed exclusively from the CP owner's own dashboard.
 export const adminGetAllGateways = async (req, res) => {
   try {
-    const gateways = await PaymentGateway.find()
+    const gateways = await PaymentGateway.find({ owner: null })
       .populate("providerProfile", "name providerType")
       .populate("owner", "email")
       .sort({ createdAt: -1 });
@@ -69,7 +71,7 @@ export const adminCreateGateway = async (req, res) => {
 
 export const adminUpdateGateway = async (req, res) => {
   try {
-    const gw = await PaymentGateway.findById(req.params.id);
+    const gw = await PaymentGateway.findOne({ _id: req.params.id, owner: null });
     if (!gw) return res.status(404).json({ message: "Gateway not found" });
 
     const fields = [
@@ -106,7 +108,8 @@ export const adminUpdateGateway = async (req, res) => {
 
 export const adminDeleteGateway = async (req, res) => {
   try {
-    await PaymentGateway.findByIdAndDelete(req.params.id);
+    const gw = await PaymentGateway.findOneAndDelete({ _id: req.params.id, owner: null });
+    if (!gw) return res.status(404).json({ message: "Gateway not found" });
     res.json({ message: "Gateway deleted" });
   } catch (err) {
     res.status(500).json({ message: "Failed to delete gateway" });
@@ -115,7 +118,7 @@ export const adminDeleteGateway = async (req, res) => {
 
 export const adminToggleHidden = async (req, res) => {
   try {
-    const gw = await PaymentGateway.findById(req.params.id);
+    const gw = await PaymentGateway.findOne({ _id: req.params.id, owner: null });
     if (!gw) return res.status(404).json({ message: "Gateway not found" });
     gw.adminHidden = !gw.adminHidden;
     await gw.save();

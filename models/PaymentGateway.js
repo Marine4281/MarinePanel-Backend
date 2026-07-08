@@ -53,14 +53,23 @@ const paymentGatewaySchema = new mongoose.Schema(
     exchangeRate: { type: Number, default: 1, min: 0 },
     rateMode: { type: String, enum: ["manual", "live"], default: "manual" },
 
-    // ─── FEES ────────────────────────────────────────────────
-    feeType: {
+    // ─── DEPOSIT FEES ────────────────────────────────────────
+    depositFeeType: {
       type: String,
       enum: ["none", "fixed", "percentage", "both"],
       default: "none",
     },
-    feePercentage: { type: Number, default: 0, min: 0 },
-    feeFixed: { type: Number, default: 0, min: 0 },
+    depositFeePercentage: { type: Number, default: 0, min: 0 },
+    depositFeeFixed: { type: Number, default: 0, min: 0 },
+
+    // ─── WITHDRAWAL FEES ─────────────────────────────────────
+    withdrawalFeeType: {
+      type: String,
+      enum: ["none", "fixed", "percentage", "both"],
+      default: "none",
+    },
+    withdrawalFeePercentage: { type: Number, default: 0, min: 0 },
+    withdrawalFeeFixed: { type: Number, default: 0, min: 0 },
 
     // ─── MANUAL SUB-TYPE (only used when paymentMode === "manual") ──
     manualType: {

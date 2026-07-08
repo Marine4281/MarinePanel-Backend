@@ -45,7 +45,7 @@ export const getWithdrawQuote = async (req, res) => {
 
     const usd       = Number(usdAmount);
     const localBase = Math.round(usd * gw.exchangeRate * 100) / 100;
-    const { fee }   = calculateFee(localBase, gw.feeType, gw.feePercentage, gw.feeFixed);
+    const { fee }   = calculateFee(localBase, gw.withdrawalFeeType, gw.withdrawalFeePercentage, gw.withdrawalFeeFixed);
     const amountReceived = Math.round((localBase - fee) * 100) / 100;
 
     res.json({
@@ -109,7 +109,7 @@ export const initializeWithdrawal = async (req, res) => {
 
     const reference = `WD-${Date.now()}-${user._id}`;
     const localBase = Math.round(usd * gw.exchangeRate * 100) / 100;
-    const { fee }    = calculateFee(localBase, gw.feeType, gw.feePercentage, gw.feeFixed);
+    const { fee }    = calculateFee(localBase, gw.withdrawalFeeType, gw.withdrawalFeePercentage, gw.withdrawalFeeFixed);
     const amountReceived = Math.round((localBase - fee) * 100) / 100;
 
     await Transaction.create({

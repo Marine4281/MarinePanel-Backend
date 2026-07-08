@@ -44,3 +44,36 @@ export const verifyWebhook = (credentials, req) => {
 };
 
 export const extractReference = (body) => body?.data?.tx_ref || null;
+
+export const payout = async (credentials, { amount, currency, reference, recipient }) => {
+  if (!recipient?.accountNumber || !recipient?.bankCode) {
+    throw new Error("Recipient account number and bank/network code are required");
+  }
+
+  const response = await axios.post(
+    "https://api.flutterwave.com/v3/transfers",
+    {
+      account_bank:   recipient.bankCode,
+      account_number: recipient.accountNumber,
+      amount,
+      currency,
+      narration:      "Wallet withdrawal",
+      reference,
+    },
+    { headers: { Authorization: `Bearer ${credentials.secretKey}` } }
+  );
+
+  return {
+    success:           true,
+    status:            response.data.data.status === "SUCCESSFUL" ? "completed" : "pending",
+    providerReference: response.data.data.id,
+  };
+};
+
+export const verifyPayout = async (credentials, providerReference) => {
+  const response = await axios.get(
+    `https://api.flutterwave.com/v3/transfers/${providerReference}`,
+    { headers: { Authorization: `Bearer ${credentials.secretKey}` } }
+  );
+  return response.data.data.status === "SUCCESSFUL";
+};

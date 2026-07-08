@@ -18,7 +18,7 @@ export const getWallet = async (req, res) => {
       wallet = await Wallet.create({ user: req.user.id, transactions: [] });
     }
 
-    const balance = calculateCompletedBalance(wallet.transactions);
+    const balance = calcBalance(wallet.transactions);
     wallet.balance = balance;
     await wallet.save();
 
@@ -40,7 +40,7 @@ export const withdrawFunds = async (req, res) => {
     const wallet = await Wallet.findOne({ user: req.user.id });
     if (!wallet) return res.status(404).json({ message: "Wallet not found" });
 
-    const availableBalance = calculateCompletedBalance(wallet.transactions);
+    const availableBalance = calcBalance(wallet.transactions);
     if (availableBalance < amount) {
       return res.status(400).json({ message: "Insufficient balance" });
     }
@@ -54,7 +54,7 @@ export const withdrawFunds = async (req, res) => {
     };
 
     wallet.transactions.push(transaction);
-    wallet.balance = calculateCompletedBalance(wallet.transactions);
+    wallet.balance = calcBalance(wallet.transactions);
     await wallet.save();
 
     req.app.get("io").emit("wallet:update", {

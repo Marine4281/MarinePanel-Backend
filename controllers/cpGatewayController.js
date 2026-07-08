@@ -64,9 +64,12 @@ export const connectPlatformGateway = async (req, res) => {
       processingCurrency:       platform.processingCurrency,
       processingCurrencySymbol: platform.processingCurrencySymbol,
       exchangeRate:             platform.exchangeRate,
-      feeType:                  platform.feeType,
-      feePercentage:            platform.feePercentage,
-      feeFixed:                 platform.feeFixed,
+      depositFeeType:           platform.depositFeeType,
+      depositFeePercentage:     platform.depositFeePercentage,
+      depositFeeFixed:          platform.depositFeeFixed,
+      withdrawalFeeType:        platform.withdrawalFeeType,
+      withdrawalFeePercentage:  platform.withdrawalFeePercentage,
+      withdrawalFeeFixed:       platform.withdrawalFeeFixed,
       minDeposit:               platform.minDeposit,
       supportsWithdraw:         platform.supportsWithdraw,
       minWithdraw:              platform.minWithdraw,
@@ -92,7 +95,9 @@ export const createCpGateway = async (req, res) => {
       providerProfile, binanceId, binanceName, qrImageUrl,
       manualType, manualConfig, paymentInstructions,
       processingCurrency, processingCurrencySymbol,
-      exchangeRate, feeType, feePercentage, feeFixed,
+      exchangeRate,
+      depositFeeType, depositFeePercentage, depositFeeFixed,
+      withdrawalFeeType, withdrawalFeePercentage, withdrawalFeeFixed,
       minDeposit, supportsWithdraw, minWithdraw, cpNote, isVisible,
     } = req.body;
 
@@ -127,9 +132,12 @@ export const createCpGateway = async (req, res) => {
       processingCurrency:       processingCurrency       || "USD",
       processingCurrencySymbol: processingCurrencySymbol || "$",
       exchangeRate:             exchangeRate             || 1,
-      feeType:                  feeType                  || "none",
-      feePercentage:            feePercentage            || 0,
-      feeFixed:                 feeFixed                 || 0,
+      depositFeeType:           depositFeeType           || "none",
+      depositFeePercentage:     depositFeePercentage     || 0,
+      depositFeeFixed:          depositFeeFixed          || 0,
+      withdrawalFeeType:        withdrawalFeeType        || "none",
+      withdrawalFeePercentage:  withdrawalFeePercentage  || 0,
+      withdrawalFeeFixed:       withdrawalFeeFixed       || 0,
       minDeposit:               minDeposit               || 0,
       supportsWithdraw:         supportsWithdraw === true,
       minWithdraw:              minWithdraw              || 0,
@@ -155,7 +163,9 @@ export const updateCpGateway = async (req, res) => {
       "binanceId", "binanceName", "qrImageUrl",
       "manualType", "manualConfig", "paymentInstructions",
       "processingCurrency", "processingCurrencySymbol", "exchangeRate",
-      "feeType", "feePercentage", "feeFixed", "minDeposit",
+      "depositFeeType", "depositFeePercentage", "depositFeeFixed",
+      "withdrawalFeeType", "withdrawalFeePercentage", "withdrawalFeeFixed",
+      "minDeposit",
       "supportsWithdraw", "minWithdraw",
       "cpNote", "isActive", "isVisible",
     ];
@@ -185,18 +195,5 @@ export const deleteCpGateway = async (req, res) => {
     res.json({ message: "Gateway deleted" });
   } catch (err) {
     res.status(500).json({ message: "Failed to delete gateway" });
-  }
-};
-
-// ─── CP OWNER: ROTATE WEBHOOK TOKEN ──────────────────────────────────
-export const rotateCpWebhookToken = async (req, res) => {
-  try {
-    const gw = await PaymentGateway.findOne({ _id: req.params.id, owner: req.user._id });
-    if (!gw) return res.status(404).json({ message: "Gateway not found" });
-    gw.webhookToken = `wh_${crypto.randomBytes(24).toString("hex")}`;
-    await gw.save();
-    res.json({ message: "Token rotated", webhookToken: gw.webhookToken });
-  } catch (err) {
-    res.status(500).json({ message: "Failed to rotate token" });
   }
 };

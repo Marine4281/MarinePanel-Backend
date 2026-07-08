@@ -46,6 +46,8 @@ export const getQuote = async (req, res) => {
 };
 
 // ─── USER: GET VISIBLE GATEWAYS ──────────────────────────────────────
+// CP end users only ever see gateways owned by their own CP owner (or
+// platform gateways, when ownerFilter is null for direct platform users).
 export const getUserGateways = async (req, res) => {
   try {
     const user = req.user;
@@ -86,6 +88,16 @@ export const initializePayment = async (req, res) => {
       return res.status(404).json({ message: "Gateway not found" });
     }
 
+    // CP end users can only pay via a gateway their own CP owner set up
+    // (or a platform gateway, when the user isn't under any CP owner).
+    // getUserGateways already filters this on the list, but a user could
+    // still POST an arbitrary gatewayId directly — guard it here too.
+    const expectedOwner = (user.childPanelOwner || null)?.toString() || null;
+    const actualOwner   = (gw.owner || null)?.toString() || null;
+    if (expectedOwner !== actualOwner) {
+      return res.status(403).json({ message: "This payment method is not available to you" });
+    }
+
     const usd = Number(usdAmount);
 
     if (usd < gw.minDeposit) {
@@ -94,7 +106,18 @@ export const initializePayment = async (req, res) => {
       });
     }
 
-    // Binance manual — save pending, admin verifies
+    // Resolve child panel owner — shared by every branch below
+    let childPanelOwner = null;
+    if (user.childPanelOwner) {
+      const cp = await User.findById(user.childPanelOwner).select(
+        "isChildPanel childPanelIsActive"
+      );
+      if (cp?.isChildPanel && cp?.childPanelIsActive) {
+        childPanelOwner = cp._id;
+      }
+    }
+
+    // Binance manual — save pending, admin/CP owner verifies
     if (gw.paymentMode === "binance") {
       const reference = `BNB-${Date.now()}-${user._id}`;
       await Transaction.create({
@@ -108,6 +131,8 @@ export const initializePayment = async (req, res) => {
         method:         gw.name,
         gateway:        gw._id,
         provider:       "binance",
+        childPanelOwner,
+        childPanelCredited: false,
         details:        {
           binanceOrderId: userPaymentData.binanceOrderId || "",
           amountSent:     userPaymentData.amountSent     || "",
@@ -130,6 +155,8 @@ export const initializePayment = async (req, res) => {
         method:        gw.name,
         gateway:       gw._id,
         provider:      "manual",
+        childPanelOwner,
+        childPanelCredited: false,
         details:       userPaymentData,
       });
       return res.json({ message: "Deposit submitted. Pending verification." });
@@ -150,17 +177,6 @@ export const initializePayment = async (req, res) => {
     const { total }   = calculateFee(localBase, gw.feeType, gw.feePercentage, gw.feeFixed);
     const reference   = `MP-${Date.now()}-${user._id}`;
     const callbackUrl = `${process.env.FRONTEND_URL}/payment/success`;
-
-    // Resolve child panel owner
-    let childPanelOwner = null;
-    if (user.childPanelOwner) {
-      const cp = await User.findById(user.childPanelOwner).select(
-        "isChildPanel childPanelIsActive"
-      );
-      if (cp?.isChildPanel && cp?.childPanelIsActive) {
-        childPanelOwner = cp._id;
-      }
-    }
 
     await Transaction.create({
       user:               user._id,
@@ -297,10 +313,13 @@ const creditWallet = async (transaction, gw, io) => {
   }
 };
 
-// ─── ADMIN: APPROVE MANUAL/BINANCE DEPOSIT ───────────────────────────
+// ─── ADMIN: APPROVE MANUAL/BINANCE DEPOSIT (platform-level only) ─────
 export const adminApproveDeposit = async (req, res) => {
   try {
-    const transaction = await Transaction.findById(req.params.id);
+    const transaction = await Transaction.findOne({
+      _id:             req.params.id,
+      childPanelOwner: null,
+    });
     if (!transaction) return res.status(404).json({ message: "Transaction not found" });
     if (transaction.status !== "Pending") {
       return res.status(400).json({ message: "Transaction is not pending" });
@@ -316,10 +335,13 @@ export const adminApproveDeposit = async (req, res) => {
   }
 };
 
-// ─── ADMIN: REJECT MANUAL/BINANCE DEPOSIT ────────────────────────────
+// ─── ADMIN: REJECT MANUAL/BINANCE DEPOSIT (platform-level only) ──────
 export const adminRejectDeposit = async (req, res) => {
   try {
-    const transaction = await Transaction.findById(req.params.id);
+    const transaction = await Transaction.findOne({
+      _id:             req.params.id,
+      childPanelOwner: null,
+    });
     if (!transaction) return res.status(404).json({ message: "Transaction not found" });
     if (transaction.status !== "Pending") {
       return res.status(400).json({ message: "Transaction is not pending" });
@@ -339,13 +361,14 @@ export const adminRejectDeposit = async (req, res) => {
   }
 };
 
-// ─── ADMIN: GET PENDING MANUAL DEPOSITS ──────────────────────────────
+// ─── ADMIN: GET PENDING MANUAL DEPOSITS (platform-level only) ────────
 export const adminGetPendingDeposits = async (req, res) => {
   try {
     const pending = await Transaction.find({
-      status:  "Pending",
-      type:    "Deposit",
-      provider: { $in: ["binance", "manual"] },
+      status:          "Pending",
+      type:            "Deposit",
+      provider:        { $in: ["binance", "manual"] },
+      childPanelOwner: null,
     })
       .populate("user", "email")
       .populate("gateway", "name paymentMode")
@@ -354,5 +377,72 @@ export const adminGetPendingDeposits = async (req, res) => {
     res.json({ deposits: pending });
   } catch (err) {
     res.status(500).json({ message: "Failed to fetch pending deposits" });
+  }
+};
+
+// ─── CP OWNER: GET PENDING DEPOSITS (their own end users only) ───────
+export const cpGetPendingDeposits = async (req, res) => {
+  try {
+    const pending = await Transaction.find({
+      status:          "Pending",
+      type:            "Deposit",
+      provider:        { $in: ["binance", "manual"] },
+      childPanelOwner: req.user._id,
+    })
+      .populate("user", "email")
+      .populate("gateway", "name paymentMode")
+      .sort({ createdAt: -1 });
+
+    res.json({ deposits: pending });
+  } catch (err) {
+    res.status(500).json({ message: "Failed to fetch pending deposits" });
+  }
+};
+
+// ─── CP OWNER: APPROVE DEPOSIT (their own end users only) ────────────
+export const cpApproveDeposit = async (req, res) => {
+  try {
+    const transaction = await Transaction.findOne({
+      _id:             req.params.id,
+      type:            "Deposit",
+      childPanelOwner: req.user._id,
+    });
+    if (!transaction) return res.status(404).json({ message: "Transaction not found" });
+    if (transaction.status !== "Pending") {
+      return res.status(400).json({ message: "Transaction is not pending" });
+    }
+
+    const gw = await PaymentGateway.findById(transaction.gateway);
+    await creditWallet(transaction, gw, req.app.get("io"));
+
+    res.json({ message: "Deposit approved and wallet credited" });
+  } catch (err) {
+    console.error("cpApproveDeposit error:", err.message);
+    res.status(500).json({ message: "Failed to approve deposit" });
+  }
+};
+
+// ─── CP OWNER: REJECT DEPOSIT (their own end users only) ─────────────
+export const cpRejectDeposit = async (req, res) => {
+  try {
+    const transaction = await Transaction.findOne({
+      _id:             req.params.id,
+      type:            "Deposit",
+      childPanelOwner: req.user._id,
+    });
+    if (!transaction) return res.status(404).json({ message: "Transaction not found" });
+    if (transaction.status !== "Pending") {
+      return res.status(400).json({ message: "Transaction is not pending" });
+    }
+
+    transaction.status = "Failed";
+    await transaction.save();
+
+    const io = req.app.get("io");
+    if (io) io.emit("wallet:update", { userId: transaction.user });
+
+    res.json({ message: "Deposit rejected" });
+  } catch (err) {
+    res.status(500).json({ message: "Failed to reject deposit" });
   }
 };

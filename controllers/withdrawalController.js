@@ -3,6 +3,7 @@ import crypto from "crypto";
 import PaymentGateway from "../models/PaymentGateway.js";
 import Transaction     from "../models/Transaction.js";
 import Wallet          from "../models/Wallet.js";
+import User             from "../models/User.js";
 import { getGateway } from "../utils/gateways/index.js";
 import { decryptCredentials } from "../utils/encryptCredentials.js";
 import { calculateFee } from "../utils/calculateFee.js";
@@ -79,6 +80,15 @@ export const initializeWithdrawal = async (req, res) => {
       return res.status(404).json({ message: "Gateway not found" });
     }
 
+    // CP end users can only withdraw via a gateway their own CP owner set up.
+    // (getUserWithdrawGateways already filters this on the list, but a user
+    // could still POST an arbitrary gatewayId directly — guard it here too.)
+    const expectedOwner = (user.childPanelOwner || null)?.toString() || null;
+    const actualOwner   = (gw.owner || null)?.toString() || null;
+    if (expectedOwner !== actualOwner) {
+      return res.status(403).json({ message: "This withdrawal method is not available to you" });
+    }
+
     const usd = Number(usdAmount);
     if (usd < gw.minWithdraw) {
       return res.status(400).json({ message: `Minimum withdrawal is $${gw.minWithdraw} USD` });
@@ -95,17 +105,18 @@ export const initializeWithdrawal = async (req, res) => {
     const amountReceived = Math.round((localBase - fee) * 100) / 100;
 
     await Transaction.create({
-      user:          user._id,
+      user:            user._id,
       reference,
-      amount:        -usd,
-      localAmount:   amountReceived,
-      localCurrency: gw.processingCurrency,
-      status:        "Pending",
-      type:          "Withdrawal",
-      method:        gw.name,
-      gateway:       gw._id,
-      provider:      gw.paymentMode === "manual" ? "manual" : (gw.providerProfile?.providerType || "manual"),
-      details:       userPayoutData,
+      amount:          -usd,
+      localAmount:     amountReceived,
+      localCurrency:   gw.processingCurrency,
+      status:          "Pending",
+      type:            "Withdrawal",
+      method:          gw.name,
+      gateway:         gw._id,
+      provider:        gw.paymentMode === "manual" ? "manual" : (gw.providerProfile?.providerType || "manual"),
+      childPanelOwner: user.childPanelOwner || null, // routes this to the CP owner's review queue, not the platform's
+      details:         userPayoutData,
     });
 
     // Lock the funds — pushed as Pending so calcBalance (Completed-only) leaves
@@ -119,7 +130,7 @@ export const initializeWithdrawal = async (req, res) => {
     });
     await wallet.save();
 
-    // Manual gateway, or no provider configured — admin pays out by hand
+    // Manual gateway, or no provider configured — admin (platform or CP owner) pays out by hand
     if (gw.paymentMode === "manual" || !gw.providerProfile) {
       return res.json({ message: "Withdrawal requested. Pending admin review." });
     }
@@ -194,7 +205,7 @@ const failWithdrawal = async (reference, io) => {
   if (io) io.emit("wallet:update", { userId: transaction.user });
 };
 
-// ─── ADMIN: APPROVE MANUAL WITHDRAWAL ─────────────────────────────────
+// ─── ADMIN (PLATFORM): APPROVE MANUAL WITHDRAWAL ──────────────────────
 export const adminApproveWithdrawal = async (req, res) => {
   try {
     const transaction = await Transaction.findById(req.params.id);
@@ -203,6 +214,9 @@ export const adminApproveWithdrawal = async (req, res) => {
     }
     if (transaction.status !== "Pending") {
       return res.status(400).json({ message: "Withdrawal is not pending" });
+    }
+    if (transaction.childPanelOwner) {
+      return res.status(403).json({ message: "This withdrawal belongs to a child panel — it must be reviewed by that panel's owner" });
     }
 
     await completeWithdrawal(transaction.reference, req.app.get("io"));
@@ -213,7 +227,7 @@ export const adminApproveWithdrawal = async (req, res) => {
   }
 };
 
-// ─── ADMIN: REJECT WITHDRAWAL (releases held funds) ───────────────────
+// ─── ADMIN (PLATFORM): REJECT WITHDRAWAL (releases held funds) ────────
 export const adminRejectWithdrawal = async (req, res) => {
   try {
     const transaction = await Transaction.findById(req.params.id);
@@ -223,6 +237,9 @@ export const adminRejectWithdrawal = async (req, res) => {
     if (transaction.status !== "Pending") {
       return res.status(400).json({ message: "Withdrawal is not pending" });
     }
+    if (transaction.childPanelOwner) {
+      return res.status(403).json({ message: "This withdrawal belongs to a child panel — it must be reviewed by that panel's owner" });
+    }
 
     await failWithdrawal(transaction.reference, req.app.get("io"));
     res.json({ message: "Withdrawal rejected" });
@@ -231,10 +248,15 @@ export const adminRejectWithdrawal = async (req, res) => {
   }
 };
 
-// ─── ADMIN: GET PENDING WITHDRAWALS ───────────────────────────────────
+// ─── ADMIN (PLATFORM): GET PENDING WITHDRAWALS ────────────────────────
+// Platform-only queue — excludes anything belonging to a child panel's end users.
 export const adminGetPendingWithdrawals = async (req, res) => {
   try {
-    const pending = await Transaction.find({ status: "Pending", type: "Withdrawal" })
+    const pending = await Transaction.find({
+      status:          "Pending",
+      type:            "Withdrawal",
+      childPanelOwner: null,
+    })
       .populate("user", "email")
       .populate("gateway", "name paymentMode")
       .sort({ createdAt: -1 });
@@ -242,6 +264,65 @@ export const adminGetPendingWithdrawals = async (req, res) => {
     res.json({ withdrawals: pending });
   } catch (err) {
     res.status(500).json({ message: "Failed to fetch pending withdrawals" });
+  }
+};
+
+// ─── CP OWNER: GET PENDING WITHDRAWALS (their own end users only) ────
+export const cpGetPendingWithdrawals = async (req, res) => {
+  try {
+    const pending = await Transaction.find({
+      status:          "Pending",
+      type:            "Withdrawal",
+      childPanelOwner: req.user._id,
+    })
+      .populate("user", "email")
+      .populate("gateway", "name paymentMode")
+      .sort({ createdAt: -1 });
+
+    res.json({ withdrawals: pending });
+  } catch (err) {
+    res.status(500).json({ message: "Failed to fetch pending withdrawals" });
+  }
+};
+
+// ─── CP OWNER: APPROVE WITHDRAWAL (their own end users only) ─────────
+export const cpApproveWithdrawal = async (req, res) => {
+  try {
+    const transaction = await Transaction.findOne({
+      _id:             req.params.id,
+      type:            "Withdrawal",
+      childPanelOwner: req.user._id,
+    });
+    if (!transaction) return res.status(404).json({ message: "Withdrawal not found" });
+    if (transaction.status !== "Pending") {
+      return res.status(400).json({ message: "Withdrawal is not pending" });
+    }
+
+    await completeWithdrawal(transaction.reference, req.app.get("io"));
+    res.json({ message: "Withdrawal approved and wallet debited" });
+  } catch (err) {
+    console.error("cpApproveWithdrawal error:", err.message);
+    res.status(500).json({ message: "Failed to approve withdrawal" });
+  }
+};
+
+// ─── CP OWNER: REJECT WITHDRAWAL (their own end users only) ──────────
+export const cpRejectWithdrawal = async (req, res) => {
+  try {
+    const transaction = await Transaction.findOne({
+      _id:             req.params.id,
+      type:            "Withdrawal",
+      childPanelOwner: req.user._id,
+    });
+    if (!transaction) return res.status(404).json({ message: "Withdrawal not found" });
+    if (transaction.status !== "Pending") {
+      return res.status(400).json({ message: "Withdrawal is not pending" });
+    }
+
+    await failWithdrawal(transaction.reference, req.app.get("io"));
+    res.json({ message: "Withdrawal rejected" });
+  } catch (err) {
+    res.status(500).json({ message: "Failed to reject withdrawal" });
   }
 };
 

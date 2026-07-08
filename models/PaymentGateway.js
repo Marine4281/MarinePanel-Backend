@@ -85,6 +85,8 @@ const paymentGatewaySchema = new mongoose.Schema(
 
     // ─── CONTROLS ────────────────────────────────────────────
     minDeposit:  { type: Number,  default: 0,     min: 0 },
+    supportsWithdraw: { type: Boolean, default: false }, // admin enables payout for this gateway
+    minWithdraw:      { type: Number,  default: 0, min: 0 },
     isActive:    { type: Boolean, default: true  },
     isVisible:   { type: Boolean, default: true  }, // visible to end users
     adminHidden: { type: Boolean, default: false }, // admin hides from CP owners

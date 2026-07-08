@@ -2,8 +2,9 @@ import Wallet from "../models/Wallet.js";
 import User from "../models/User.js";
 import PaymentMethod from "../models/PaymentMethod.js";
 import { v4 as uuidv4 } from "uuid"; // npm i uuid
+import { calcBalance } from "../utils/gatewayHelpers.js";
 
-// ✅ Calculate completed transactions
+// ✅ Calculate completed transactions (deposits, non-withdrawal flows only)
 const calculateCompletedBalance = (transactions = []) =>
   transactions
     .filter(t => t.status === "Completed")
@@ -18,6 +19,8 @@ export const getWallet = async (req, res) => {
       wallet = await Wallet.create({ user: req.user.id, transactions: [] });
     }
 
+    // calcBalance treats a Pending Withdrawal as already-deducted, so the
+    // balance shown here matches what was deducted instantly at request time.
     const balance = calcBalance(wallet.transactions);
     wallet.balance = balance;
     await wallet.save();
@@ -54,6 +57,8 @@ export const withdrawFunds = async (req, res) => {
     };
 
     wallet.transactions.push(transaction);
+    // Deduct instantly: calcBalance counts this Pending Withdrawal as
+    // already-deducted, so the balance drops right now, honestly.
     wallet.balance = calcBalance(wallet.transactions);
     await wallet.save();
 
@@ -155,6 +160,8 @@ export const addFundsManual = async (req, res) => {
     }
 
     wallet.transactions.push(transaction);
+    // Deposits stay Completed-only: a Pending deposit shouldn't add funds
+    // until it's actually confirmed.
     wallet.balance = calculateCompletedBalance(wallet.transactions);
     await wallet.save();
 

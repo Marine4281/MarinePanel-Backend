@@ -66,6 +66,13 @@ export const getWithdrawQuote = async (req, res) => {
 };
 
 // ─── USER: INITIALIZE WITHDRAWAL ─────────────────────────────────────
+// Balance is deducted INSTANTLY the moment the request is created — the
+// wallet ledger entry is pushed as "Completed" right away. The Transaction
+// doc (what admins/CP owners review) stays "Pending" until:
+//   • automatic gateway confirms payout      -> completeWithdrawal (Completed)
+//   • automatic gateway fails / webhook fails -> refundWithdrawal("Failed")
+//   • manual gateway, admin approves          -> completeWithdrawal (Completed)
+//   • manual gateway, admin rejects           -> refundWithdrawal("Rejected")
 export const initializeWithdrawal = async (req, res) => {
   try {
     const { gatewayId, usdAmount, userPayoutData = {} } = req.body;
@@ -81,8 +88,6 @@ export const initializeWithdrawal = async (req, res) => {
     }
 
     // CP end users can only withdraw via a gateway their own CP owner set up.
-    // (getUserWithdrawGateways already filters this on the list, but a user
-    // could still POST an arbitrary gatewayId directly — guard it here too.)
     const expectedOwner = (user.childPanelOwner || null)?.toString() || null;
     const actualOwner   = (gw.owner || null)?.toString() || null;
     if (expectedOwner !== actualOwner) {
@@ -115,29 +120,34 @@ export const initializeWithdrawal = async (req, res) => {
       method:          gw.name,
       gateway:         gw._id,
       provider:        gw.paymentMode === "manual" ? "manual" : (gw.providerProfile?.providerType || "manual"),
-      childPanelOwner: user.childPanelOwner || null, // routes this to the CP owner's review queue, not the platform's
+      childPanelOwner: user.childPanelOwner || null,
       details:         userPayoutData,
     });
 
-    // Lock the funds — pushed as Pending so calcBalance (Completed-only) leaves
-    // the visible balance untouched, but getAvailableBalance() excludes it.
+    // Deduct instantly: pushed as "Completed" so calcBalance picks it up
+    // right away. If the withdrawal later fails/gets rejected, we flip
+    // this entry's status to refund the wallet.
     wallet.transactions.push({
       type:      "Withdrawal",
       amount:    -usd,
-      status:    "Pending",
+      status:    "Completed",
       reference,
       note:      `${gw.name} withdrawal request`,
     });
+    wallet.balance = calcBalance(wallet.transactions);
     await wallet.save();
+
+    const io = req.app.get("io");
+    if (io) io.emit("wallet:update", { userId: user._id, balance: wallet.balance });
 
     // Manual gateway, or no provider configured — admin (platform or CP owner) pays out by hand
     if (gw.paymentMode === "manual" || !gw.providerProfile) {
-      return res.json({ message: "Withdrawal requested. Pending admin review." });
+      return res.json({ message: "Withdrawal requested. Funds deducted, pending admin review." });
     }
 
     const adapter = getGateway(gw.providerProfile.providerType);
     if (!adapter || !adapter.payout) {
-      return res.json({ message: "Withdrawal requested. Pending admin review." });
+      return res.json({ message: "Withdrawal requested. Funds deducted, pending admin review." });
     }
 
     // Automatic gateway — attempt payout now
@@ -151,15 +161,16 @@ export const initializeWithdrawal = async (req, res) => {
       });
 
       if (result.status === "completed") {
-        await completeWithdrawal(reference, req.app.get("io"));
+        await completeWithdrawal(reference, io);
         return res.json({ message: "Withdrawal completed", providerReference: result.providerReference });
       }
 
+      // Still processing on the provider's end — stays Pending until the webhook fires
       return res.json({ message: "Withdrawal is processing", providerReference: result.providerReference });
     } catch (err) {
       console.error("payout error:", err.response?.data || err.message);
-      await failWithdrawal(reference, req.app.get("io"));
-      return res.status(502).json({ message: "Payout failed. Funds have not been deducted." });
+      await refundWithdrawal(reference, "Failed", io);
+      return res.status(502).json({ message: "Payout failed. Funds have been refunded to your wallet." });
     }
   } catch (err) {
     console.error("initializeWithdrawal error:", err.message);
@@ -167,42 +178,50 @@ export const initializeWithdrawal = async (req, res) => {
   }
 };
 
-// ─── SHARED: COMPLETE WITHDRAWAL (deduct wallet for real) ────────────
+// ─── SHARED: COMPLETE WITHDRAWAL ──────────────────────────────────────
+// Funds already left the wallet at request time — this just flips the
+// Transaction doc to Completed so it stops showing as pending review.
 const completeWithdrawal = async (reference, io) => {
   const transaction = await Transaction.findOne({ reference });
-  if (!transaction || transaction.status === "Completed") return;
-
-  const wallet = await Wallet.findOne({ user: transaction.user });
-  if (!wallet) return;
-
-  const walletTx = wallet.transactions.find((t) => t.reference === reference);
-  if (walletTx) walletTx.status = "Completed";
-
-  wallet.balance = calcBalance(wallet.transactions);
-  await wallet.save();
+  if (!transaction || transaction.status !== "Pending") return;
 
   transaction.status = "Completed";
-  await transaction.save();
-
-  if (io) io.emit("wallet:update", { userId: transaction.user, balance: wallet.balance });
-};
-
-// ─── SHARED: FAIL WITHDRAWAL (release the lock, no funds moved) ──────
-const failWithdrawal = async (reference, io) => {
-  const transaction = await Transaction.findOne({ reference });
-  if (!transaction || transaction.status === "Completed") return;
-
-  transaction.status = "Failed";
   await transaction.save();
 
   const wallet = await Wallet.findOne({ user: transaction.user });
   if (wallet) {
     const walletTx = wallet.transactions.find((t) => t.reference === reference);
-    if (walletTx) walletTx.status = "Failed";
-    await wallet.save();
+    if (walletTx && walletTx.status !== "Completed") {
+      walletTx.status = "Completed";
+      wallet.balance = calcBalance(wallet.transactions);
+      await wallet.save();
+    }
+    if (io) io.emit("wallet:update", { userId: transaction.user, balance: wallet.balance });
   }
+};
 
-  if (io) io.emit("wallet:update", { userId: transaction.user });
+// ─── SHARED: REFUND WITHDRAWAL (reject / provider failure) ───────────
+// Flips the wallet ledger entry's status away from "Completed" so
+// calcBalance stops counting it — this IS the refund, no compensating
+// transaction needed. finalStatus is "Rejected" (admin/CP decision) or
+// "Failed" (automatic gateway / webhook failure).
+const refundWithdrawal = async (reference, finalStatus, io) => {
+  const transaction = await Transaction.findOne({ reference });
+  if (!transaction || transaction.status !== "Pending") return;
+
+  transaction.status = finalStatus;
+  await transaction.save();
+
+  const wallet = await Wallet.findOne({ user: transaction.user });
+  if (!wallet) return;
+
+  const walletTx = wallet.transactions.find((t) => t.reference === reference);
+  if (walletTx) walletTx.status = finalStatus;
+
+  wallet.balance = calcBalance(wallet.transactions);
+  await wallet.save();
+
+  if (io) io.emit("wallet:update", { userId: transaction.user, balance: wallet.balance });
 };
 
 // ─── ADMIN (PLATFORM): APPROVE MANUAL WITHDRAWAL ──────────────────────
@@ -220,14 +239,14 @@ export const adminApproveWithdrawal = async (req, res) => {
     }
 
     await completeWithdrawal(transaction.reference, req.app.get("io"));
-    res.json({ message: "Withdrawal approved and wallet debited" });
+    res.json({ message: "Withdrawal approved and marked completed" });
   } catch (err) {
     console.error("adminApproveWithdrawal error:", err.message);
     res.status(500).json({ message: "Failed to approve withdrawal" });
   }
 };
 
-// ─── ADMIN (PLATFORM): REJECT WITHDRAWAL (releases held funds) ────────
+// ─── ADMIN (PLATFORM): REJECT WITHDRAWAL (refunds held funds) ─────────
 export const adminRejectWithdrawal = async (req, res) => {
   try {
     const transaction = await Transaction.findById(req.params.id);
@@ -241,15 +260,14 @@ export const adminRejectWithdrawal = async (req, res) => {
       return res.status(403).json({ message: "This withdrawal belongs to a child panel — it must be reviewed by that panel's owner" });
     }
 
-    await failWithdrawal(transaction.reference, req.app.get("io"));
-    res.json({ message: "Withdrawal rejected" });
+    await refundWithdrawal(transaction.reference, "Failed", req.app.get("io"));
+    res.json({ message: "Withdrawal rejected and refunded" });
   } catch (err) {
     res.status(500).json({ message: "Failed to reject withdrawal" });
   }
 };
 
 // ─── ADMIN (PLATFORM): GET PENDING WITHDRAWALS ────────────────────────
-// Platform-only queue — excludes anything belonging to a child panel's end users.
 export const adminGetPendingWithdrawals = async (req, res) => {
   try {
     const pending = await Transaction.find({
@@ -299,7 +317,7 @@ export const cpApproveWithdrawal = async (req, res) => {
     }
 
     await completeWithdrawal(transaction.reference, req.app.get("io"));
-    res.json({ message: "Withdrawal approved and wallet debited" });
+    res.json({ message: "Withdrawal approved and marked completed" });
   } catch (err) {
     console.error("cpApproveWithdrawal error:", err.message);
     res.status(500).json({ message: "Failed to approve withdrawal" });
@@ -319,15 +337,14 @@ export const cpRejectWithdrawal = async (req, res) => {
       return res.status(400).json({ message: "Withdrawal is not pending" });
     }
 
-    await failWithdrawal(transaction.reference, req.app.get("io"));
-    res.json({ message: "Withdrawal rejected" });
+    await refundWithdrawal(transaction.reference, "Failed", req.app.get("io"));
+    res.json({ message: "Withdrawal rejected and refunded" });
   } catch (err) {
     res.status(500).json({ message: "Failed to reject withdrawal" });
   }
 };
 
 // ─── WEBHOOK: PAYOUT CONFIRMATION ─────────────────────────────────────
-// Separate from the deposit webhook since payout payload shapes differ per provider.
 export const handlePayoutWebhook = async (req, res) => {
   try {
     const { provider, token } = req.params;
@@ -344,7 +361,7 @@ export const handlePayoutWebhook = async (req, res) => {
       if (!txn) return res.status(404).send("Transaction not found");
 
       if (result?.ResultCode === 0) await completeWithdrawal(txn.reference, req.app.get("io"));
-      else await failWithdrawal(txn.reference, req.app.get("io"));
+      else await refundWithdrawal(txn.reference, "Failed", req.app.get("io"));
       return res.status(200).send("OK");
     }
 
@@ -358,7 +375,7 @@ export const handlePayoutWebhook = async (req, res) => {
       if (!txn) return res.status(404).send("Transaction not found");
 
       if (data?.status === "SUCCESSFUL") await completeWithdrawal(txn.reference, req.app.get("io"));
-      else if (data?.status === "FAILED") await failWithdrawal(txn.reference, req.app.get("io"));
+      else if (data?.status === "FAILED") await refundWithdrawal(txn.reference, "Failed", req.app.get("io"));
       return res.status(200).send("OK");
     }
 
@@ -377,7 +394,7 @@ export const handlePayoutWebhook = async (req, res) => {
       if (!txn) return res.status(404).send("Transaction not found");
 
       if (data?.status === "success") await completeWithdrawal(txn.reference, req.app.get("io"));
-      else if (data?.status === "failed") await failWithdrawal(txn.reference, req.app.get("io"));
+      else if (data?.status === "failed") await refundWithdrawal(txn.reference, "Failed", req.app.get("io"));
       return res.status(200).send("OK");
     }
 
@@ -391,14 +408,14 @@ export const handlePayoutWebhook = async (req, res) => {
         return res.status(400).send("Invalid signature");
       }
 
-      const event = req.body?.event; // transfer.success | transfer.failed | transfer.reversed
+      const event = req.body?.event;
       const data  = req.body?.data;
       const txn = await Transaction.findOne({ reference: data?.reference, type: "Withdrawal" });
       if (!txn) return res.status(404).send("Transaction not found");
 
       if (event === "transfer.success") await completeWithdrawal(txn.reference, req.app.get("io"));
       else if (event === "transfer.failed" || event === "transfer.reversed") {
-        await failWithdrawal(txn.reference, req.app.get("io"));
+        await refundWithdrawal(txn.reference, "Failed", req.app.get("io"));
       }
       return res.status(200).send("OK");
     }
@@ -421,7 +438,7 @@ export const handlePayoutWebhook = async (req, res) => {
       const status = req.body?.status;
       if (status === "paid") await completeWithdrawal(txn.reference, req.app.get("io"));
       else if (["fail", "cancel", "system_fail"].includes(status)) {
-        await failWithdrawal(txn.reference, req.app.get("io"));
+        await refundWithdrawal(txn.reference, "Failed", req.app.get("io"));
       }
       return res.status(200).send("OK");
     }

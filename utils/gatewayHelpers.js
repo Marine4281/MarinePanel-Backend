@@ -50,14 +50,11 @@ export const safeProvider = (p) => ({
   hasCredentials: !!(p.credentials?.secretKey || p.credentials?.apiKey || p.credentials?.consumerKey),
 });
 
-// Wallet balance minus locked pending withdrawals
+// Wallet balance already reflects instantly-deducted withdrawals (they're
+// pushed as "Completed" the moment they're requested), so the available
+// balance IS the wallet balance — no separate pending-lock subtraction needed.
 export const getAvailableBalance = async (userId) => {
   const wallet = await Wallet.findOne({ user: userId });
   if (!wallet) return { wallet: null, available: 0 };
-
-  const pendingWithdrawals = wallet.transactions
-    .filter((t) => t.type === "Withdrawal" && t.status === "Pending")
-    .reduce((acc, t) => acc + Math.abs(Number(t.amount) || 0), 0);
-
-  return { wallet, available: wallet.balance - pendingWithdrawals };
+  return { wallet, available: wallet.balance };
 };

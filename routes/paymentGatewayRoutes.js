@@ -10,7 +10,9 @@ import {
   adminGetPendingDeposits, adminApproveDeposit, adminRejectDeposit,
   getCpGateways, createCpGateway, updateCpGateway, deleteCpGateway, rotateCpWebhookToken,
   getCpAvailableProviders,
-  connectPlatformGateway,
+  connectPlatformGateway,getUserWithdrawGateways, getWithdrawQuote, initializeWithdrawal, handlePayoutWebhook,
+  adminGetPendingWithdrawals, adminApproveWithdrawal, adminRejectWithdrawal,
+  
 } from "../controllers/paymentGatewayController.js";
 
 const router = express.Router();
@@ -53,5 +55,15 @@ router.post("/admin/gateways/:id/rotate-token",    protect, adminOnly, adminRota
 router.get("/admin/deposits/pending",         protect, adminOnly, adminGetPendingDeposits);
 router.post("/admin/deposits/:id/approve",    protect, adminOnly, adminApproveDeposit);
 router.post("/admin/deposits/:id/reject",     protect, adminOnly, adminRejectDeposit);
+
+//Withdrawals 
+router.get("/withdraw-gateways",       protect, getUserWithdrawGateways);
+router.get("/withdraw-gateways/quote", protect, getWithdrawQuote);
+router.post("/withdraw-gateways/pay",  protect, initializeWithdrawal);
+router.post("/webhooks/payout/:provider/:token", handlePayoutWebhook);
+
+router.get("/admin/withdrawals/pending",      protect, adminOnly, adminGetPendingWithdrawals);
+router.post("/admin/withdrawals/:id/approve", protect, adminOnly, adminApproveWithdrawal);
+router.post("/admin/withdrawals/:id/reject",  protect, adminOnly, adminRejectWithdrawal);
 
 export default router;

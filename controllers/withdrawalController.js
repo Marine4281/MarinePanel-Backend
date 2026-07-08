@@ -67,12 +67,15 @@ export const getWithdrawQuote = async (req, res) => {
 
 // ─── USER: INITIALIZE WITHDRAWAL ─────────────────────────────────────
 // Balance is deducted INSTANTLY the moment the request is created — the
-// wallet ledger entry is pushed as "Completed" right away. The Transaction
-// doc (what admins/CP owners review) stays "Pending" until:
+// wallet ledger entry is pushed as "Pending" and calcBalance() (see
+// gatewayHelpers.js) treats a Pending Withdrawal as already-deducted, so
+// the status you see stays honest instead of lying and saying "Completed"
+// before it actually is. The Transaction doc (what admins/CP owners
+// review) also stays "Pending" until:
 //   • automatic gateway confirms payout      -> completeWithdrawal (Completed)
 //   • automatic gateway fails / webhook fails -> refundWithdrawal("Failed")
 //   • manual gateway, admin approves          -> completeWithdrawal (Completed)
-//   • manual gateway, admin rejects           -> refundWithdrawal("Rejected")
+//   • manual gateway, admin rejects           -> refundWithdrawal("Failed")
 export const initializeWithdrawal = async (req, res) => {
   try {
     const { gatewayId, usdAmount, userPayoutData = {} } = req.body;
@@ -124,13 +127,13 @@ export const initializeWithdrawal = async (req, res) => {
       details:         userPayoutData,
     });
 
-    // Deduct instantly: pushed as "Completed" so calcBalance picks it up
-    // right away. If the withdrawal later fails/gets rejected, we flip
-    // this entry's status to refund the wallet.
+    // Deduct instantly, stay honest: pushed as "Pending" — calcBalance()
+    // counts a Pending Withdrawal as already-deducted, so the balance drops
+    // right now without mislabeling the entry "Completed" before it's real.
     wallet.transactions.push({
       type:      "Withdrawal",
       amount:    -usd,
-      status:    "Completed",
+      status:    "Pending",
       reference,
       note:      `${gw.name} withdrawal request`,
     });
@@ -179,8 +182,10 @@ export const initializeWithdrawal = async (req, res) => {
 };
 
 // ─── SHARED: COMPLETE WITHDRAWAL ──────────────────────────────────────
-// Funds already left the wallet at request time — this just flips the
-// Transaction doc to Completed so it stops showing as pending review.
+// Flips both the wallet ledger entry and the Transaction doc from
+// "Pending" to "Completed". Funds already left the wallet at request
+// time (calcBalance counted the Pending entry) — this doesn't move money,
+// it just marks the withdrawal as truly finished.
 const completeWithdrawal = async (reference, io) => {
   const transaction = await Transaction.findOne({ reference });
   if (!transaction || transaction.status !== "Pending") return;
@@ -201,10 +206,8 @@ const completeWithdrawal = async (reference, io) => {
 };
 
 // ─── SHARED: REFUND WITHDRAWAL (reject / provider failure) ───────────
-// Flips the wallet ledger entry's status away from "Completed" so
-// calcBalance stops counting it — this IS the refund, no compensating
-// transaction needed. finalStatus is "Rejected" (admin/CP decision) or
-// "Failed" (automatic gateway / webhook failure).
+// Flips the wallet ledger entry's status to "Failed" so calcBalance stops
+// counting it — that IS the refund, no compensating transaction needed.
 const refundWithdrawal = async (reference, finalStatus, io) => {
   const transaction = await Transaction.findOne({ reference });
   if (!transaction || transaction.status !== "Pending") return;

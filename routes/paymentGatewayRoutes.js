@@ -8,6 +8,7 @@ import {
   adminGetAllGateways, adminCreateGateway, adminUpdateGateway, adminDeleteGateway,
   adminToggleHidden, adminRotateWebhookToken,
   adminGetPendingDeposits, adminApproveDeposit, adminRejectDeposit,
+  cpGetPendingDeposits, cpApproveDeposit, cpRejectDeposit,
   getCpGateways, createCpGateway, updateCpGateway, deleteCpGateway, rotateCpWebhookToken,
   getCpAvailableProviders,
   connectPlatformGateway, getUserWithdrawGateways, getWithdrawQuote, initializeWithdrawal, handlePayoutWebhook,
@@ -36,6 +37,9 @@ router.post("/cp/gateways",                  protect, childPanelOnly, createCpGa
 router.put("/cp/gateways/:id",               protect, childPanelOnly, updateCpGateway);
 router.delete("/cp/gateways/:id",            protect, childPanelOnly, deleteCpGateway);
 router.post("/cp/gateways/:id/rotate-token", protect, childPanelOnly, rotateCpWebhookToken);
+router.get("/cp/deposits/pending",      protect, childPanelOnly, cpGetPendingDeposits);
+router.post("/cp/deposits/:id/approve", protect, childPanelOnly, cpApproveDeposit);
+router.post("/cp/deposits/:id/reject",  protect, childPanelOnly, cpRejectDeposit);
 
 // ─── ADMIN: PROVIDERS ─────────────────────────────────────────────────
 router.get("/admin/payment-providers",        protect, adminOnly, adminGetProviders);

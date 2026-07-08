@@ -10,9 +10,9 @@ import {
   adminGetPendingDeposits, adminApproveDeposit, adminRejectDeposit,
   getCpGateways, createCpGateway, updateCpGateway, deleteCpGateway, rotateCpWebhookToken,
   getCpAvailableProviders,
-  connectPlatformGateway,getUserWithdrawGateways, getWithdrawQuote, initializeWithdrawal, handlePayoutWebhook,
+  connectPlatformGateway, getUserWithdrawGateways, getWithdrawQuote, initializeWithdrawal, handlePayoutWebhook,
   adminGetPendingWithdrawals, adminApproveWithdrawal, adminRejectWithdrawal,
-  
+  cpGetPendingWithdrawals, cpApproveWithdrawal, cpRejectWithdrawal,
 } from "../controllers/paymentGatewayController.js";
 
 const router = express.Router();
@@ -65,5 +65,10 @@ router.post("/webhooks/payout/:provider/:token", handlePayoutWebhook);
 router.get("/admin/withdrawals/pending",      protect, adminOnly, adminGetPendingWithdrawals);
 router.post("/admin/withdrawals/:id/approve", protect, adminOnly, adminApproveWithdrawal);
 router.post("/admin/withdrawals/:id/reject",  protect, adminOnly, adminRejectWithdrawal);
+
+// ─── CP OWNER: PENDING GATEWAY WITHDRAWALS (their own end users) ──────
+router.get("/cp/withdrawals/pending",      protect, childPanelOnly, cpGetPendingWithdrawals);
+router.post("/cp/withdrawals/:id/approve", protect, childPanelOnly, cpApproveWithdrawal);
+router.post("/cp/withdrawals/:id/reject",  protect, childPanelOnly, cpRejectWithdrawal);
 
 export default router;

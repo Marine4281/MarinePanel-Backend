@@ -3,16 +3,12 @@
 // route imports (`from "../controllers/paymentGatewayController.js"`) keep working.
 
 export {
-  getUserWithdrawGateways,
-  getWithdrawQuote,
-  initializeWithdrawal,
-  handlePayoutWebhook,
-  adminGetPendingWithdrawals,
-  adminApproveWithdrawal,
-  adminRejectWithdrawal,
-  cpGetPendingWithdrawals,
-  cpApproveWithdrawal,
-  cpRejectWithdrawal,
+  getProviders,
+  getCpAvailableProviders,
+  adminGetProviders,
+  adminCreateProvider,
+  adminUpdateProvider,
+  adminDeleteProvider,
 } from "./paymentProviderController.js";
 
 export {
@@ -33,6 +29,9 @@ export {
   adminGetPendingWithdrawals,
   adminApproveWithdrawal,
   adminRejectWithdrawal,
+  cpGetPendingWithdrawals,
+  cpApproveWithdrawal,
+  cpRejectWithdrawal,
 } from "./withdrawalController.js";
 
 export {

@@ -38,3 +38,55 @@ export const verifyWebhook = (credentials, req) => {
 };
 
 export const extractReference = (body) => body?.data?.reference || null;
+
+export const payout = async (credentials, { amount, currency, reference, recipient }) => {
+  if (!recipient?.accountNumber || !recipient?.bankCode) {
+    throw new Error("Recipient account number and bank code are required");
+  }
+
+  const authHeader = { Authorization: `Bearer ${credentials.secretKey}` };
+
+  // Step 1: create (or reuse) a transfer recipient
+  const recipientRes = await axios.post(
+    "https://api.paystack.co/transferrecipient",
+    {
+      type:           "nuban",
+      name:           recipient.accountName || "Wallet Withdrawal",
+      account_number: recipient.accountNumber,
+      bank_code:      recipient.bankCode,
+      currency:       currency || "NGN",
+    },
+    { headers: authHeader }
+  );
+
+  const recipientCode = recipientRes.data.data.recipient_code;
+
+  // Step 2: initiate the transfer
+  const amountInSmallestUnit = Math.round(amount * 100); // kobo / pesewas
+  const transferRes = await axios.post(
+    "https://api.paystack.co/transfer",
+    {
+      source:    "balance",
+      amount:    amountInSmallestUnit,
+      recipient: recipientCode,
+      reason:    "Wallet withdrawal",
+      reference,
+    },
+    { headers: authHeader }
+  );
+
+  const status = transferRes.data.data.status; // pending, success, otp, failed
+  return {
+    success:           true,
+    status:            status === "success" ? "completed" : "pending",
+    providerReference: transferRes.data.data.transfer_code,
+  };
+};
+
+export const verifyPayout = async (credentials, providerReference) => {
+  const response = await axios.get(
+    `https://api.paystack.co/transfer/${providerReference}`,
+    { headers: { Authorization: `Bearer ${credentials.secretKey}` } }
+  );
+  return response.data.data.status === "success";
+};

@@ -26,6 +26,7 @@ import commissionRoutes from "./routes/commissionRoutes.js";
 import apiV2Routes from "./routes/apiV2Routes.js";
 import supportRoutes from "./routes/supportRoutes.js";
 import maintenanceRoutes from "./routes/maintenanceRoutes.js";
+import currencyRoutes from "./routes/currencyRoutes.js";
 
 // Reseller Routes
 import resellerRoutes from "./routes/resellerRoutes.js";
@@ -243,6 +244,7 @@ app.use("/api/admin/resellers", resellerAdminRoutes);
 app.use("/api/v2", apiV2Routes);
 app.use("/api/support", supportRoutes);
 app.use("/api/maintenance", maintenanceRoutes);
+app.use("/api/currencies", currencyRoutes);
 
 /* =================================================
    RESELLER ROUTES

@@ -197,3 +197,16 @@ export const deleteCpGateway = async (req, res) => {
     res.status(500).json({ message: "Failed to delete gateway" });
   }
 };
+
+// ─── CP OWNER: ROTATE WEBHOOK TOKEN ──────────────────────────────────
+export const rotateCpWebhookToken = async (req, res) => {
+  try {
+    const gw = await PaymentGateway.findOne({ _id: req.params.id, owner: req.user._id });
+    if (!gw) return res.status(404).json({ message: "Gateway not found" });
+    gw.webhookToken = `wh_${crypto.randomBytes(24).toString("hex")}`;
+    await gw.save();
+    res.json({ message: "Token rotated", webhookToken: gw.webhookToken });
+  } catch (err) {
+    res.status(500).json({ message: "Failed to rotate token" });
+  }
+};

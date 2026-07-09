@@ -70,6 +70,15 @@ const userSchema = new mongoose.Schema(
        default: false,
      },
 
+    // ─── DISPLAY CURRENCY PREFERENCE ────────────────────────
+    // References a Currency document. Purely cosmetic — does not
+    // affect wallet/order calculations, which always stay in USD.
+    selectedCurrency: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Currency",
+      default: null, // null = show USD (the platform default)
+    },
+
     /*
     ----------------------------------------------------------------
     SCOPE

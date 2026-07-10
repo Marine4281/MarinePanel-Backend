@@ -4,12 +4,6 @@ import PaymentMethod from "../models/PaymentMethod.js";
 import { v4 as uuidv4 } from "uuid"; // npm i uuid
 import { calcBalance } from "../utils/gatewayHelpers.js";
 
-// ✅ Calculate completed transactions (deposits, non-withdrawal flows only)
-const calculateCompletedBalance = (transactions = []) =>
-  transactions
-    .filter(t => t.status === "Completed")
-    .reduce((acc, t) => acc + Number(t.amount || 0), 0);
-
 // ================= GET WALLET =================
 export const getWallet = async (req, res) => {
   try {
@@ -160,9 +154,11 @@ export const addFundsManual = async (req, res) => {
     }
 
     wallet.transactions.push(transaction);
-    // Deposits stay Completed-only: a Pending deposit shouldn't add funds
-    // until it's actually confirmed.
-    wallet.balance = calculateCompletedBalance(wallet.transactions);
+    // ✅ Now uses the same canonical calcBalance as the rest of the app.
+    // A fresh Pending deposit isn't counted (it's neither Completed nor a
+    // Pending Withdrawal), so behavior here is unchanged — but it's now
+    // guaranteed to stay in sync with getWallet/withdrawFunds/admin views.
+    wallet.balance = calcBalance(wallet.transactions);
     await wallet.save();
 
     await User.findByIdAndUpdate(req.user.id, { balance: wallet.balance });

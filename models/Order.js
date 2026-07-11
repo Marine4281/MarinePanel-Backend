@@ -163,6 +163,14 @@ const orderSchema = new mongoose.Schema(
       default: 0,
     },
 
+    // Wholesale amount deducted from the reseller owner's wallet at
+// order creation (mirrors cpOwnerCharge). Only set when the end
+// user placing this order belongs to a reseller.
+resellerOwnerCharge: {
+  type: Number,
+  default: 0,
+},
+
     /* ===============================
        💸 REFUND SAFETY
     =============================== */

@@ -1,5 +1,4 @@
 // controllers/order/createOrder.js
-// (Full file — only two targeted changes marked with ← NEW)
 
 import Order from "../../models/Order.js";
 import User from "../../models/User.js";
@@ -91,11 +90,7 @@ export const createOrder = async (req, res) => {
     const { childPanelOwnerId, childPanelPerOrderFee } =
       await resolveChildPanelData(user);
 
-    // ─── NEW: Determine if this service originates from the main platform ──
-    // A service is a "main platform service" if:
-    //   (a) it has no cpOwner (it's a direct main-platform service), OR
-    //   (b) it was imported from the main platform (provider === "platform")
-    // This flag controls whether the order appears in admin's user orders list.
+    // ─── Determine if this service originates from the main platform ──
     const isMainPlatformService =
       !serviceData.cpOwner ||
       serviceData.provider === "platform";
@@ -107,6 +102,7 @@ export const createOrder = async (req, res) => {
     let systemCharge = 0;
     let resellerCommission = 0;
     let childPanelCommission = 0;
+    let resellerChargeAmount = 0; // ← NEW: wholesale cost owed by reseller owner
 
     if (serviceData.isFree) {
       isFreeOrder = true;
@@ -153,6 +149,7 @@ export const createOrder = async (req, res) => {
       systemCharge = pricing.systemCharge ?? pricing.baseCharge;
       resellerCommission = pricing.resellerCommission;
       childPanelCommission = pricing.childPanelCommission;
+      resellerChargeAmount = pricing.resellerChargeAmount; // ← NEW
 
       const currentBalance = calculateBalance(wallet.transactions);
       if (currentBalance < finalCharge) {
@@ -237,6 +234,37 @@ export const createOrder = async (req, res) => {
       }
     }
 
+    // ─── DEDUCT BASE COST FROM RESELLER OWNER (PAID ORDERS) ───────────────
+    // ← NEW: mirrors the CP owner block above. The end user already paid
+    // the full marked-up price into their own wallet; the reseller owner
+    // now pays the wholesale cost (pre-reseller-markup) out of their own
+    // wallet, keeping their markup as retained profit automatically.
+    let resellerOwnerInsufficientFunds = false;
+
+    if (!isFreeOrder && user.resellerOwner) {
+      const resellerWalletForPaid = await Wallet.findOne({ user: user.resellerOwner });
+
+      if (resellerWalletForPaid) {
+        const resellerCurrentBalance = calculateBalance(resellerWalletForPaid.transactions);
+
+        if (resellerCurrentBalance < resellerChargeAmount) {
+          resellerOwnerInsufficientFunds = true;
+        } else {
+          resellerWalletForPaid.transactions.push({
+            type: "Order",
+            amount: -Number(resellerChargeAmount),
+            status: "Completed",
+            note: `Reseller end-user order cost #${customOrderId}`,
+            createdAt: new Date(),
+          });
+
+          resellerWalletForPaid.balance = calculateBalance(resellerWalletForPaid.transactions);
+          await resellerWalletForPaid.save();
+          await updateUserBalance(user.resellerOwner, resellerWalletForPaid);
+        }
+      }
+    }
+
     // ─── CREATE ORDER ──────────────────────────────────────────────────────
     const order = await Order.create({
       orderId: "ORD-" + uuidv4().slice(0, 8),
@@ -247,14 +275,15 @@ export const createOrder = async (req, res) => {
 
       resellerOwner: user.resellerOwner || null,
       resellerCommission,
+      resellerOwnerCharge: resellerChargeAmount, // ← NEW
 
-      childPanelOwner: childPanelOwnerId,                      // ← NOW also set for CP-reseller end users
-      placedViaChildPanel: !!childPanelOwnerId,                // ← true whenever order belongs to any CP
+      childPanelOwner: childPanelOwnerId,
+      placedViaChildPanel: !!childPanelOwnerId,
       childPanelCommission,
       childPanelEarningsCredited: false,
       childPanelPerOrderFee,
 
-      isMainPlatformService,                                    // ← NEW field
+      isMainPlatformService,
 
       category: serviceData.category,
       service: serviceData.name,
@@ -292,10 +321,11 @@ export const createOrder = async (req, res) => {
     });
 
     // ─── PROVIDER CALL ────────────────────────────────────────────────────
-    if (cpOwnerInsufficientFunds) {
+    if (cpOwnerInsufficientFunds || resellerOwnerInsufficientFunds) {
+      // ← NEW: combined gate
       order.status = "pending";
       order.providerStatus = "pending";
-      order.errorMessage = "CP owner insufficient funds — provider call skipped";
+      order.errorMessage = "Upstream owner insufficient funds — provider call skipped";
       await order.save();
     } else {
       try {
@@ -354,6 +384,7 @@ export const createOrder = async (req, res) => {
         await order.save();
       } catch (err) {
         if (!isFreeOrder) {
+          // Refund end user
           wallet.transactions.push({
             type: "Refund",
             amount: Number(finalCharge),
@@ -365,6 +396,47 @@ export const createOrder = async (req, res) => {
 
           wallet.balance = calculateBalance(wallet.transactions);
           await wallet.save();
+
+          // ← NEW: Refund CP owner (their wholesale deduction, if any)
+          if (childPanelOwnerId) {
+            const cpOwnerDeduction = routeThroughMainPlatformApi ? systemCharge : baseCharge;
+            const cpOwnerWalletForRefund = await Wallet.findOne({ user: childPanelOwnerId });
+
+            if (cpOwnerWalletForRefund && cpOwnerDeduction > 0) {
+              cpOwnerWalletForRefund.transactions.push({
+                type: "Refund",
+                amount: Number(cpOwnerDeduction),
+                status: "Completed",
+                note: `Refund - Provider failed #${customOrderId}`,
+                reference: order._id,
+                createdAt: new Date(),
+              });
+
+              cpOwnerWalletForRefund.balance = calculateBalance(cpOwnerWalletForRefund.transactions);
+              await cpOwnerWalletForRefund.save();
+              await updateUserBalance(childPanelOwnerId, cpOwnerWalletForRefund);
+            }
+          }
+
+          // ← NEW: Refund reseller owner (their wholesale deduction, if any)
+          if (user.resellerOwner) {
+            const resellerWalletForRefund = await Wallet.findOne({ user: user.resellerOwner });
+
+            if (resellerWalletForRefund && resellerChargeAmount > 0) {
+              resellerWalletForRefund.transactions.push({
+                type: "Refund",
+                amount: Number(resellerChargeAmount),
+                status: "Completed",
+                note: `Refund - Provider failed #${customOrderId}`,
+                reference: order._id,
+                createdAt: new Date(),
+              });
+
+              resellerWalletForRefund.balance = calculateBalance(resellerWalletForRefund.transactions);
+              await resellerWalletForRefund.save();
+              await updateUserBalance(user.resellerOwner, resellerWalletForRefund);
+            }
+          }
         }
 
         order.status = "failed";

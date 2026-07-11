@@ -15,6 +15,7 @@ export const calculateOrderPricing = async ({
   let systemCharge;
   let resellerCommission = 0;
   let childPanelCommission = 0;
+  let resellerChargeAmount = 0; // ← NEW: wholesale cost owed by reseller owner
 
   if (serviceData.cpOwner) {
     const cpOwnerId = childPanelOwnerId || serviceData.cpOwner;
@@ -37,6 +38,9 @@ export const calculateOrderPricing = async ({
       const reseller = await User.findById(user.resellerOwner);
       const resellerRate = Number(reseller?.resellerCommissionRate || 0);
 
+      // ← NEW: what the reseller owner owes upstream, before their own markup
+      resellerChargeAmount = (qty / 1000) * cpFinalRate;
+
       if (resellerRate > 0) {
         const resellerFinalRate = cpFinalRate + (cpFinalRate * resellerRate) / 100;
         resellerCommission = (qty / 1000) * (resellerFinalRate - cpFinalRate);
@@ -48,39 +52,28 @@ export const calculateOrderPricing = async ({
     const globalRate = Number(settings?.commission || 0);
 
     // ─── COMMISSION OVERRIDE HIERARCHY ─────────────────────────────────
-    // 1. Per-service override on the service itself
-    // 2. Per-category override in settings.categoryCommissions
-    // 3. Per-user (commissionOverride on user)
-    // 4. Global commission
     let adminRate;
 
     if (serviceData.commissionOverride != null) {
-      // Service-level override wins
       adminRate = Number(serviceData.commissionOverride);
     } else if (
       serviceData.category &&
       settings?.categoryCommissions &&
       settings.categoryCommissions[serviceData.category] != null
     ) {
-      // Category-level override
       adminRate = Number(settings.categoryCommissions[serviceData.category]);
     } else if (user.commissionOverride != null) {
-      // Per-user override (existing behaviour)
       adminRate = Number(user.commissionOverride);
     } else {
-      // Global fallback
       adminRate = globalRate;
     }
     // ────────────────────────────────────────────────────────────────────
 
-    // 1. Admin's final rate
     const adminFinalRate = providerRate + (providerRate * adminRate) / 100;
     finalRate = adminFinalRate;
 
-    // Platform sell rate × qty — what the platform charges the CP owner
     systemCharge = (qty / 1000) * adminFinalRate;
 
-    // 2. CP owner's final rate — markup on top of admin's final rate
     let cpFinalRate = adminFinalRate;
 
     if (childPanelOwnerId) {
@@ -94,11 +87,14 @@ export const calculateOrderPricing = async ({
     }
     finalRate = cpFinalRate;
 
-    // 3. Reseller's final rate — markup on top of CP owner's final rate
-    //    (or on top of admin's final rate, if there's no CP in the chain)
+    // Reseller's final rate — markup on top of CP owner's final rate
+    // (or on top of admin's final rate, if there's no CP in the chain)
     if (user.resellerOwner) {
       const reseller = await User.findById(user.resellerOwner);
       const resellerRate = Number(reseller?.resellerCommissionRate || 0);
+
+      // ← NEW: what the reseller owner owes upstream, before their own markup
+      resellerChargeAmount = (qty / 1000) * cpFinalRate;
 
       if (resellerRate > 0) {
         const resellerFinalRate = cpFinalRate + (cpFinalRate * resellerRate) / 100;
@@ -118,5 +114,6 @@ export const calculateOrderPricing = async ({
     finalRate,
     resellerCommission,
     childPanelCommission,
+    resellerChargeAmount, // ← NEW
   };
 };

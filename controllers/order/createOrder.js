@@ -69,15 +69,6 @@ export const createOrder = async (req, res) => {
 
     const wallet = await ensureWallet(user._id);
 
-    // ─── IDENTITY: CP end-users appear as the CP owner to the platform ─────
-    const isEndUserOnCpDomain =
-      req.childPanel &&
-      req.user &&
-      req.childPanel._id.toString() !== req.user._id.toString();
-
-    const orderUserId = isEndUserOnCpDomain ? req.childPanel._id : user._id;
-    const endUserId = isEndUserOnCpDomain ? user._id : null;
-
     // ─── RESOLVE PROVIDER ──────────────────────────────────────────────────
     const providerResult = await resolveProviderProfile({ req, serviceData });
     if (!providerResult) {
@@ -89,6 +80,31 @@ export const createOrder = async (req, res) => {
     // Now also resolves CP owner through the reseller → CP chain
     const { childPanelOwnerId, childPanelPerOrderFee } =
       await resolveChildPanelData(user);
+
+    // ─── IDENTITY: order appears as the owner's, not the end-user's ────────
+    const isEndUserOnCpDomain =
+      req.childPanel &&
+      req.user &&
+      req.childPanel._id.toString() !== req.user._id.toString();
+
+    let orderUserId = user._id;
+    let endUserId = null;
+
+    if (isEndUserOnCpDomain) {
+      // Direct CP end-user — order appears as the CP owner's
+      orderUserId = req.childPanel._id;
+      endUserId = user._id;
+    } else if (user.resellerOwner && !childPanelOwnerId) {
+      // Standalone reseller end-user (reseller NOT under any CP) — order
+      // appears as the reseller owner's. Deliberately excluded when
+      // childPanelOwnerId is set: cpOwnerOrderController.js already has
+      // bespoke handling that expects endUserId to stay null and
+      // resellerOwner to be set for CP-reseller end-user orders
+      // (see isResellerEndUserOrder there) — flipping this too would
+      // break that dashboard's "my order vs reseller order" view.
+      orderUserId = user.resellerOwner;
+      endUserId = user._id;
+    }
 
     // ─── Determine if this service originates from the main platform ──
     const isMainPlatformService =

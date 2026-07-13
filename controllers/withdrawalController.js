@@ -95,6 +95,11 @@ export const initializeWithdrawal = async (req, res) => {
     const actualOwner   = (gw.owner || null)?.toString() || null;
     if (expectedOwner !== actualOwner) {
       return res.status(403).json({ message: "This withdrawal method is not available to you" });
+
+      if (gw.paymentMode === "binance") {
+        if (!userPayoutData.binanceId || !userPayoutData.fullName) {
+          return res.status(400).json({ message: "Binance ID and full name are required" });
+        }
     }
 
     const usd = Number(usdAmount);

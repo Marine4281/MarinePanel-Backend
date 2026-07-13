@@ -2,6 +2,7 @@
 import express from "express";
 import { protect } from "../middlewares/authMiddleware.js";
 import { adminOnly, childPanelOnly } from "../middlewares/adminMiddleware.js";
+import { uploadSeoImage } from "../config/cloudinary.js";
 import {
   getProviders, getQuote, getUserGateways, initializePayment, handleWebhook,
   adminGetProviders, adminCreateProvider, adminUpdateProvider, adminDeleteProvider,
@@ -9,7 +10,7 @@ import {
   adminToggleHidden, adminRotateWebhookToken,
   adminGetPendingDeposits, adminApproveDeposit, adminRejectDeposit,
   cpGetPendingDeposits, cpApproveDeposit, cpRejectDeposit,
-  getCpGateways, createCpGateway, updateCpGateway, deleteCpGateway, rotateCpWebhookToken,
+  getCpGateways, createCpGateway, updateCpGateway, deleteCpGateway, rotateCpWebhookToken, uploadCpGatewayImage,
   getCpAvailableProviders,
   connectPlatformGateway, getUserWithdrawGateways, getWithdrawQuote, initializeWithdrawal, handlePayoutWebhook,
   adminGetPendingWithdrawals, adminApproveWithdrawal, adminRejectWithdrawal,
@@ -40,6 +41,7 @@ router.post("/cp/gateways/:id/rotate-token", protect, childPanelOnly, rotateCpWe
 router.get("/cp/deposits/pending",      protect, childPanelOnly, cpGetPendingDeposits);
 router.post("/cp/deposits/:id/approve", protect, childPanelOnly, cpApproveDeposit);
 router.post("/cp/deposits/:id/reject",  protect, childPanelOnly, cpRejectDeposit);
+router.post("/cp/gateways/upload-qr", protect, childPanelOnly, uploadSeoImage.single("image"), uploadCpGatewayImage);
 
 // ─── ADMIN: PROVIDERS ─────────────────────────────────────────────────
 router.get("/admin/payment-providers",        protect, adminOnly, adminGetProviders);

@@ -210,3 +210,18 @@ export const rotateCpWebhookToken = async (req, res) => {
     res.status(500).json({ message: "Failed to rotate token" });
   }
 };
+
+// ─── CP OWNER: UPLOAD BINANCE QR IMAGE (own gateway only) ────────────
+// Uses uploadSeoImage storage, which is already scoped to
+// marinepanel/seo/{req.user._id} — so each CP owner's QR code lands in
+// their own private Cloudinary folder, never mixed with other owners'
+// or the platform's shared gallery.
+export const uploadCpGatewayImage = async (req, res) => {
+  try {
+    if (!req.file) return res.status(400).json({ message: "No image uploaded" });
+    res.json({ message: "QR image uploaded", url: req.file.path });
+  } catch (err) {
+    console.error("uploadCpGatewayImage error:", err);
+    res.status(500).json({ message: "Upload failed" });
+  }
+};

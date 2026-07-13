@@ -53,4 +53,5 @@ export {
   updateCpGateway,
   deleteCpGateway,
   rotateCpWebhookToken,
+  uploadCpGatewayImage,
 } from "./cpGatewayController.js";

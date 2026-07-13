@@ -254,6 +254,7 @@ export const uploadToGallery = async (req, res) => {
     res.json({
       message: "Logo added to gallery",
       logo: settings.logoGallery[settings.logoGallery.length - 1],
+      url: settings.logoGallery[settings.logoGallery.length - 1].url,
     });
   } catch (err) {
     console.error("uploadToGallery error:", err);

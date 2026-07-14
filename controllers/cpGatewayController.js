@@ -87,6 +87,34 @@ export const connectPlatformGateway = async (req, res) => {
   }
 };
 
+// ─── CP OWNER: DISCONNECT PLATFORM GATEWAY ──────────────────────────
+// Removes the CP owner's local copy of a connected platform gateway.
+// Since a "connected" gateway is just a PaymentGateway doc owned by the
+// CP with platformGatewayRef set, disconnecting = deleting that doc.
+export const disconnectPlatformGateway = async (req, res) => {
+  try {
+    const { platformGatewayId } = req.body;
+
+    if (!platformGatewayId) {
+      return res.status(400).json({ message: "platformGatewayId is required" });
+    }
+
+    const gw = await PaymentGateway.findOneAndDelete({
+      owner:              req.user._id,
+      platformGatewayRef: platformGatewayId,
+    });
+
+    if (!gw) {
+      return res.status(404).json({ message: "Connected gateway not found" });
+    }
+
+    res.json({ message: "Gateway disconnected" });
+  } catch (err) {
+    console.error("disconnectPlatformGateway error:", err);
+    res.status(500).json({ message: "Failed to disconnect gateway" });
+  }
+};
+
 // ─── CP OWNER: CREATE OWN GATEWAY ────────────────────────────────────
 export const createCpGateway = async (req, res) => {
   try {

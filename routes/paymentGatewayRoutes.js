@@ -3,7 +3,7 @@ import express from "express";
 import { protect } from "../middlewares/authMiddleware.js";
 import { adminOnly, childPanelOnly } from "../middlewares/adminMiddleware.js";
 import { uploadSeoImage } from "../config/cloudinary.js";
-paymentGatewayRoutes.js
+import { adminPaymentsUnreadCount, cpPaymentsUnreadCount } from "../controllers/paymentAlertsController.js";
 import {
   getProviders, getQuote, getUserGateways, initializePayment, handleWebhook,
   adminGetProviders, adminCreateProvider, adminUpdateProvider, adminDeleteProvider,

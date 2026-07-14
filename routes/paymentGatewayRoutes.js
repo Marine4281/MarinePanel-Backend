@@ -3,6 +3,7 @@ import express from "express";
 import { protect } from "../middlewares/authMiddleware.js";
 import { adminOnly, childPanelOnly } from "../middlewares/adminMiddleware.js";
 import { uploadSeoImage } from "../config/cloudinary.js";
+paymentGatewayRoutes.js
 import {
   getProviders, getQuote, getUserGateways, initializePayment, handleWebhook,
   adminGetProviders, adminCreateProvider, adminUpdateProvider, adminDeleteProvider,
@@ -76,5 +77,9 @@ router.post("/admin/withdrawals/:id/reject",  protect, adminOnly, adminRejectWit
 router.get("/cp/withdrawals/pending",      protect, childPanelOnly, cpGetPendingWithdrawals);
 router.post("/cp/withdrawals/:id/approve", protect, childPanelOnly, cpApproveWithdrawal);
 router.post("/cp/withdrawals/:id/reject",  protect, childPanelOnly, cpRejectWithdrawal);
+
+// ─── PENDING PAYMENT COUNTS (sidebar badge) ───────────────────────────
+router.get("/admin/payments/unread-count", protect, adminOnly, adminPaymentsUnreadCount);
+router.get("/cp/payments/unread-count",    protect, childPanelOnly, cpPaymentsUnreadCount);
 
 export default router;

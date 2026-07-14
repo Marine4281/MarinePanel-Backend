@@ -13,7 +13,7 @@ import {
   cpGetPendingDeposits, cpApproveDeposit, cpRejectDeposit,
   getCpGateways, createCpGateway, updateCpGateway, deleteCpGateway, rotateCpWebhookToken, uploadCpGatewayImage,
   getCpAvailableProviders,
-  connectPlatformGateway, getUserWithdrawGateways, getWithdrawQuote, initializeWithdrawal, handlePayoutWebhook,
+  connectPlatformGateway, disconnectPlatformGateway, getUserWithdrawGateways, getWithdrawQuote, initializeWithdrawal, handlePayoutWebhook,
   adminGetPendingWithdrawals, adminApproveWithdrawal, adminRejectWithdrawal,
   cpGetPendingWithdrawals, cpApproveWithdrawal, cpRejectWithdrawal,
 } from "../controllers/paymentGatewayController.js";
@@ -27,6 +27,7 @@ router.post("/webhooks/:provider/:token", handleWebhook);
 
 router.get("/cp/available-providers",           protect, childPanelOnly, getCpAvailableProviders);
 router.post("/cp/gateways/connect-platform",    protect, childPanelOnly, connectPlatformGateway);
+router.post("/cp/gateways/disconnect-platform", protect, childPanelOnly, disconnectPlatformGateway);
 // ─── USER ─────────────────────────────────────────────────────────────
 router.get("/gateways/providers",  protect, getProviders);
 router.get("/gateways/quote",      protect, getQuote);

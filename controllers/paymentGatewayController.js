@@ -49,6 +49,7 @@ export {
 export {
   getCpGateways,
   connectPlatformGateway,
+  disconnectPlatformGateway,
   createCpGateway,
   updateCpGateway,
   deleteCpGateway,

@@ -29,7 +29,29 @@ export const resolveService = async ({ service, req }) => {
       cpOwner: null,
     });
   } else {
-    serviceData = await Service.findOne(serviceQuery);
+    // Reseller domain — resellers can only order platform (cpOwner: null) services.
+    // If this reseller sits under a CP owner, prefer that CP owner's own
+    // catalog first (mirrors the childPanel resolution above), then fall
+    // back to platform services made available to child panels.
+    if (req.reseller.childPanelOwner) {
+      serviceData = await Service.findOne({
+        ...serviceQuery,
+        cpOwner: req.reseller.childPanelOwner,
+      });
+
+      if (!serviceData) {
+        serviceData = await Service.findOne({
+          ...serviceQuery,
+          cpOwner: null,
+          availableToChildPanels: true,
+        });
+      }
+    } else {
+      serviceData = await Service.findOne({
+        ...serviceQuery,
+        cpOwner: null,
+      });
+    }
   }
 
   return serviceData;

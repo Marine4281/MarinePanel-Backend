@@ -220,3 +220,21 @@ export const selectUserCurrency = async (req, res) => {
     res.status(500).json({ message: "Failed to save currency preference" });
   }
 };
+
+// ─── PUBLIC: for guests browsing a branded domain (no auth) ──────────
+// Scope: CP domain -> that CP's currencies. Reseller domain -> their
+// parent CP owner's currencies. Main platform domain -> admin currencies.
+export const getPublicCurrencies = async (req, res) => {
+  try {
+    const ownerFilter =
+      req.childPanel?._id ||
+      req.reseller?.resellerOwner ||
+      null;
+
+    const currencies = await Currency.find({ owner: ownerFilter, isActive: true }).sort({ name: 1 });
+    res.json({ currencies: currencies.map(safeCurrency) });
+  } catch (err) {
+    console.error("getPublicCurrencies error:", err);
+    res.status(500).json({ message: "Failed to fetch currencies" });
+  }
+};

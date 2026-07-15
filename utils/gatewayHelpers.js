@@ -42,6 +42,8 @@ export const safeGateway = (gw) => ({
   webhookToken:             gw.webhookToken,
   providerProfile:          gw.providerProfile,
   owner:                    gw.owner,
+  platformGatewayRef:       gw.platformGatewayRef,
+  isPlatformConnected:      gw.isPlatformConnected,
   createdAt:                gw.createdAt,
   providerType:             gw.providerProfile?.providerType || null,
 });

@@ -5,7 +5,7 @@ import { adminOnly, childPanelOnly } from "../middlewares/adminMiddleware.js";
 import {
   adminGetCurrencies, adminCreateCurrency, adminUpdateCurrency, adminDeleteCurrency,
   getCpCurrencies, createCpCurrency, updateCpCurrency, deleteCpCurrency,
-  getUserCurrencies, selectUserCurrency,
+  getUserCurrencies, selectUserCurrency,getPublicCurrencies,
 } from "../controllers/currencyController.js";
 
 const router = express.Router();
@@ -26,4 +26,6 @@ router.post("/cp",             protect, childPanelOnly, createCpCurrency);
 router.put("/cp/:id",          protect, childPanelOnly, updateCpCurrency);
 router.delete("/cp/:id",       protect, childPanelOnly, deleteCpCurrency);
 
+//Public 
+router.get("/public", getPublicCurrencies); 
 export default router;

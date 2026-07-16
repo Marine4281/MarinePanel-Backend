@@ -60,7 +60,7 @@ export const getCPSettings = async (req, res) => {
       supportWhatsappChannel: user.childPanelSupportWhatsappChannel || "",
 
       // Reseller fees (set by child panel owner for their resellers)
-      resellerActivationFee: user.childPanelResellerActivationFee ?? 25,
+      resellerActivationFee: user.childPanelResellerActivationFee ?? 2,
       withdrawMin: user.childPanelWithdrawMin ?? 10,
 
       // Commission rate (set by main admin — child panel owner cannot change this)

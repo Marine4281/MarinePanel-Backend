@@ -306,6 +306,21 @@ export const getChildPanelDashboard = async (req, res) => {
   try {
     const ownerId = req.user._id;
 
+    const settings         = await Settings.findOne().lean();
+    const billingMode      = req.user.childPanelBillingMode ?? "monthly";
+    const ordersThisCycle  = req.user.childPanelOrdersThisCycle ?? 0;
+    const tiers            = settings?.childPanelMonthlyTiers ?? [];
+    const perOrderFee      = req.user.childPanelPerOrderFee ?? settings?.childPanelPerOrderFee ?? 0;
+
+    let monthlyFee = req.user.childPanelMonthlyFee ?? settings?.childPanelMonthlyFee ?? 20;
+    let currentTierIndex = -1;
+    if (tiers.length > 0) {
+      currentTierIndex = tiers.findIndex(
+        (t) => ordersThisCycle >= t.minOrders && (t.maxOrders === null || ordersThisCycle <= t.maxOrders)
+      );
+      if (currentTierIndex !== -1) monthlyFee = tiers[currentTierIndex].fee;
+    }
+
     const [resellersCount, usersCount, orders, wallet] = await Promise.all([
       // Resellers that belong to this child panel
       User.countDocuments({ isReseller: true, childPanelOwner: ownerId }),
@@ -337,29 +352,31 @@ export const getChildPanelDashboard = async (req, res) => {
     }
 
     res.json({
-  resellers: resellersCount,
-  users: usersCount,
-  orders: totalOrders,
-  pendingOrders,
-  revenue: totalRevenue,
-  earnings,
-  wallet: wallet?.balance || 0,
+      resellers: resellersCount,
+      users: usersCount,
+      orders: totalOrders,
+      pendingOrders,
+      revenue: totalRevenue,
+      earnings,
+      wallet: wallet?.balance || 0,
 
-  brandName: req.user.childPanelBrandName,
-  domain: req.user.childPanelDomain || req.user.childPanelSlug,
-  billingMode: req.user.childPanelBillingMode,
-  monthlyFee: req.user.childPanelMonthlyFee,
-  lastBilledAt: req.user.childPanelLastBilledAt,
-  billing: {
-    mode:            req.user.childPanelBillingMode          ?? "monthly",
-    monthlyFee:      req.user.childPanelMonthlyFee           ?? 0,
-    perOrderFee:     req.user.childPanelPerOrderFee          ?? 0,
-    ordersThisCycle: req.user.childPanelOrdersThisCycle      ?? 0,
-    lastBilledAt:    req.user.childPanelLastBilledAt         ?? null,
-    nextBilledAt:    req.user.childPanelNextBilledAt         ?? null,
-    intervalDays:    req.user.childPanelBillingIntervalDays  ?? null,
-  },
-});
+      brandName: req.user.childPanelBrandName,
+      domain: req.user.childPanelDomain || req.user.childPanelSlug,
+      billingMode: req.user.childPanelBillingMode,
+      monthlyFee: req.user.childPanelMonthlyFee,
+      lastBilledAt: req.user.childPanelLastBilledAt,
+      billing: {
+        mode:             billingMode,
+        monthlyFee,
+        perOrderFee,
+        ordersThisCycle,
+        lastBilledAt:     req.user.childPanelLastBilledAt         ?? null,
+        nextBilledAt:     req.user.childPanelNextBilledAt         ?? null,
+        intervalDays:     req.user.childPanelBillingIntervalDays  ?? null,
+        tiers,
+        currentTierIndex,
+      },
+    });
   } catch (error) {
     console.error("CHILD PANEL DASHBOARD ERROR:", error);
     res.status(500).json({ message: "Dashboard failed" });

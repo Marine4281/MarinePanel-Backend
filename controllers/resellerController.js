@@ -50,7 +50,7 @@ export const getActivationFee = async (req, res) => {
         `${cpOwner.childPanelSlug}.marinepanel.online`;
 
       return res.json({
-        fee: cpOwner.childPanelResellerActivationFee ?? 25,
+        fee: cpOwner.childPanelResellerActivationFee ?? 2,
         platformDomain: cpDomain,
         isChildPanel: true,
         cpOwnerId: cpOwner._id,
@@ -118,7 +118,7 @@ export const activateReseller = async (req, res) => {
     let platformDomain;
 
     if (isCP) {
-      activationFee = cpOwner.childPanelResellerActivationFee ?? 25;
+      activationFee = cpOwner.childPanelResellerActivationFee ?? 2;
       platformDomain =
         cpOwner.childPanelDomain ||
         `${cpOwner.childPanelSlug}.marinepanel.online`;

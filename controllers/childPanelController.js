@@ -245,7 +245,7 @@ export const activateChildPanel = async (req, res) => {
      
     // Defaults the CP owner can change later from their settings page
     user.childPanelWithdrawMin = withdrawMin;
-    user.childPanelResellerActivationFee = 25;
+    user.childPanelResellerActivationFee = 2;
     user.childPanelCommissionRate = 0;
     user.childPanelPaymentMode = "none";
     user.childPanelServiceMode = "none";

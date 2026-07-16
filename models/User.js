@@ -530,7 +530,7 @@ childPanelBillingIntervalDays: {
     // Activation fee this child panel charges their own resellers
     childPanelResellerActivationFee: {
       type: Number,
-      default: 25,
+      default: 2,
     },
 
     // Minimum withdrawal from the user's normal wallet balance

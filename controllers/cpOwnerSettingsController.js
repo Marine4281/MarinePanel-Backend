@@ -15,6 +15,8 @@
 //   - Branding (brand name, logo, theme color)
 
 import User from "../models/User.js";
+import Settings from "../models/Settings.js";
+import Wallet from "../models/Wallet.js";
 import logCpAdminAction from "../utils/logCpAdminAction.js";
 import { resolveChildPanelFee } from "../utils/childPanelBilling.js";
 
@@ -27,6 +29,23 @@ export const getCPSettings = async (req, res) => {
     const user = await User.findById(req.user._id).select("-password");
     if (!user) return res.status(404).json({ message: "User not found" });
 
+    const settings = await Settings.findOne().lean();
+
+    const billingMode     = user.childPanelBillingMode || "monthly";
+    const ordersThisCycle = user.childPanelOrdersThisCycle ?? 0;
+    const monthlyTiers    = settings?.childPanelMonthlyTiers ?? [];
+    const monthlyFee      = user.childPanelMonthlyFee ?? settings?.childPanelMonthlyFee ?? 20;
+    const perOrderFee     = user.childPanelPerOrderFee ?? settings?.childPanelPerOrderFee ?? 0;
+
+    // What they'd actually be charged right now, factoring in tiers if configured
+    const currentFee = resolveChildPanelFee(user, settings);
+
+    // Which tier (if any) applies to their current order count this cycle —
+    // sent so the frontend can highlight it without re-deriving the logic
+    const currentTierIndex = monthlyTiers.findIndex(
+      (t) => ordersThisCycle >= t.minOrders && (t.maxOrders === null || ordersThisCycle <= t.maxOrders)
+    );
+
     res.json({
       // Branding
       brandName: user.childPanelBrandName || "",
@@ -34,7 +53,7 @@ export const getCPSettings = async (req, res) => {
       themeColor: user.childPanelThemeColor || "#1e40af",
       slug: user.childPanelSlug || "",
       domain: user.childPanelDomain || "",
-      
+
       // Support
       supportWhatsapp: user.childPanelSupportWhatsapp || "",
       supportTelegram: user.childPanelSupportTelegram || "",
@@ -52,9 +71,13 @@ export const getCPSettings = async (req, res) => {
       serviceMode: user.childPanelServiceMode || "none",
 
       // Billing info (read-only — set by main admin)
-      billingMode: user.childPanelBillingMode || "monthly",
-      monthlyFee: user.childPanelMonthlyFee ?? 0,
-      perOrderFee: user.childPanelPerOrderFee ?? 0,
+      billingMode,
+      monthlyFee,
+      perOrderFee,
+      monthlyTiers,        // full tier list, so every tier can be shown
+      currentTierIndex,    // -1 if none matched / no tiers configured
+      ordersThisCycle,
+      currentFee,          // what's actually due right now
       lastBilledAt: user.childPanelLastBilledAt || null,
 
       // Billing status (computed from their own User doc + resolved settings)

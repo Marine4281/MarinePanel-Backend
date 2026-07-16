@@ -48,13 +48,34 @@ export const getMyOrdersStats = async (req, res) => {
       delete match.$or;
     }
 
+    // Orders whose provider explicitly reports "in progress" / "inprogress",
+    // as opposed to "processing" status orders with no such provider text yet.
+    const inProgressRegex = /in\s*progress/i;
+
     const stats = await Order.aggregate([
       { $match: match },
       {
         $facet: {
           total: [{ $count: "count" }],
           pending: [{ $match: { status: "pending" } }, { $count: "count" }],
-          processing: [{ $match: { status: "processing" } }, { $count: "count" }],
+          processing: [
+            {
+              $match: {
+                status: "processing",
+                providerStatus: { $not: inProgressRegex },
+              },
+            },
+            { $count: "count" },
+          ],
+          inProgress: [
+            {
+              $match: {
+                status: "processing",
+                providerStatus: inProgressRegex,
+              },
+            },
+            { $count: "count" },
+          ],
           completed: [{ $match: { status: "completed" } }, { $count: "count" }],
           partial: [{ $match: { status: "partial" } }, { $count: "count" }],
           failed: [{ $match: { status: "failed" } }, { $count: "count" }],
@@ -68,6 +89,7 @@ export const getMyOrdersStats = async (req, res) => {
       total: result.total[0]?.count || 0,
       pending: result.pending[0]?.count || 0,
       processing: result.processing[0]?.count || 0,
+      inProgress: result.inProgress[0]?.count || 0,
       completed: result.completed[0]?.count || 0,
       partial: result.partial[0]?.count || 0,
       failed: result.failed[0]?.count || 0,

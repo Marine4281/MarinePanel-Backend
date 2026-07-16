@@ -487,6 +487,14 @@ export const getChildPanelDetails = async (req, res) => {
     const effectiveReminderHours = cp.childPanelReminderHours    ?? settings?.childPanelReminderHours    ?? 48;
     const effectiveAutoDeduct    = cp.childPanelAutoDeduct       ?? settings?.childPanelAutoDeduct       ?? true;
 
+    // ── Resolve tiered billing + the actual fee currently due ──
+    const tiers = settings?.childPanelMonthlyTiers ?? [];
+    const ordersThisCycle = cp.childPanelOrdersThisCycle ?? 0;
+    const currentTierIndex = tiers.length > 0
+      ? tiers.findIndex((t) => ordersThisCycle >= t.minOrders && (t.maxOrders === null || ordersThisCycle <= t.maxOrders))
+      : -1;
+    const currentFee = resolveChildPanelFee(cp, settings);
+
     // Subscription status derived fields
     const now = new Date();
     const nextBilledAt = cp.childPanelNextBilledAt
@@ -591,6 +599,9 @@ export const getChildPanelDetails = async (req, res) => {
           subscriptionExpired,
           daysUntilExpiry,
           subscriptionSuspended: cp.childPanelSubscriptionSuspended ?? false,
+          monthlyTiers: tiers,
+          currentTierIndex,
+          currentFee,
         },
         stats: {
           walletBalance: formatNumber(wallet?.balance || 0),

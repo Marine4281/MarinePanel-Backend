@@ -73,7 +73,14 @@ export const getResellerServices = async (req, res) => {
       }
 
       if (serviceMode === "platform" || serviceMode === "both") {
-        const platformServices = await Service.find({ status: true, cpOwner: null })
+        // FIX: only pull platform services the main admin has explicitly
+        // whitelisted for child panels — was previously pulling every
+        // platform service in the database regardless of approval status.
+        const platformServices = await Service.find({
+          status: true,
+          cpOwner: null,
+          availableToChildPanels: true,
+        })
           .select("name rate min max category platform visible serviceId isFree freeQuantity cooldownHours refillAllowed cancelAllowed serviceType description cpOwner commissionOverride")
           .sort({ serviceId: 1 })
           .lean();

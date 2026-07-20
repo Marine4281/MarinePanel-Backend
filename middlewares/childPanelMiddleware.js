@@ -153,5 +153,6 @@ export const cpOwnerOnly = async (req, res, next) => {
   }
 
   req.childPanel = user;
+  req.cpOwnerId = user._id;
   next();
 };

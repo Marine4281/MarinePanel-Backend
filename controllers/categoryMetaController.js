@@ -1,15 +1,27 @@
 import CategoryMeta from "../models/CategoryMeta.js";
+import CPCategoryMeta from "../models/CPCategoryMeta.js";
 import Service from "../models/Service.js";
 
+// GET /api/category-meta
+// Public route — auto-scopes to the visiting child panel's own category
+// meta (via req.childPanel, set by detectChildPanelDomain) the same way
+// /api/services does. Falls back to platform-wide meta on the main domain.
 export const getCategoryMeta = async (req, res) => {
   try {
+    const cpOwner = req.childPanel?._id;
+
+    const serviceMatch = cpOwner ? { status: true, cpOwner } : { status: true };
+
     const allCats = await Service.aggregate([
-      { $match: { status: true } },
+      { $match: serviceMatch },
       { $group: { _id: { platform: "$platform", category: "$category" } } },
       { $project: { _id: 0, platform: "$_id.platform", category: "$_id.category" } },
     ]);
 
-    const savedMeta = await CategoryMeta.find().lean();
+    const savedMeta = cpOwner
+      ? await CPCategoryMeta.find({ cpOwner }).lean()
+      : await CategoryMeta.find().lean();
+
     const metaMap = {};
     savedMeta.forEach((m) => { metaMap[`${m.platform}::${m.category}`] = m; });
 
@@ -56,7 +68,10 @@ export const saveCategoryMeta = async (req, res) => {
 export const getCategoryServices = async (req, res) => {
   try {
     const category = decodeURIComponent(req.params.category);
-    const services = await Service.find({ category })
+    const cpOwner  = req.childPanel?._id;
+    const match    = cpOwner ? { category, cpOwner } : { category };
+
+    const services = await Service.find(match)
       .sort({ name: 1 })
       .lean();
     res.json(services);

@@ -76,6 +76,16 @@ export const getWithdrawQuote = async (req, res) => {
 //   • automatic gateway fails / webhook fails -> refundWithdrawal("Failed")
 //   • manual gateway, admin approves          -> completeWithdrawal (Completed)
 //   • manual gateway, admin rejects           -> refundWithdrawal("Failed")
+//
+// PLATFORM-CONNECTED CP GATEWAYS (gw.isPlatformConnected === true):
+// The CP is riding on the platform's own processor here, not their own
+// credentials — so the platform is the one actually paying this end user
+// out. That payout is backed by whatever the CP has earned into their
+// wallet (credited on platform-mode deposits), so:
+//   1. The request is blocked unless the CP's wallet can cover it.
+//   2. The CP's wallet is debited in lockstep with the end user's wallet
+//      (same "Pending = already deducted" pattern, same reference).
+//   3. complete/refund below settle both sides together.
 export const initializeWithdrawal = async (req, res) => {
   try {
     const { gatewayId, usdAmount, userPayoutData = {} } = req.body;
@@ -113,12 +123,25 @@ export const initializeWithdrawal = async (req, res) => {
       return res.status(400).json({ message: "Insufficient available balance" });
     }
 
+    // ─── PLATFORM-CONNECTED CP GATEWAY: resolve CP owner & verify their wallet can cover this ───
+    let cpOwner = null;
+    if (gw.isPlatformConnected && user.childPanelOwner) {
+      const candidate = await User.findById(user.childPanelOwner).select("isChildPanel");
+      if (candidate?.isChildPanel) {
+        const { available: cpAvailable } = await getAvailableBalance(candidate._id);
+        if (usd > cpAvailable) {
+          return res.status(400).json({ message: "CP wallet balance is insufficient to cover this withdrawal" });
+        }
+        cpOwner = candidate;
+      }
+    }
+
     const reference = `WD-${Date.now()}-${user._id}`;
     const localBase = Math.round(usd * gw.exchangeRate * 100) / 100;
     const { fee }    = calculateFee(localBase, gw.withdrawalFeeType, gw.withdrawalFeePercentage, gw.withdrawalFeeFixed);
     const amountReceived = Math.round((localBase - fee) * 100) / 100;
 
-    await Transaction.create({
+    const transaction = await Transaction.create({
       user:            user._id,
       reference,
       amount:          -usd,
@@ -130,6 +153,7 @@ export const initializeWithdrawal = async (req, res) => {
       gateway:         gw._id,
       provider:        gw.paymentMode === "manual" ? "manual" : (gw.providerProfile?.providerType || "manual"),
       childPanelOwner: user.childPanelOwner || null,
+      childPanelDebited: false,
       details:         userPayoutData,
     });
 
@@ -148,6 +172,29 @@ export const initializeWithdrawal = async (req, res) => {
 
     const io = req.app.get("io");
     if (io) io.emit("wallet:update", { userId: user._id, balance: wallet.balance });
+
+    // ─── PLATFORM-CONNECTED CP GATEWAY: debit CP wallet in lockstep ───
+    if (cpOwner) {
+      let cpWallet = await Wallet.findOne({ user: cpOwner._id });
+      if (!cpWallet) {
+        cpWallet = await Wallet.create({ user: cpOwner._id, balance: 0, transactions: [] });
+      }
+
+      cpWallet.transactions.push({
+        type:      "Withdrawal",
+        amount:    -usd,
+        status:    "Pending",
+        reference,
+        note:      `Payout hold — ${user.email || user._id} withdrawal via platform gateway`,
+      });
+      cpWallet.balance = calcBalance(cpWallet.transactions);
+      await cpWallet.save();
+
+      transaction.childPanelDebited = true;
+      await transaction.save();
+
+      if (io) io.emit("wallet:update", { userId: cpOwner._id, balance: cpWallet.balance });
+    }
 
     // Manual gateway, or no provider configured — admin (platform or CP owner) pays out by hand
     if (gw.paymentMode === "manual" || !gw.providerProfile) {
@@ -192,6 +239,8 @@ export const initializeWithdrawal = async (req, res) => {
 // "Pending" to "Completed". Funds already left the wallet at request
 // time (calcBalance counted the Pending entry) — this doesn't move money,
 // it just marks the withdrawal as truly finished.
+// If this was a platform-connected CP gateway withdrawal, also finalizes
+// the matching CP-side debit (same reference, CP owner's wallet).
 const completeWithdrawal = async (reference, io) => {
   const transaction = await Transaction.findOne({ reference });
   if (!transaction || transaction.status !== "Pending") return;
@@ -209,11 +258,26 @@ const completeWithdrawal = async (reference, io) => {
     }
     if (io) io.emit("wallet:update", { userId: transaction.user, balance: wallet.balance });
   }
+
+  if (transaction.childPanelOwner && transaction.childPanelDebited) {
+    const cpWallet = await Wallet.findOne({ user: transaction.childPanelOwner });
+    if (cpWallet) {
+      const cpTx = cpWallet.transactions.find((t) => t.reference === reference);
+      if (cpTx && cpTx.status !== "Completed") {
+        cpTx.status = "Completed";
+        cpWallet.balance = calcBalance(cpWallet.transactions);
+        await cpWallet.save();
+      }
+      if (io) io.emit("wallet:update", { userId: transaction.childPanelOwner, balance: cpWallet.balance });
+    }
+  }
 };
 
 // ─── SHARED: REFUND WITHDRAWAL (reject / provider failure) ───────────
 // Flips the wallet ledger entry's status to "Failed" so calcBalance stops
 // counting it — that IS the refund, no compensating transaction needed.
+// If this was a platform-connected CP gateway withdrawal, also releases
+// the matching CP-side hold the same way.
 const refundWithdrawal = async (reference, finalStatus, io) => {
   const transaction = await Transaction.findOne({ reference });
   if (!transaction || transaction.status !== "Pending") return;
@@ -222,15 +286,28 @@ const refundWithdrawal = async (reference, finalStatus, io) => {
   await transaction.save();
 
   const wallet = await Wallet.findOne({ user: transaction.user });
-  if (!wallet) return;
+  if (wallet) {
+    const walletTx = wallet.transactions.find((t) => t.reference === reference);
+    if (walletTx) walletTx.status = finalStatus;
 
-  const walletTx = wallet.transactions.find((t) => t.reference === reference);
-  if (walletTx) walletTx.status = finalStatus;
+    wallet.balance = calcBalance(wallet.transactions);
+    await wallet.save();
 
-  wallet.balance = calcBalance(wallet.transactions);
-  await wallet.save();
+    if (io) io.emit("wallet:update", { userId: transaction.user, balance: wallet.balance });
+  }
 
-  if (io) io.emit("wallet:update", { userId: transaction.user, balance: wallet.balance });
+  if (transaction.childPanelOwner && transaction.childPanelDebited) {
+    const cpWallet = await Wallet.findOne({ user: transaction.childPanelOwner });
+    if (cpWallet) {
+      const cpTx = cpWallet.transactions.find((t) => t.reference === reference);
+      if (cpTx) cpTx.status = finalStatus;
+
+      cpWallet.balance = calcBalance(cpWallet.transactions);
+      await cpWallet.save();
+
+      if (io) io.emit("wallet:update", { userId: transaction.childPanelOwner, balance: cpWallet.balance });
+    }
+  }
 };
 
 // ─── ADMIN (PLATFORM): APPROVE MANUAL WITHDRAWAL ──────────────────────

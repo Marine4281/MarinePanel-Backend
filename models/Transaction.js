@@ -41,6 +41,18 @@ const transactionSchema = new mongoose.Schema(
       default: false,
       index: true,
     },
+
+    // When the gateway used is isPlatformConnected (CP is riding on the
+    // platform's own processor, not their own credentials):
+    // withdrawal request → we debit the CP owner's wallet too (they're the
+    // one whose earned balance is actually backing this payout).
+    // This flag tracks whether that debit was made, so complete/refund
+    // know whether there's a matching CP-side ledger entry to sync.
+    childPanelDebited: {
+      type: Boolean,
+      default: false,
+      index: true,
+    },
   },
   { timestamps: true }
 );

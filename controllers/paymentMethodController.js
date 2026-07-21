@@ -3,9 +3,15 @@ import PaymentMethod from "../models/PaymentMethod.js";
 import logAdminAction from "../utils/logAdminAction.js";
 
 // ====== User: Get Visible Methods ======
+// Public route — scoped to the visiting child panel's own payment
+// methods via req.childPanel (CP's own domain) or, on a reseller's
+// domain, via req.reseller.childPanelOwner (the CP that reseller
+// belongs to). Falls back to platform-wide methods on the main domain.
 export const getUserPaymentMethods = async (req, res) => {
   try {
-    const methods = await PaymentMethod.find({ isVisible: true }).sort({ createdAt: -1 });
+    const cpOwner = req.childPanel?._id || req.reseller?.childPanelOwner || null;
+
+    const methods = await PaymentMethod.find({ cpOwner, isVisible: true }).sort({ createdAt: -1 });
     res.status(200).json({ methods });
   } catch (error) {
     console.error("getUserPaymentMethods error:", error);
@@ -13,10 +19,10 @@ export const getUserPaymentMethods = async (req, res) => {
   }
 };
 
-// ====== Admin: Get All Methods ======
+// ====== Admin: Get All Methods (platform-wide only) ======
 export const getAllPaymentMethods = async (req, res) => {
   try {
-    const methods = await PaymentMethod.find().sort({ createdAt: -1 });
+    const methods = await PaymentMethod.find({ cpOwner: null }).sort({ createdAt: -1 });
 
     await logAdminAction(
       req.user._id,
@@ -31,7 +37,7 @@ export const getAllPaymentMethods = async (req, res) => {
   }
 };
 
-// ====== Admin: Add New Method ======
+// ====== Admin: Add New Method (platform-wide only) ======
 export const addPaymentMethod = async (req, res) => {
   try {
     const { name, type, minDeposit = 0, description, isVisible = true } = req.body;
@@ -45,6 +51,7 @@ export const addPaymentMethod = async (req, res) => {
     }
 
     const newMethod = new PaymentMethod({
+      cpOwner: null,
       name,
       type: type.toLowerCase(),
       minDeposit,
@@ -67,7 +74,7 @@ export const addPaymentMethod = async (req, res) => {
   }
 };
 
-// ====== Admin: Update Method ======
+// ====== Admin: Update Method (platform-wide only) ======
 export const updatePaymentMethod = async (req, res) => {
   try {
     const { id } = req.params;
@@ -77,8 +84,8 @@ export const updatePaymentMethod = async (req, res) => {
       return res.status(400).json({ message: "Name and type are required" });
     }
 
-    const updated = await PaymentMethod.findByIdAndUpdate(
-      id,
+    const updated = await PaymentMethod.findOneAndUpdate(
+      { _id: id, cpOwner: null },
       {
         name,
         type: type.toLowerCase(),
@@ -104,11 +111,11 @@ export const updatePaymentMethod = async (req, res) => {
   }
 };
 
-// ====== Admin: Toggle Visibility ======
+// ====== Admin: Toggle Visibility (platform-wide only) ======
 export const togglePaymentMethod = async (req, res) => {
   try {
     const { id } = req.params;
-    const method = await PaymentMethod.findById(id);
+    const method = await PaymentMethod.findOne({ _id: id, cpOwner: null });
 
     if (!method) return res.status(404).json({ message: "Payment method not found" });
 

@@ -82,8 +82,15 @@ export const register = async (req, res) => {
     childPanelOwner — if the request is coming from a child panel
     domain, we stamp the child panel owner's _id on this user so
     we always know which child panel they belong to.
+
+    On a RESELLER's own domain, req.childPanel is never set (a
+    reseller's domain is a more specific scope than the CP's), so we
+    fall back to that reseller's own childPanelOwner — the CP they
+    belong to. Without this, a reseller's sub-users would inherit
+    childPanelOwner: null and silently fall back to platform-wide
+    payment methods/gateways instead of their CP's own.
     */
-    const childPanelOwner = req.childPanel?._id || null;
+    const childPanelOwner = req.childPanel?._id || req.reseller?.childPanelOwner || null;
 
     const user = await User.create({
       email,

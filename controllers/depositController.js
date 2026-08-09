@@ -7,6 +7,7 @@ import { getGateway } from "../utils/gateways/index.js";
 import { decryptCredentials } from "../utils/encryptCredentials.js";
 import { calculateFee } from "../utils/calculateFee.js";
 import { calcBalance, safeGateway } from "../utils/gatewayHelpers.js";
+import { creditChildPanelOwner } from "../utils/creditChildPanelOwner.js";
 
 // ─── PUBLIC: GET QUOTE ───────────────────────────────────────────────
 export const getQuote = async (req, res) => {
@@ -283,33 +284,11 @@ const creditWallet = async (transaction, gw, io) => {
     console.error("Pending reseller activation resolve error:", err.message);
   }
 
-  // Credit child panel owner
-  if (transaction.childPanelOwner && !transaction.childPanelCredited) {
-    try {
-      const cpOwner = await User.findById(transaction.childPanelOwner);
-      if (cpOwner?.isChildPanel && cpOwner?.childPanelIsActive) {
-        let cpWallet = await Wallet.findOne({ user: cpOwner._id });
-        if (!cpWallet) {
-          cpWallet = await Wallet.create({ user: cpOwner._id, balance: 0, transactions: [] });
-        }
-        cpWallet.transactions.push({
-          type:      "CP Deposit Earning",
-          amount:    transaction.amount,
-          status:    "Completed",
-          reference: `CP-${transaction.reference}`,
-          note:      `User deposit via ${gw?.name || "gateway"}`,
-        });
-        cpWallet.balance = calcBalance(cpWallet.transactions);
-        await cpWallet.save();
-        transaction.childPanelCredited = true;
-        await transaction.save();
-        if (io) {
-          io.emit("wallet:update", { userId: cpOwner._id, balance: cpWallet.balance });
-        }
-      }
-    } catch (err) {
-      console.error("CP credit error:", err.message);
-    }
+  // Credit child panel owner (if this depositor is one of their end users)
+  try {
+    await creditChildPanelOwner(transaction, io, ` via ${gw?.name || "gateway"}`);
+  } catch (err) {
+    console.error("CP credit error:", err.message);
   }
 };
 

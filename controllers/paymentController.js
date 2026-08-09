@@ -9,6 +9,7 @@ import User from "../models/User.js";
 import Settings from "../models/Settings.js";
 import { tryReactivateChildPanel } from "../utils/childPanelBilling.js";
 import { onCpWalletCredited } from "../utils/onCpWalletCredited.js";
+import { creditChildPanelOwner } from "../utils/creditChildPanelOwner.js";
 
 // ===============================
 // CONFIG
@@ -225,7 +226,7 @@ export const handlePaystackWebhook = async (req, res) => {
 
       if (depositor && depositor.isChildPanel) {
         const { reactivated, newBalance, resumedResellers } = await onCpWalletCredited(depositor, io);
-        
+
         if (reactivated && io) {
           io.emit("wallet:update", {
             userId: depositor._id,
@@ -245,68 +246,28 @@ export const handlePaystackWebhook = async (req, res) => {
     // ======================= CASE B: DEPOSITOR IS A CP OWNER'S RESELLER =======================
     // Only runs if:
     //   1. This deposit came from a reseller/end-user of a child panel
-    //   2. That child panel uses platform payment mode
-    //   3. It hasn't been credited already (idempotency guard)
+    //   2. That child panel uses platform payment mode — CPs with their
+    //      own gateway ("own") already collect real funds directly, so
+    //      crediting them here again would be a double credit
+    //   3. It hasn't been credited already (idempotency guard, enforced
+    //      inside creditChildPanelOwner)
     //
     // Credits the CP owner even if their panel is currently suspended —
     // suspension shouldn't block them from receiving deposit earnings,
     // and receiving funds is exactly what lets them pay off the fee.
 
-    if (
-      transaction.childPanelOwner &&
-      !transaction.childPanelCredited
-    ) {
+    if (transaction.childPanelOwner && !transaction.childPanelCredited) {
       try {
-        const cpOwner = await User.findById(transaction.childPanelOwner);
+        const cpOwner = await User.findById(transaction.childPanelOwner).select(
+          "isChildPanel childPanelPaymentMode"
+        );
 
-        if (
-          cpOwner &&
-          cpOwner.isChildPanel &&
-          cpOwner.childPanelPaymentMode === "platform"
-        ) {
-          // Child panel owner's wallet
-          let cpWallet = await Wallet.findOne({ user: cpOwner._id });
-          if (!cpWallet) {
-            cpWallet = await Wallet.create({
-              user: cpOwner._id,
-              balance: 0,
-              transactions: [],
-            });
-          }
-
-          cpWallet.transactions.push({
-            type: "CP Deposit Earning",
-            amount: transaction.amount,
-            status: "Completed",
-            reference: `CP-${transaction.reference}`,
-            note: `User deposit via platform gateway (ref: ${transaction.reference})`,
-            createdAt: new Date(),
-          });
-
-          cpWallet.balance = calculateBalance(cpWallet.transactions);
-          await cpWallet.save();
-          await User.findByIdAndUpdate(cpOwner._id, { balance: cpWallet.balance });
-
-          // Mark as credited — prevents double credit on webhook retry
-          transaction.childPanelCredited = true;
-          await transaction.save();
-
-          // Check whether this credit reactivates a suspended panel
-          // and/or resumes any resellers on hold for the platform fee.
-          const { reactivated, newBalance, resumedResellers } = await onCpWalletCredited(cpOwner, io);
-          
-          // Emit to child panel owner
-          if (io) {
-            io.emit("wallet:update", {
-              userId: cpOwner._id,
-              balance: newBalance,
-            });
-            if (reactivated) {
-              io.to(String(cpOwner._id)).emit("childPanelReactivated", {
-                message: "Your child panel subscription has been reactivated.",
-              });
-            }
-          }
+        if (cpOwner?.isChildPanel && cpOwner.childPanelPaymentMode === "platform") {
+          await creditChildPanelOwner(
+            transaction,
+            io,
+            ` via platform gateway (ref: ${transaction.reference})`
+          );
         }
       } catch (cpErr) {
         // Log but don't fail the webhook response —

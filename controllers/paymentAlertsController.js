@@ -3,13 +3,16 @@
 
 import Transaction from "../models/Transaction.js";
 
-// ─── MAIN ADMIN: count of pending platform-level deposit/withdraw requests ───
+// ─── MAIN ADMIN: count of pending requests admin is responsible for ───
+// Includes direct platform users AND platform-connected CP gateway
+// transactions (approverScope "admin" either way) — not CP-owned-gateway
+// transactions, which are the CP owner's to review.
 export const adminPaymentsUnreadCount = async (req, res) => {
   try {
     const count = await Transaction.countDocuments({
-      status: "Pending",
-      type: { $in: ["Deposit", "Withdrawal"] },
-      childPanelOwner: null,
+      status:        "Pending",
+      type:          { $in: ["Deposit", "Withdrawal"] },
+      approverScope: "admin",
     });
     res.json({ count });
   } catch (err) {
@@ -18,13 +21,14 @@ export const adminPaymentsUnreadCount = async (req, res) => {
   }
 };
 
-// ─── CP OWNER: count of pending deposit/withdraw requests for their own end users ───
+// ─── CP OWNER: count of pending requests for their own end users, on their own gateways ───
 export const cpPaymentsUnreadCount = async (req, res) => {
   try {
     const count = await Transaction.countDocuments({
-      status: "Pending",
-      type: { $in: ["Deposit", "Withdrawal"] },
+      status:          "Pending",
+      type:            { $in: ["Deposit", "Withdrawal"] },
       childPanelOwner: req.user._id,
+      approverScope:   "cp",
     });
     res.json({ count });
   } catch (err) {

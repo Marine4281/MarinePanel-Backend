@@ -9,6 +9,7 @@ import { decryptCredentials } from "../utils/encryptCredentials.js";
 import { calculateFee } from "../utils/calculateFee.js";
 import { calcBalance, safeGateway, getAvailableBalance } from "../utils/gatewayHelpers.js";
 import { resolveApproverScope } from "../utils/approverScope.js";
+import { resolveLiveGateway, resolveLiveGateways } from "../utils/resolveLiveGateway.js";
 
 // ─── USER: GET WITHDRAW GATEWAYS ─────────────────────────────────────
 export const getUserWithdrawGateways = async (req, res) => {
@@ -23,6 +24,8 @@ export const getUserWithdrawGateways = async (req, res) => {
       adminHidden:      false,
       supportsWithdraw: true,
     }).populate("providerProfile", "providerType name");
+
+    await resolveLiveGateways(gateways);
 
     res.json({ gateways: gateways.map(safeGateway) });
   } catch (err) {
@@ -86,8 +89,11 @@ export const getWithdrawQuote = async (req, res) => {
 // PLATFORM-CONNECTED CP GATEWAYS (gw.isPlatformConnected === true):
 // The CP is riding on the platform's own processor here, not their own
 // credentials — so the platform is the one actually paying this end user
-// out. That payout is backed by whatever the CP has earned into their
-// wallet (credited on platform-mode deposits), so:
+// out. gw.paymentMode/providerProfile/etc. are resolved LIVE from the
+// platform gateway (resolveLiveGateway, right after fetch) since a
+// connected gateway doc no longer stores its own copy of those. That
+// payout is backed by whatever the CP has earned into their wallet
+// (credited on platform-mode deposits), so:
 //   1. The request is blocked unless the CP's wallet can cover it.
 //   2. The CP's wallet is debited in lockstep with the end user's wallet
 //      (same "Pending = already deducted" pattern, same reference).
@@ -108,6 +114,8 @@ export const initializeWithdrawal = async (req, res) => {
     if (!gw || !gw.isActive || !gw.isVisible || gw.adminHidden || !gw.supportsWithdraw) {
       return res.status(404).json({ message: "Gateway not found" });
     }
+
+    await resolveLiveGateway(gw);
 
     // CP end users can only withdraw via a gateway their own CP owner set up.
     const expectedOwner = (user.childPanelOwner || null)?.toString() || null;
@@ -457,6 +465,8 @@ export const handlePayoutWebhook = async (req, res) => {
     const { provider, token } = req.params;
     const gw = await PaymentGateway.findOne({ webhookToken: token }).populate("providerProfile");
     if (!gw) return res.status(404).send("Gateway not found");
+
+    await resolveLiveGateway(gw);
 
     const credentials = decryptCredentials(gw.providerProfile?.credentials || {});
 

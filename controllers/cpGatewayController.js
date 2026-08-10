@@ -3,6 +3,7 @@ import crypto from "crypto";
 import PaymentGateway  from "../models/PaymentGateway.js";
 import PaymentProvider from "../models/PaymentProvider.js";
 import { safeGateway } from "../utils/gatewayHelpers.js";
+import { resolveLiveGateway, resolveLiveGateways } from "../utils/resolveLiveGateway.js";
 
 // ─── CP OWNER: GET GATEWAYS ──────────────────────────────────────────
 // Returns platform gateways where visibleToCp=true (read-only, can connect)
@@ -16,6 +17,11 @@ export const getCpGateways = async (req, res) => {
         .populate("providerProfile", "providerType name"),
     ]);
 
+    // Platform-connected gateways in ownGateways carry stale/empty
+    // money-routing fields until resolved live from their platform
+    // original — this is what the CP owner's own dashboard shows.
+    await resolveLiveGateways(ownGateways);
+
     res.json({
       platformGateways: platformGateways.map(safeGateway),
       ownGateways:      ownGateways.map(safeGateway),
@@ -26,6 +32,13 @@ export const getCpGateways = async (req, res) => {
 };
 
 // ─── CP OWNER: CONNECT PLATFORM GATEWAY ─────────────────────────────
+// Only stores what the CP actually owns: identity/display/fee fields.
+// Money-routing/instruction fields (paymentMode, providerProfile,
+// binanceId, binanceName, qrImageUrl, manualType, manualConfig,
+// paymentInstructions) are deliberately left unset here — they're
+// resolved live from the platform gateway via resolveLiveGateway()
+// everywhere this doc is read or used, so they can never go stale when
+// admin later edits the platform gateway.
 export const connectPlatformGateway = async (req, res) => {
   try {
     const { platformGatewayId } = req.body;
@@ -35,7 +48,7 @@ export const connectPlatformGateway = async (req, res) => {
       owner:       null,
       visibleToCp: true,
       adminHidden: false,
-    }).populate("providerProfile");
+    });
 
     if (!platform) {
       return res.status(404).json({ message: "Platform gateway not found" });
@@ -57,14 +70,6 @@ export const connectPlatformGateway = async (req, res) => {
       platformGatewayRef:       platformGatewayId,
       name:                     platform.name,
       description:              platform.description,
-      paymentMode:              platform.paymentMode,
-      providerProfile:          platform.providerProfile?._id || null,
-      binanceId:                platform.binanceId,
-      binanceName:              platform.binanceName,
-      qrImageUrl:               platform.qrImageUrl,
-      manualType:               platform.manualType,
-      manualConfig:             platform.manualConfig,
-      paymentInstructions:      platform.paymentInstructions,
       processingCurrency:       platform.processingCurrency,
       processingCurrencySymbol: platform.processingCurrencySymbol,
       exchangeRate:             platform.exchangeRate,
@@ -84,13 +89,15 @@ export const connectPlatformGateway = async (req, res) => {
       webhookToken,
     });
 
+    await resolveLiveGateway(gw);
+
     res.status(201).json({ message: "Gateway connected", gateway: safeGateway(gw) });
   } catch (err) {
     console.error("connectPlatformGateway error:", err);
     res.status(500).json({ message: "Failed to connect gateway" });
   }
 };
-    
+
 
 // ─── CP OWNER: DISCONNECT PLATFORM GATEWAY ──────────────────────────
 // Removes the CP owner's local copy of a connected platform gateway.
@@ -186,6 +193,19 @@ export const createCpGateway = async (req, res) => {
   }
 };
 
+// ─── CP OWNER: UPDATE OWN GATEWAY ────────────────────────────────────
+// NOTE: this is scoped to { owner: req.user._id }, which matches BOTH the
+// CP's own gateways AND their platform-connected ones (a connected
+// gateway is still owned by the CP, just with platformGatewayRef set).
+// If a CP calls this on a connected gateway, any money-routing fields
+// they set here (paymentMode, manualType, manualConfig, binanceId,
+// binanceName, qrImageUrl, paymentInstructions) will be silently
+// overwritten on the next read anyway, since resolveLiveGateway() always
+// pulls those live from the platform original for connected gateways —
+// so it's harmless, just a no-op for that subset of fields on connected
+// gateways. Blocking those fields outright for connected gateways (403,
+// or filtering `allowed` down) is a reasonable follow-up if you want the
+// API to say so explicitly instead of silently ignoring it.
 export const updateCpGateway = async (req, res) => {
   try {
     const gw = await PaymentGateway.findOne({ _id: req.params.id, owner: req.user._id });
@@ -212,6 +232,8 @@ export const updateCpGateway = async (req, res) => {
     });
 
     await gw.save();
+
+    if (gw.isPlatformConnected) await resolveLiveGateway(gw);
 
     res.json({ message: "Gateway updated", gateway: safeGateway(gw) });
   } catch (err) {

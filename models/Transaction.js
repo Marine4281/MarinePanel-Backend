@@ -53,6 +53,22 @@ const transactionSchema = new mongoose.Schema(
       default: false,
       index: true,
     },
+
+    // Who is responsible for reviewing this transaction if it's Pending?
+    // "admin"  → platform-connected CP gateway (riding on platform's own
+    //            processor/credentials — platform funds are exposed) or
+    //            a direct platform user (no CP at all)
+    // "cp"     → CP's own gateway/manual instructions — only the CP's
+    //            own funds/reputation are on the line
+    // Resolved once at creation from gw.isPlatformConnected; irrelevant
+    // for automatic-adapter transactions, which never go Pending long
+    // enough to need review.
+    approverScope: {
+      type: String,
+      enum: ["admin", "cp"],
+      default: "admin",
+      index: true,
+    },
   },
   { timestamps: true }
 );

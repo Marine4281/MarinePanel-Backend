@@ -60,6 +60,10 @@ export const connectPlatformGateway = async (req, res) => {
       paymentMode:              platform.paymentMode,
       providerProfile:          platform.providerProfile?._id || null,
       binanceId:                platform.binanceId,
+      binanceName:              platform.binanceName,
+      qrImageUrl:               platform.qrImageUrl,
+      manualType:               platform.manualType,
+      manualConfig:             platform.manualConfig,
       paymentInstructions:      platform.paymentInstructions,
       processingCurrency:       platform.processingCurrency,
       processingCurrencySymbol: platform.processingCurrencySymbol,
@@ -86,6 +90,7 @@ export const connectPlatformGateway = async (req, res) => {
     res.status(500).json({ message: "Failed to connect gateway" });
   }
 };
+    
 
 // ─── CP OWNER: DISCONNECT PLATFORM GATEWAY ──────────────────────────
 // Removes the CP owner's local copy of a connected platform gateway.

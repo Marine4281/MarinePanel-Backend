@@ -9,6 +9,7 @@ import { calculateFee } from "../utils/calculateFee.js";
 import { calcBalance, safeGateway } from "../utils/gatewayHelpers.js";
 import { creditChildPanelOwner } from "../utils/creditChildPanelOwner.js";
 import { resolveApproverScope } from "../utils/approverScope.js";
+import { resolveLiveGateway, resolveLiveGateways } from "../utils/resolveLiveGateway.js";
 
 // ─── PUBLIC: GET QUOTE ───────────────────────────────────────────────
 export const getQuote = async (req, res) => {
@@ -66,6 +67,11 @@ export const getUserGateways = async (req, res) => {
       adminHidden: false,
     }).populate("providerProfile", "providerType name");
 
+    // Platform-connected gateways need their money-routing/instruction
+    // fields resolved live from the platform original before this ever
+    // reaches an end user.
+    await resolveLiveGateways(gateways);
+
     res.json({ gateways: gateways.map(safeGateway) });
   } catch (err) {
     console.error("getUserGateways error:", err);
@@ -89,6 +95,12 @@ export const initializePayment = async (req, res) => {
     if (!gw || !gw.isActive || !gw.isVisible || gw.adminHidden) {
       return res.status(404).json({ message: "Gateway not found" });
     }
+
+    // Resolve live money-routing fields BEFORE anything below reads
+    // gw.paymentMode / gw.providerProfile / gw.manualType / etc. — a
+    // platform-connected gateway's own stored copy of these is not
+    // authoritative.
+    await resolveLiveGateway(gw);
 
     // CP end users can only pay via a gateway their own CP owner set up
     // (or a platform gateway, when the user isn't under any CP owner).
@@ -229,6 +241,8 @@ export const handleWebhook = async (req, res) => {
       .populate("providerProfile");
     if (!gw) return res.status(404).send("Gateway not found");
 
+    await resolveLiveGateway(gw);
+
     const adapter = getGateway(provider);
     if (!adapter) return res.status(400).send("Unsupported provider");
 
@@ -315,6 +329,7 @@ export const adminApproveDeposit = async (req, res) => {
     }
 
     const gw = await PaymentGateway.findById(transaction.gateway);
+    if (gw) await resolveLiveGateway(gw);
     await creditWallet(transaction, gw, req.app.get("io"));
 
     res.json({ message: "Deposit approved and wallet credited" });
@@ -404,6 +419,7 @@ export const cpApproveDeposit = async (req, res) => {
     }
 
     const gw = await PaymentGateway.findById(transaction.gateway);
+    if (gw) await resolveLiveGateway(gw);
     await creditWallet(transaction, gw, req.app.get("io"));
 
     res.json({ message: "Deposit approved and wallet credited" });

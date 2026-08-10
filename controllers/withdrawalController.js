@@ -8,6 +8,7 @@ import { getGateway } from "../utils/gateways/index.js";
 import { decryptCredentials } from "../utils/encryptCredentials.js";
 import { calculateFee } from "../utils/calculateFee.js";
 import { calcBalance, safeGateway, getAvailableBalance } from "../utils/gatewayHelpers.js";
+import { resolveApproverScope } from "../utils/approverScope.js";
 
 // ─── USER: GET WITHDRAW GATEWAYS ─────────────────────────────────────
 export const getUserWithdrawGateways = async (req, res) => {
@@ -74,8 +75,13 @@ export const getWithdrawQuote = async (req, res) => {
 // review) also stays "Pending" until:
 //   • automatic gateway confirms payout      -> completeWithdrawal (Completed)
 //   • automatic gateway fails / webhook fails -> refundWithdrawal("Failed")
-//   • manual gateway, admin approves          -> completeWithdrawal (Completed)
-//   • manual gateway, admin rejects           -> refundWithdrawal("Failed")
+//   • manual gateway, reviewer approves       -> completeWithdrawal (Completed)
+//   • manual gateway, reviewer rejects        -> refundWithdrawal("Failed")
+//
+// Who the "reviewer" is (platform admin vs CP owner) is resolved once at
+// creation via resolveApproverScope() and stored as approverScope — see
+// PLATFORM-CONNECTED CP GATEWAYS note below for why it can't just be
+// "any CP-owned withdrawal goes to the CP."
 //
 // PLATFORM-CONNECTED CP GATEWAYS (gw.isPlatformConnected === true):
 // The CP is riding on the platform's own processor here, not their own
@@ -86,6 +92,9 @@ export const getWithdrawQuote = async (req, res) => {
 //   2. The CP's wallet is debited in lockstep with the end user's wallet
 //      (same "Pending = already deducted" pattern, same reference).
 //   3. complete/refund below settle both sides together.
+//   4. Because platform funds/credentials are exposed, only the platform
+//      ADMIN may approve/reject it — not the CP owner (approverScope
+//      resolves to "admin" here even though childPanelOwner is set).
 export const initializeWithdrawal = async (req, res) => {
   try {
     const { gatewayId, usdAmount, userPayoutData = {} } = req.body;
@@ -136,6 +145,10 @@ export const initializeWithdrawal = async (req, res) => {
       }
     }
 
+    // Who reviews this if it stays Pending — resolved from the gateway
+    // actually used, same rule as deposits.
+    const approverScope = resolveApproverScope(user.childPanelOwner || null, gw);
+
     const reference = `WD-${Date.now()}-${user._id}`;
     const localBase = Math.round(usd * gw.exchangeRate * 100) / 100;
     const { fee }    = calculateFee(localBase, gw.withdrawalFeeType, gw.withdrawalFeePercentage, gw.withdrawalFeeFixed);
@@ -154,6 +167,7 @@ export const initializeWithdrawal = async (req, res) => {
       provider:        gw.paymentMode === "manual" ? "manual" : (gw.providerProfile?.providerType || "manual"),
       childPanelOwner: user.childPanelOwner || null,
       childPanelDebited: false,
+      approverScope,
       details:         userPayoutData,
     });
 
@@ -196,14 +210,14 @@ export const initializeWithdrawal = async (req, res) => {
       if (io) io.emit("wallet:update", { userId: cpOwner._id, balance: cpWallet.balance });
     }
 
-    // Manual gateway, or no provider configured — admin (platform or CP owner) pays out by hand
+    // Manual gateway, or no provider configured — reviewer pays out by hand
     if (gw.paymentMode === "manual" || !gw.providerProfile) {
-      return res.json({ message: "Withdrawal requested. Funds deducted, pending admin review." });
+      return res.json({ message: "Withdrawal requested. Funds deducted, pending review." });
     }
 
     const adapter = getGateway(gw.providerProfile.providerType);
     if (!adapter || !adapter.payout) {
-      return res.json({ message: "Withdrawal requested. Funds deducted, pending admin review." });
+      return res.json({ message: "Withdrawal requested. Funds deducted, pending review." });
     }
 
     // Automatic gateway — attempt payout now
@@ -311,17 +325,19 @@ const refundWithdrawal = async (reference, finalStatus, io) => {
 };
 
 // ─── ADMIN (PLATFORM): APPROVE MANUAL WITHDRAWAL ──────────────────────
+// Covers direct platform users AND platform-connected CP gateway
+// withdrawals (approverScope "admin" either way) — not CP-owned-gateway
+// withdrawals, which belong to the CP owner to review.
 export const adminApproveWithdrawal = async (req, res) => {
   try {
-    const transaction = await Transaction.findById(req.params.id);
-    if (!transaction || transaction.type !== "Withdrawal") {
-      return res.status(404).json({ message: "Withdrawal not found" });
-    }
+    const transaction = await Transaction.findOne({
+      _id:           req.params.id,
+      type:          "Withdrawal",
+      approverScope: "admin",
+    });
+    if (!transaction) return res.status(404).json({ message: "Withdrawal not found" });
     if (transaction.status !== "Pending") {
       return res.status(400).json({ message: "Withdrawal is not pending" });
-    }
-    if (transaction.childPanelOwner) {
-      return res.status(403).json({ message: "This withdrawal belongs to a child panel — it must be reviewed by that panel's owner" });
     }
 
     await completeWithdrawal(transaction.reference, req.app.get("io"));
@@ -335,15 +351,14 @@ export const adminApproveWithdrawal = async (req, res) => {
 // ─── ADMIN (PLATFORM): REJECT WITHDRAWAL (refunds held funds) ─────────
 export const adminRejectWithdrawal = async (req, res) => {
   try {
-    const transaction = await Transaction.findById(req.params.id);
-    if (!transaction || transaction.type !== "Withdrawal") {
-      return res.status(404).json({ message: "Withdrawal not found" });
-    }
+    const transaction = await Transaction.findOne({
+      _id:           req.params.id,
+      type:          "Withdrawal",
+      approverScope: "admin",
+    });
+    if (!transaction) return res.status(404).json({ message: "Withdrawal not found" });
     if (transaction.status !== "Pending") {
       return res.status(400).json({ message: "Withdrawal is not pending" });
-    }
-    if (transaction.childPanelOwner) {
-      return res.status(403).json({ message: "This withdrawal belongs to a child panel — it must be reviewed by that panel's owner" });
     }
 
     await refundWithdrawal(transaction.reference, "Failed", req.app.get("io"));
@@ -354,12 +369,15 @@ export const adminRejectWithdrawal = async (req, res) => {
 };
 
 // ─── ADMIN (PLATFORM): GET PENDING WITHDRAWALS ────────────────────────
+// Includes both direct platform users and platform-connected CP gateway
+// withdrawals — that's the whole point of scoping by approverScope
+// instead of childPanelOwner.
 export const adminGetPendingWithdrawals = async (req, res) => {
   try {
     const pending = await Transaction.find({
-      status:          "Pending",
-      type:            "Withdrawal",
-      childPanelOwner: null,
+      status:        "Pending",
+      type:          "Withdrawal",
+      approverScope: "admin",
     })
       .populate("user", "email")
       .populate("gateway", "name paymentMode")
@@ -371,13 +389,14 @@ export const adminGetPendingWithdrawals = async (req, res) => {
   }
 };
 
-// ─── CP OWNER: GET PENDING WITHDRAWALS (their own end users only) ────
+// ─── CP OWNER: GET PENDING WITHDRAWALS (their own end users, own gateways only) ────
 export const cpGetPendingWithdrawals = async (req, res) => {
   try {
     const pending = await Transaction.find({
       status:          "Pending",
       type:            "Withdrawal",
       childPanelOwner: req.user._id,
+      approverScope:   "cp",
     })
       .populate("user", "email")
       .populate("gateway", "name paymentMode")
@@ -389,13 +408,14 @@ export const cpGetPendingWithdrawals = async (req, res) => {
   }
 };
 
-// ─── CP OWNER: APPROVE WITHDRAWAL (their own end users only) ─────────
+// ─── CP OWNER: APPROVE WITHDRAWAL (their own end users, own gateways only) ─────────
 export const cpApproveWithdrawal = async (req, res) => {
   try {
     const transaction = await Transaction.findOne({
       _id:             req.params.id,
       type:            "Withdrawal",
       childPanelOwner: req.user._id,
+      approverScope:   "cp",
     });
     if (!transaction) return res.status(404).json({ message: "Withdrawal not found" });
     if (transaction.status !== "Pending") {
@@ -410,13 +430,14 @@ export const cpApproveWithdrawal = async (req, res) => {
   }
 };
 
-// ─── CP OWNER: REJECT WITHDRAWAL (their own end users only) ──────────
+// ─── CP OWNER: REJECT WITHDRAWAL (their own end users, own gateways only) ──────────
 export const cpRejectWithdrawal = async (req, res) => {
   try {
     const transaction = await Transaction.findOne({
       _id:             req.params.id,
       type:            "Withdrawal",
       childPanelOwner: req.user._id,
+      approverScope:   "cp",
     });
     if (!transaction) return res.status(404).json({ message: "Withdrawal not found" });
     if (transaction.status !== "Pending") {

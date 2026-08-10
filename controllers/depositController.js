@@ -8,6 +8,7 @@ import { decryptCredentials } from "../utils/encryptCredentials.js";
 import { calculateFee } from "../utils/calculateFee.js";
 import { calcBalance, safeGateway } from "../utils/gatewayHelpers.js";
 import { creditChildPanelOwner } from "../utils/creditChildPanelOwner.js";
+import { resolveApproverScope } from "../utils/approverScope.js";
 
 // ─── PUBLIC: GET QUOTE ───────────────────────────────────────────────
 export const getQuote = async (req, res) => {
@@ -118,6 +119,11 @@ export const initializePayment = async (req, res) => {
       }
     }
 
+    // Who reviews this transaction if it goes Pending — resolved once
+    // here from the gateway actually used (platform-connected vs CP's
+    // own), so admin/CP dashboards can just filter on it later.
+    const approverScope = resolveApproverScope(childPanelOwner, gw);
+
     // Binance manual — save pending, admin/CP owner verifies
     if (gw.paymentMode === "binance") {
       const reference = `BNB-${Date.now()}-${user._id}`;
@@ -134,6 +140,7 @@ export const initializePayment = async (req, res) => {
         provider:       "binance",
         childPanelOwner,
         childPanelCredited: false,
+        approverScope,
         details:        {
           binanceOrderId: userPaymentData.binanceOrderId || "",
           amountSent:     userPaymentData.amountSent     || "",
@@ -158,6 +165,7 @@ export const initializePayment = async (req, res) => {
         provider:      "manual",
         childPanelOwner,
         childPanelCredited: false,
+        approverScope,
         details:       userPaymentData,
       });
       return res.json({ message: "Deposit submitted. Pending verification." });
@@ -192,6 +200,7 @@ export const initializePayment = async (req, res) => {
       provider:           gw.providerProfile.providerType,
       childPanelOwner,
       childPanelCredited: false,
+      approverScope, // irrelevant here — automatic adapter, webhook auto-completes
       details:            userPaymentData,
     });
 
@@ -284,20 +293,21 @@ const creditWallet = async (transaction, gw, io) => {
     console.error("Pending reseller activation resolve error:", err.message);
   }
 
-  // Credit child panel owner (if this depositor is one of their end users)
+  // Credit child panel owner — only actually credits when gw.isPlatformConnected
+  // is true; own/manual CP gateways are a no-op inside the helper.
   try {
-    await creditChildPanelOwner(transaction, io, ` via ${gw?.name || "gateway"}`);
+    await creditChildPanelOwner(transaction, gw, io, ` via ${gw?.name || "gateway"}`);
   } catch (err) {
     console.error("CP credit error:", err.message);
   }
 };
 
-// ─── ADMIN: APPROVE MANUAL/BINANCE DEPOSIT (platform-level only) ─────
+// ─── ADMIN: APPROVE MANUAL/BINANCE DEPOSIT (platform-level + platform-connected CP gateways) ─────
 export const adminApproveDeposit = async (req, res) => {
   try {
     const transaction = await Transaction.findOne({
-      _id:             req.params.id,
-      childPanelOwner: null,
+      _id:           req.params.id,
+      approverScope: "admin",
     });
     if (!transaction) return res.status(404).json({ message: "Transaction not found" });
     if (transaction.status !== "Pending") {
@@ -314,12 +324,12 @@ export const adminApproveDeposit = async (req, res) => {
   }
 };
 
-// ─── ADMIN: REJECT MANUAL/BINANCE DEPOSIT (platform-level only) ──────
+// ─── ADMIN: REJECT MANUAL/BINANCE DEPOSIT (platform-level + platform-connected CP gateways) ──────
 export const adminRejectDeposit = async (req, res) => {
   try {
     const transaction = await Transaction.findOne({
-      _id:             req.params.id,
-      childPanelOwner: null,
+      _id:           req.params.id,
+      approverScope: "admin",
     });
     if (!transaction) return res.status(404).json({ message: "Transaction not found" });
     if (transaction.status !== "Pending") {
@@ -340,14 +350,14 @@ export const adminRejectDeposit = async (req, res) => {
   }
 };
 
-// ─── ADMIN: GET PENDING MANUAL DEPOSITS (platform-level only) ────────
+// ─── ADMIN: GET PENDING MANUAL DEPOSITS (platform-level + platform-connected CP gateways) ────
 export const adminGetPendingDeposits = async (req, res) => {
   try {
     const pending = await Transaction.find({
-      status:          "Pending",
-      type:            "Deposit",
-      provider:        { $in: ["binance", "manual"] },
-      childPanelOwner: null,
+      status:        "Pending",
+      type:          "Deposit",
+      provider:      { $in: ["binance", "manual"] },
+      approverScope: "admin",
     })
       .populate("user", "email")
       .populate("gateway", "name paymentMode")
@@ -359,7 +369,7 @@ export const adminGetPendingDeposits = async (req, res) => {
   }
 };
 
-// ─── CP OWNER: GET PENDING DEPOSITS (their own end users only) ───────
+// ─── CP OWNER: GET PENDING DEPOSITS (their own end users, own gateways only) ───────
 export const cpGetPendingDeposits = async (req, res) => {
   try {
     const pending = await Transaction.find({
@@ -367,6 +377,7 @@ export const cpGetPendingDeposits = async (req, res) => {
       type:            "Deposit",
       provider:        { $in: ["binance", "manual"] },
       childPanelOwner: req.user._id,
+      approverScope:   "cp",
     })
       .populate("user", "email")
       .populate("gateway", "name paymentMode")
@@ -378,13 +389,14 @@ export const cpGetPendingDeposits = async (req, res) => {
   }
 };
 
-// ─── CP OWNER: APPROVE DEPOSIT (their own end users only) ────────────
+// ─── CP OWNER: APPROVE DEPOSIT (their own end users, own gateways only) ────────────
 export const cpApproveDeposit = async (req, res) => {
   try {
     const transaction = await Transaction.findOne({
       _id:             req.params.id,
       type:            "Deposit",
       childPanelOwner: req.user._id,
+      approverScope:   "cp",
     });
     if (!transaction) return res.status(404).json({ message: "Transaction not found" });
     if (transaction.status !== "Pending") {
@@ -401,13 +413,14 @@ export const cpApproveDeposit = async (req, res) => {
   }
 };
 
-// ─── CP OWNER: REJECT DEPOSIT (their own end users only) ─────────────
+// ─── CP OWNER: REJECT DEPOSIT (their own end users, own gateways only) ─────────────
 export const cpRejectDeposit = async (req, res) => {
   try {
     const transaction = await Transaction.findOne({
       _id:             req.params.id,
       type:            "Deposit",
       childPanelOwner: req.user._id,
+      approverScope:   "cp",
     });
     if (!transaction) return res.status(404).json({ message: "Transaction not found" });
     if (transaction.status !== "Pending") {

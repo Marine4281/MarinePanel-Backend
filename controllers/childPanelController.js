@@ -765,3 +765,148 @@ export const getCPPlatformResellerFee = async (req, res) => {
     res.status(500).json({ message: "Failed to fetch platform fee" });
   }
 };
+
+/* ================================================
+   REVENUE TREND (scoped to this child panel owner)
+   GET /child-panel/revenue-trend
+   range: "today" | "week" | "month" | "year" (default "week")
+================================================ */
+
+export const getChildPanelRevenueTrend = async (req, res) => {
+  try {
+    const ownerId = req.user._id;
+    const { range = "week" } = req.query;
+    const now = new Date();
+
+    let start, end, bucketCount, getBucketIndex, getLabel;
+
+    if (range === "today") {
+      start = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      end = new Date(start.getTime() + 24 * 60 * 60 * 1000);
+      bucketCount = 24;
+      getBucketIndex = (d) => d.getHours();
+      getLabel = (i) => {
+        const period = i < 12 ? "AM" : "PM";
+        const hour12 = i % 12 === 0 ? 12 : i % 12;
+        return `${hour12} ${period}`;
+      };
+    } else if (range === "month") {
+      start = new Date(now.getFullYear(), now.getMonth(), 1);
+      end = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+      bucketCount = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+      getBucketIndex = (d) => d.getDate() - 1;
+      getLabel = (i) =>
+        new Date(now.getFullYear(), now.getMonth(), i + 1).toLocaleDateString("en-US", {
+          day: "numeric",
+          month: "short",
+        });
+    } else if (range === "year") {
+      start = new Date(now.getFullYear(), 0, 1);
+      end = new Date(now.getFullYear() + 1, 0, 1);
+      bucketCount = 12;
+      getBucketIndex = (d) => d.getMonth();
+      getLabel = (i) => new Date(2000, i, 1).toLocaleDateString("en-US", { month: "short" });
+    } else {
+      // "week" — rolling last 7 days ending today
+      start = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 6);
+      end = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
+      bucketCount = 7;
+      getBucketIndex = (d) => {
+        const dayStart = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+        return Math.round((dayStart - start) / (24 * 60 * 60 * 1000));
+      };
+      getLabel = (i) =>
+        new Date(start.getTime() + i * 24 * 60 * 60 * 1000).toLocaleDateString("en-US", {
+          weekday: "short",
+        });
+    }
+
+    const orders = await Order.find({
+      childPanelOwner: ownerId,
+      status: "completed",
+      createdAt: { $gte: start, $lt: end },
+    })
+      .select("charge createdAt")
+      .lean();
+
+    const buckets = new Array(bucketCount).fill(0);
+
+    orders.forEach((o) => {
+      const idx = getBucketIndex(new Date(o.createdAt));
+      if (idx >= 0 && idx < bucketCount) {
+        buckets[idx] += Number(o.charge || 0);
+      }
+    });
+
+    const labels = Array.from({ length: bucketCount }, (_, i) => getLabel(i));
+    const data = buckets.map((v) => Number(v.toFixed(2)));
+
+    res.json({ range, labels, data });
+  } catch (error) {
+    console.error("CHILD PANEL REVENUE TREND ERROR:", error);
+    res.status(500).json({ message: "Failed to fetch revenue trend" });
+  }
+};
+
+/* ================================================
+   TOP PERFORMERS (scoped to this child panel owner)
+   GET /child-panel/top-performers
+   Returns { platforms, categories, services }, each an array of
+   { name, orders, revenue }, sorted by revenue desc, top `limit` (default 5).
+================================================ */
+
+export const getChildPanelTopPerformers = async (req, res) => {
+  try {
+    const ownerId = req.user._id;
+    const { dateRange = "30days", limit = 5 } = req.query;
+    const now = new Date();
+
+    let dateFilter = {};
+    if (dateRange === "today") {
+      dateFilter.createdAt = {
+        $gte: new Date(now.getFullYear(), now.getMonth(), now.getDate()),
+        $lt: new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1),
+      };
+    } else if (dateRange === "7days") {
+      dateFilter.createdAt = { $gte: new Date(now - 7 * 24 * 60 * 60 * 1000) };
+    } else if (dateRange === "30days") {
+      dateFilter.createdAt = { $gte: new Date(now - 30 * 24 * 60 * 60 * 1000) };
+    } else if (dateRange === "year") {
+      dateFilter.createdAt = {
+        $gte: new Date(now.getFullYear(), 0, 1),
+        $lt: new Date(now.getFullYear() + 1, 0, 1),
+      };
+    }
+
+    const orders = await Order.find({
+      childPanelOwner: ownerId,
+      status: "completed",
+      ...dateFilter,
+    })
+      .select("charge platform category service")
+      .lean();
+
+    const rank = (keyFn) => {
+      const groups = {};
+      orders.forEach((o) => {
+        const key = keyFn(o) || "Unknown";
+        if (!groups[key]) groups[key] = { name: key, orders: 0, revenue: 0 };
+        groups[key].orders += 1;
+        groups[key].revenue += Number(o.charge || 0);
+      });
+      return Object.values(groups)
+        .map((g) => ({ ...g, revenue: Number(g.revenue.toFixed(2)) }))
+        .sort((a, b) => b.revenue - a.revenue)
+        .slice(0, Number(limit));
+    };
+
+    res.json({
+      platforms: rank((o) => o.platform),
+      categories: rank((o) => o.category),
+      services: rank((o) => o.service),
+    });
+  } catch (error) {
+    console.error("CHILD PANEL TOP PERFORMERS ERROR:", error);
+    res.status(500).json({ message: "Failed to fetch top performers" });
+  }
+};

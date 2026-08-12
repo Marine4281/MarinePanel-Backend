@@ -71,12 +71,18 @@ export const getAllUsers = async (req, res) => {
       });
     }
 
-    res.json(users);
+    res.json({
+      data: users,
+      pagination: {
+        total: users.length,
+      },
+    });
   } catch (err) {
     console.error("GET ALL USERS ERROR:", err);
     res.status(500).json({ message: "Failed to fetch users" });
   }
 };
+
 
 // ======================= GET USER BY ID =======================
 export const getUserById = async (req, res) => {

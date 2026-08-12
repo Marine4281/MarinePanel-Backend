@@ -25,6 +25,26 @@ export const createOrder = async (req, res) => {
       return res.status(400).json({ message: "All fields are required" });
     }
 
+    // ─── BLOCK DUPLICATE ACTIVE ORDER FOR SAME LINK ────────────────────────
+    // Matches on the actual submitting account (req.user._id), not the
+    // owner the order is attributed to — so CP/reseller end-users don't
+    // block each other, only themselves.
+    const existingActiveOrder = await Order.findOne({
+      link,
+      status: { $in: ["pending", "processing"] },
+      $or: [
+        { endUserId: req.user._id },
+        { endUserId: null, userId: req.user._id },
+      ],
+    }).lean();
+
+    if (existingActiveOrder) {
+      return res.status(400).json({
+        message:
+          "You have an active order with this link. Please wait until it is completed.",
+      });
+    }
+
     // ─── RESOLVE SERVICE ───────────────────────────────────────────────────
     const serviceData = await resolveService({ service, req });
 

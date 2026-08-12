@@ -1,7 +1,7 @@
 // utils/gatewayHelpers.js
 import Wallet from "../models/Wallet.js";
 
-export const calcBalance = (transactions = []) =>
+
 export const calcBalance = (transactions = []) =>
   Math.round(
     transactions
@@ -12,6 +12,7 @@ export const calcBalance = (transactions = []) =>
       )
       .reduce((acc, t) => acc + (Number(t.amount) || 0), 0) * 100
   ) / 100;
+
 export const safeGateway = (gw) => ({
   _id:                      gw._id,
   name:                     gw.name,

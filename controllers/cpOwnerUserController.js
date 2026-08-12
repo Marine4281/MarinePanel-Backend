@@ -9,13 +9,9 @@ import Order from "../models/Order.js";
 import Wallet from "../models/Wallet.js";
 import formatLastSeen from "../utils/formatLastSeen.js";
 import logCpAdminAction from "../utils/logCpAdminAction.js";
+import { calcBalance } from "../utils/gatewayHelpers.js"; // ✅ single source of truth
 
 // ======================= HELPERS =======================
-
-const calculateBalance = (transactions = []) =>
-  transactions
-    .filter((t) => t.status === "Completed")
-    .reduce((acc, t) => acc + (Number(t.amount) || 0), 0);
 
 const normalizeCountryCode = (value) => {
   if (!value || typeof value !== "string") return null;
@@ -59,13 +55,35 @@ export const getCPUsers = async (req, res) => {
       User.countDocuments(query),
     ]);
 
-    const users = usersRaw.map((user) => ({
-      ...user,
-      countryCode: normalizeCountryCode(user.countryCode),
-      name: user.email.split("@")[0],
-      lastSeen: formatLastSeen(user.lastSeen),
-      userTypes: getUserTypes(user),
-    }));
+    // Reconcile each user's balance against their wallet so the list
+    // never shows a stale User.balance (deposits only update Wallet.balance)
+    const users = await Promise.all(
+      usersRaw.map(async (user) => {
+        const wallet = await Wallet.findOne({ user: user._id });
+        let balance = 0;
+
+        if (wallet) {
+          const computed = calcBalance(wallet.transactions);
+          if (wallet.balance !== computed) {
+            wallet.balance = computed;
+            await wallet.save();
+          }
+          balance = computed;
+          if (user.balance !== balance) {
+            await User.findByIdAndUpdate(user._id, { balance });
+          }
+        }
+
+        return {
+          ...user,
+          countryCode: normalizeCountryCode(user.countryCode),
+          balance,
+          name: user.email.split("@")[0],
+          lastSeen: formatLastSeen(user.lastSeen),
+          userTypes: getUserTypes(user),
+        };
+      })
+    );
 
     res.json({
       data: users,
@@ -99,7 +117,7 @@ export const getCPUserById = async (req, res) => {
     const allTx = (wallet?.transactions || []).sort(
       (a, b) => new Date(b.createdAt || b.date) - new Date(a.createdAt || a.date)
     );
-    const balance = calculateBalance(allTx);
+    const balance = calcBalance(allTx);
 
     // Paginate transactions
     const txSkip = (Number(txPage) - 1) * Number(txLimit);
@@ -173,7 +191,7 @@ export const updateCPUserBalance = async (req, res) => {
         }],
       });
     } else {
-      const current = calculateBalance(wallet.transactions);
+      const current = calcBalance(wallet.transactions);
       const diff = newBalance - current;
       if (diff !== 0) {
         wallet.transactions.push({
@@ -186,7 +204,7 @@ export const updateCPUserBalance = async (req, res) => {
       }
     }
 
-    wallet.balance = calculateBalance(wallet.transactions);
+    wallet.balance = calcBalance(wallet.transactions);
     await wallet.save();
     await User.findByIdAndUpdate(user._id, { balance: wallet.balance });
     logCpAdminAction({ adminId: req.user._id, adminEmail: req.user.email,childPanelId: req.user._id, action: "UPDATE_BALANCE", targetType: "User", targetId: user._id, description: `Updated balance for ${user.email}`, ipAddress: req.ip }).catch(() => {});
@@ -387,7 +405,7 @@ export const deleteCPUser = async (req, res) => {
       Order.deleteMany({ userId: user._id }),
       Wallet.deleteOne({ user: user._id }),
     ]);
-    logCpAdminAction({ adminId: req.user._id, adminEmail: req.user.email, childPanelId: req.user._id,action: "DELETE_USER", targetType: "User", targetId: userId, description: `Deleted user ${userId}`, ipAddress: req.ip }).catch(() => {});
+    logCpAdminAction({ adminId: req.user._id, adminEmail: req.user.email, childPanelId: req.user._id,action: "DELETE_USER", targetType: "User", targetId: user._id, description: `Deleted user ${user._id}`, ipAddress: req.ip }).catch(() => {});
 
     res.json({ message: "User deleted" });
   } catch (err) {

@@ -2,14 +2,16 @@
 import Wallet from "../models/Wallet.js";
 
 export const calcBalance = (transactions = []) =>
-  transactions
-    .filter(
-      (t) =>
-        t.status === "Completed" ||
-        (t.status === "Pending" && t.type === "Withdrawal") // instant deduction, honest label
-    )
-    .reduce((acc, t) => acc + (Number(t.amount) || 0), 0);
-
+export const calcBalance = (transactions = []) =>
+  Math.round(
+    transactions
+      .filter(
+        (t) =>
+          t.status === "Completed" ||
+          (t.status === "Pending" && t.type === "Withdrawal")
+      )
+      .reduce((acc, t) => acc + (Number(t.amount) || 0), 0) * 100
+  ) / 100;
 export const safeGateway = (gw) => ({
   _id:                      gw._id,
   name:                     gw.name,

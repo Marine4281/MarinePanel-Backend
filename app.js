@@ -276,8 +276,8 @@ app.use("/api/cp/logs", authMiddleware, cpOwnerOnly, updateLastSeen, cpAdminLogR
 /* =================================================
    ADMIN ROUTES
 ================================================= */
-app.use("/api/admin", adminRoutes);
 app.use("/api/admin/users", adminStack, adminUserRoutes);
+app.use("/api/admin", adminRoutes);
 app.use("/api/admin/services", adminServiceRoutes);
 app.use("/api/admin/settings", adminSettingsRoutes);
 app.use("/api/admin/payment-methods", adminPaymentMethodRoutes);

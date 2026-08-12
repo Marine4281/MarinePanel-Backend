@@ -5,6 +5,9 @@ import {
   getChildPanelActivationFee,
   activateChildPanel,
   getChildPanelDashboard,
+  getChildPanelTopPerformers,
+  getChildPanelRevenueTrend,
+  
   getChildPanelResellers,
   getChildPanelUsers,
   getChildPanelOrders,
@@ -34,6 +37,9 @@ router.post("/activate", protect, activateChildPanel);
 
 // Dashboard
 router.get("/dashboard", protect, childPanelOnly, getChildPanelDashboard);
+
+router.get("/revenue-trend", protect, childPanelOnly, getChildPanelRevenueTrend); 
+router.get("/top-performers", protect, childPanelOnly, getChildPanelTopPerformers); 
 
 // Resellers — specific routes MUST come before /:id param routes
 router.get("/resellers/activation-feed", protect, childPanelOnly, getResellerActivationFeed);

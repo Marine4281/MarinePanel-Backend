@@ -301,6 +301,7 @@ export const createOrder = async (req, res) => {
 
       isMainPlatformService,
 
+      platform: serviceData.platform || "",
       category: serviceData.category,
       service: serviceData.name,
       serviceId: serviceData.serviceId || serviceData._id.toString(),

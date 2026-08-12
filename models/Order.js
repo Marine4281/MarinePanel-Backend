@@ -90,6 +90,12 @@ const orderSchema = new mongoose.Schema(
     /* ===============================
        📦 ORDER DETAILS
     =============================== */
+    platform: {
+      type: String,
+      default: "",
+      index: true,
+    },
+
     category: { type: String, required: true },
     service: { type: String, required: true },
     link: { type: String, required: true },

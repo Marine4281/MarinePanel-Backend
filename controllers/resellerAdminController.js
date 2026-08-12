@@ -4,12 +4,32 @@ import User from "../models/User.js";
 import Order from "../models/Order.js";
 import Wallet from "../models/Wallet.js";
 import mongoose from "mongoose";
+import { calcBalance } from "../utils/gatewayHelpers.js"; // ✅ single source of truth
 
 /* ========================================================= */
 const isValidId = (id) => mongoose.Types.ObjectId.isValid(id);
 
 /* ========================================================= */
 const formatNumber = (num) => Number(Number(num || 0).toFixed(4));
+
+/* ========================================================= */
+// Reconciles a lean user's balance against their wallet, persisting
+// both sides if they've drifted (e.g. after a deposit that only
+// touched Wallet.balance).
+const reconcileUserBalance = async (user) => {
+  const wallet = await Wallet.findOne({ user: user._id });
+  if (!wallet) return { ...user, balance: 0 };
+
+  const computed = calcBalance(wallet.transactions);
+  if (wallet.balance !== computed) {
+    wallet.balance = computed;
+    await wallet.save();
+  }
+  if (user.balance !== computed) {
+    await User.findByIdAndUpdate(user._id, { balance: computed });
+  }
+  return { ...user, balance: computed };
+};
 
 /* =========================================================
    GET ALL RESELLERS (OPTIMIZED + PAGINATED)
@@ -114,7 +134,7 @@ export const getResellerDetails = async (req, res) => {
       return res.status(404).json({ success: false, message: "Reseller not found" });
     }
 
-    const [users, orders, wallet, totalUsers, totalOrders] = await Promise.all([
+    const [usersRaw, orders, wallet, totalUsers, totalOrders] = await Promise.all([
       User.find({ resellerOwner: id })
         .select("email phone balance createdAt isSuspended")
         .skip(skip)
@@ -132,6 +152,9 @@ export const getResellerDetails = async (req, res) => {
       User.countDocuments({ resellerOwner: id }),
       Order.countDocuments({ resellerOwner: id }),
     ]);
+
+    // Reconcile each listed user's balance against their wallet
+    const users = await Promise.all(usersRaw.map(reconcileUserBalance));
 
     /* ================= STATS ================= */
     const allOrders = await Order.find({ resellerOwner: id }).lean();
@@ -290,7 +313,7 @@ export const getResellerUsers = async (req, res) => {
       return res.status(400).json({ success: false, message: "Invalid reseller ID" });
     }
 
-    const [users, total] = await Promise.all([
+    const [usersRaw, total] = await Promise.all([
       User.find({ resellerOwner: id })
         .select("email phone balance createdAt isSuspended")
         .skip(skip)
@@ -299,6 +322,10 @@ export const getResellerUsers = async (req, res) => {
 
       User.countDocuments({ resellerOwner: id }),
     ]);
+
+    // Reconcile each user's balance against their wallet so this list
+    // never shows a stale User.balance (deposits only update Wallet.balance)
+    const users = await Promise.all(usersRaw.map(reconcileUserBalance));
 
     res.json({
       success: true,

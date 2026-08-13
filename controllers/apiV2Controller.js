@@ -9,6 +9,7 @@ import ProviderProfile from "../models/ProviderProfile.js";
 import axios from "axios";
 import { getNextOrderId } from "../utils/orderId.js";
 import { formatProviderStatusDisplay } from "../utils/providerStatusMapper.js";
+import { callProvider } from "../utils/providerApi.js";
 import {
   creditResellerCommission,
   creditChildPanelCommission,
@@ -117,6 +118,97 @@ const resolveRateAndOwnership = async (user, selectedService, qty) => {
     childPanelCommission,
     childPanelPerOrderFee,
   };
+};
+
+/* =========================================================
+   🔧 HELPER: REFUND + REVERSE ON SUCCESSFUL CANCEL
+   Same pattern as orderActionController.js's processCancelRefund —
+   refunds the payer for whatever wasn't delivered, and reverses
+   reseller/CP/admin commission proportionally.
+========================================================= */
+const processCancelRefund = async (order) => {
+  if (order.isFreeOrder || !order.isCharged || order.refundProcessed) {
+    return null;
+  }
+
+  const quantity = Number(order.quantity || 0);
+  const delivered = Number(order.quantityDelivered || 0);
+  const remaining = quantity - delivered;
+
+  if (remaining <= 0) {
+    order.refundProcessed = true;
+    await order.save();
+    return null;
+  }
+
+  const payerId = order.endUserId || order.userId;
+  if (!payerId) return null;
+
+  const wallet = await Wallet.findOne({ user: payerId });
+  if (!wallet) return null;
+
+  const alreadyRefunded = wallet.transactions.some(
+    (t) => t.type === "Refund" && t.reference?.toString() === order._id.toString()
+  );
+  if (alreadyRefunded) {
+    order.refundProcessed = true;
+    await order.save();
+    return null;
+  }
+
+  const charge = Number(order.charge || 0);
+  const refundAmount = Number(((remaining / quantity) * charge).toFixed(4));
+
+  if (refundAmount > 0) {
+    wallet.transactions.push({
+      type: "Refund",
+      amount: refundAmount,
+      status: "Completed",
+      note: `Refund - Cancelled order #${order.customOrderId} (${remaining} undelivered)`,
+      reference: order._id,
+      createdAt: new Date(),
+    });
+    wallet.balance = calculateBalance(wallet.transactions);
+    await wallet.save();
+  }
+
+  order.refundProcessed = true;
+  await order.save();
+
+  const ratio = charge > 0 ? refundAmount / charge : 1;
+  await reverseResellerCommission(order, ratio);
+  await reverseChildPanelCommission(order, ratio);
+  await reverseAdminRevenue(order, ratio);
+
+  return { refundAmount };
+};
+
+/* =========================================================
+   🔧 HELPER: extract this order's cancel result out of a
+   provider's batch-cancel response, whatever shape it comes
+   back in (array of {order, cancel}, or object keyed by id).
+========================================================= */
+const extractCancelResult = (response, providerOrderId) => {
+  if (Array.isArray(response)) {
+    const match = response.find(
+      (r) => String(r?.order) === String(providerOrderId)
+    );
+    if (!match) return null;
+    return typeof match.cancel === "object" ? null : match.cancel;
+  }
+
+  if (response && typeof response === "object") {
+    if (Object.prototype.hasOwnProperty.call(response, providerOrderId)) {
+      const val = response[providerOrderId];
+      return typeof val === "object" ? (val?.cancel ?? null) : val;
+    }
+    // Single-order shape fallback: { cancel: 1 }
+    if ("cancel" in response) {
+      return typeof response.cancel === "object" ? null : response.cancel;
+    }
+  }
+
+  return null;
 };
 
 export const apiV2 = async (req, res) => {
@@ -573,36 +665,101 @@ export const apiV2 = async (req, res) => {
         }
 
         const ids = req.body.orders.toString().split(",").map((id) => id.trim());
-        const results = [];
+        const results = {}; // id → result, filled in as we go
+
+        // ─── LOAD & VALIDATE EACH ORDER ─────────────────────────────────
+        const eligibleOrders = []; // { id, order }
 
         for (const id of ids) {
           const order = await Order.findOne(buildOrderQuery(user._id, id));
 
           if (!order) {
-            results.push({ order: id, cancel: { error: "Incorrect order ID" } });
+            results[id] = { error: "Incorrect order ID" };
             continue;
           }
 
           if (!order.cancelAllowed) {
-            results.push({ order: id, cancel: { error: "Cancel not allowed" } });
+            results[id] = { error: "Cancel not allowed" };
             continue;
           }
 
-          if (order.status === "completed" || order.status === "cancelled") {
-            results.push({ order: id, cancel: { error: "Order cannot be cancelled" } });
+          if (["completed", "cancelled", "refunded"].includes(order.status)) {
+            results[id] = { error: "Order cannot be cancelled" };
             continue;
           }
 
-          order.cancelRequested = true;
-          order.cancelRequestedAt = new Date();
-          order.cancelStatus = "success";
+          const providerOrderId = String(order.providerOrderId || "").trim();
+          if (!providerOrderId) {
+            results[id] = { error: "Invalid provider order ID" };
+            continue;
+          }
 
-          await order.save();
-
-          results.push({ order: id, cancel: 1 });
+          eligibleOrders.push({ id, order, providerOrderId });
         }
 
-        return res.json(results);
+        // ─── GROUP BY PROVIDER PROFILE (batch cancel per provider) ───────
+        const grouped = {};
+        for (const entry of eligibleOrders) {
+          const key = String(entry.order.providerProfileId || "");
+          if (!grouped[key]) grouped[key] = [];
+          grouped[key].push(entry);
+        }
+
+        for (const profileId of Object.keys(grouped)) {
+          const group = grouped[profileId];
+          const providerProfile = await ProviderProfile.findById(profileId);
+
+          if (!providerProfile || !providerProfile.apiUrl || !providerProfile.apiKey) {
+            for (const { id } of group) {
+              results[id] = { error: "Provider not configured" };
+            }
+            continue;
+          }
+
+          let providerResponse;
+          try {
+            providerResponse = await callProvider(providerProfile, {
+              action: "cancel",
+              orders: group.map((g) => g.providerOrderId).join(","),
+            });
+          } catch (err) {
+            console.error("Batch cancel provider error:", err);
+            for (const { id } of group) {
+              results[id] = { error: "Provider request failed" };
+            }
+            continue;
+          }
+
+          // ─── APPLY RESULT PER ORDER ─────────────────────────────────
+          for (const { id, order, providerOrderId } of group) {
+            const cancelResult = extractCancelResult(providerResponse, providerOrderId);
+            const isSuccess = cancelResult === 1 || cancelResult === true;
+
+            order.cancelRequested = true;
+            order.cancelRequestedAt = new Date();
+            order.cancelStatus = isSuccess ? "success" : "failed";
+            order.cancelProcessed = true;
+            order.cancelResponse = providerResponse;
+
+            if (isSuccess) {
+              order.status = "cancelled";
+            }
+
+            await order.save();
+
+            if (isSuccess) {
+              await processCancelRefund(order);
+              results[id] = 1;
+            } else {
+              results[id] = { error: "Cancel request failed" };
+            }
+          }
+        }
+
+        // Return in cancel: { order, cancel } array shape matching the ids order
+        return res.json(
+          ids.map((id) => ({ order: id, cancel: results[id] ?? { error: "Cancel not processed" } }))
+        );
       }
 
       case "balance": {

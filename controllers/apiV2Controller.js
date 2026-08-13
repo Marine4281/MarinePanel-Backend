@@ -9,6 +9,14 @@ import ProviderProfile from "../models/ProviderProfile.js";
 import axios from "axios";
 import { getNextOrderId } from "../utils/orderId.js";
 import { formatProviderStatusDisplay } from "../utils/providerStatusMapper.js";
+import {
+  creditResellerCommission,
+  creditChildPanelCommission,
+  creditAdminRevenue,
+  reverseResellerCommission,
+  reverseChildPanelCommission,
+  reverseAdminRevenue,
+} from "./orderController.js";
 
 const calculateBalance = (transactions = []) =>
   transactions.reduce((acc, t) => acc + (t.amount || 0), 0);
@@ -313,6 +321,9 @@ export const apiV2 = async (req, res) => {
           rate: Number(selectedService.rate || 0),
           isCharged: true,
 
+          adminProfit: Number((finalCharge - baseCharge).toFixed(4)),
+          adminRevenueCredited: false,
+
           resellerOwner: resellerOwnerId,
           resellerCommission,
           earningsCredited: false,
@@ -332,6 +343,15 @@ export const apiV2 = async (req, res) => {
           refillPolicy: selectedService.refillPolicy,
           customRefillDays: selectedService.customRefillDays,
         });
+
+        // ─── INSTANT COMMISSION + REVENUE ACCRUAL ─────────────────────────
+        // Same instant-credit model as the web order flow: the end user
+        // (and CP owner, if any) has already been charged above, so credit
+        // reseller/CP/admin now. If the provider call below fails, this is
+        // reversed in the catch block.
+        await creditResellerCommission(order);
+        await creditChildPanelCommission(order);
+        await creditAdminRevenue(order);
 
         // ─── CALL PROVIDER ────────────────────────────────────────────────
         try {
@@ -383,6 +403,12 @@ export const apiV2 = async (req, res) => {
             cpOwnerWallet.balance = calculateBalance(cpOwnerWallet.transactions);
             await cpOwnerWallet.save();
           }
+
+          // Reverse commission/revenue credited above — provider call
+          // never went through, so nothing was actually delivered.
+          await reverseResellerCommission(order, 1);
+          await reverseChildPanelCommission(order, 1);
+          await reverseAdminRevenue(order, 1);
 
           order.status = "failed";
           order.providerStatus = "failed";

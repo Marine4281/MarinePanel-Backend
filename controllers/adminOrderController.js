@@ -4,6 +4,11 @@ import Order from "../models/Order.js";
 import Wallet from "../models/Wallet.js";
 import User from "../models/User.js";
 import logAdminAction from "../utils/logAdminAction.js";
+import {
+  reverseResellerCommission,
+  reverseChildPanelCommission,
+  reverseAdminRevenue,
+} from "./orderController.js";
 
 // Helper: Calculate completed balance from transactions
 const calculateBalance = (transactions = []) =>
@@ -246,8 +251,11 @@ export const refundOrder = async (req, res) => {
     if (!order) return res.status(404).json({ message: "Order not found" });
     if (order.status === "refunded")
       return res.status(400).json({ message: "Already refunded" });
+    if (order.refundProcessed)
+      return res.status(400).json({ message: "Already refunded" });
 
     order.status = "refunded";
+    order.refundProcessed = true;
 
     await order.save();
 
@@ -264,6 +272,7 @@ export const refundOrder = async (req, res) => {
         amount: order.charge,
         status: "Completed",
         note: `Order #${order.orderId}`,
+        reference: order._id,
       });
 
       wallet.balance = calculateBalance(wallet.transactions);
@@ -273,6 +282,12 @@ export const refundOrder = async (req, res) => {
         balance: wallet.balance,
       });
     }
+
+    // Full reversal — admin is refunding the entire charge, so
+    // reseller/CP/admin commission and revenue reverse in full too.
+    await reverseResellerCommission(order, 1);
+    await reverseChildPanelCommission(order, 1);
+    await reverseAdminRevenue(order, 1);
 
     const io = req.app.get("io");
     if (io) {

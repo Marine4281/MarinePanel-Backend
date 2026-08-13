@@ -16,7 +16,10 @@ export const getMyOrdersStats = async (req, res) => {
       $or: userMatch,
     };
 
-    if (status) {
+    if (status === "in progress") {
+      match.status = "processing";
+      match.providerStatus = /in\s*progress/i;
+    } else if (status) {
       match.status = status;
     }
 

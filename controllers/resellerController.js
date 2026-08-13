@@ -33,6 +33,54 @@ const calculateBalance = (transactions) => {
   }, 0);
 };
 
+// Shared range → bucket resolver, mirrors admin/CP revenue trend logic
+const resolveRangeBuckets = (range, now) => {
+  let start, end, bucketCount, getBucketIndex, getLabel;
+
+  if (range === "today") {
+    start = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    end = new Date(start.getTime() + 24 * 60 * 60 * 1000);
+    bucketCount = 24;
+    getBucketIndex = (d) => d.getHours();
+    getLabel = (i) => {
+      const period = i < 12 ? "AM" : "PM";
+      const hour12 = i % 12 === 0 ? 12 : i % 12;
+      return `${hour12} ${period}`;
+    };
+  } else if (range === "month") {
+    start = new Date(now.getFullYear(), now.getMonth(), 1);
+    end = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+    bucketCount = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+    getBucketIndex = (d) => d.getDate() - 1;
+    getLabel = (i) =>
+      new Date(now.getFullYear(), now.getMonth(), i + 1).toLocaleDateString("en-US", {
+        day: "numeric",
+        month: "short",
+      });
+  } else if (range === "year") {
+    start = new Date(now.getFullYear(), 0, 1);
+    end = new Date(now.getFullYear() + 1, 0, 1);
+    bucketCount = 12;
+    getBucketIndex = (d) => d.getMonth();
+    getLabel = (i) => new Date(2000, i, 1).toLocaleDateString("en-US", { month: "short" });
+  } else {
+    // "week" — rolling last 7 days ending today
+    start = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 6);
+    end = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
+    bucketCount = 7;
+    getBucketIndex = (d) => {
+      const dayStart = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+      return Math.round((dayStart - start) / (24 * 60 * 60 * 1000));
+    };
+    getLabel = (i) =>
+      new Date(start.getTime() + i * 24 * 60 * 60 * 1000).toLocaleDateString("en-US", {
+        weekday: "short",
+      });
+  }
+
+  return { start, end, bucketCount, getBucketIndex, getLabel };
+};
+
 /* ================================================
    GET ACTIVATION FEE
    - On a CP domain: returns the CP's custom fee + CP's domain
@@ -317,6 +365,90 @@ export const getResellerOrders = async (req, res) => {
   } catch (err) {
     console.error("RESELLER ORDERS ERROR:", err);
     res.status(500).json({ message: "Failed" });
+  }
+};
+
+/* ================================================
+   COMMISSION TREND (NEW)
+   GET /reseller/commission-trend?range=today|week|month|year
+   Scoped to this reseller. Sums resellerCommission for orders
+   that are completed + earningsCredited, bucketed by range —
+   same bucketing logic as admin/CP revenue trend.
+================================================ */
+
+export const getResellerCommissionTrend = async (req, res) => {
+  try {
+    const resellerId = req.user._id;
+    const { range = "week" } = req.query;
+    const now = new Date();
+
+    const { start, end, bucketCount, getBucketIndex, getLabel } = resolveRangeBuckets(range, now);
+
+    const orders = await Order.find({
+      resellerOwner: resellerId,
+      status: "completed",
+      earningsCredited: true,
+      createdAt: { $gte: start, $lt: end },
+    })
+      .select("resellerCommission createdAt")
+      .lean();
+
+    const buckets = new Array(bucketCount).fill(0);
+
+    orders.forEach((o) => {
+      const idx = getBucketIndex(new Date(o.createdAt));
+      if (idx >= 0 && idx < bucketCount) {
+        buckets[idx] += Number(o.resellerCommission || 0);
+      }
+    });
+
+    const labels = Array.from({ length: bucketCount }, (_, i) => getLabel(i));
+    const data = buckets.map((v) => Number(v.toFixed(2)));
+
+    res.json({ range, labels, data });
+  } catch (error) {
+    console.error("RESELLER COMMISSION TREND ERROR:", error);
+    res.status(500).json({ message: "Failed to fetch commission trend" });
+  }
+};
+
+/* ================================================
+   ORDER VOLUME TREND (NEW)
+   GET /reseller/order-volume-trend?range=week|month|year
+   Scoped to this reseller. Counts ALL orders (any status) in
+   range, bucketed the same way as the commission trend.
+================================================ */
+
+export const getResellerOrderVolumeTrend = async (req, res) => {
+  try {
+    const resellerId = req.user._id;
+    const { range = "week" } = req.query;
+    const now = new Date();
+
+    const { start, end, bucketCount, getBucketIndex, getLabel } = resolveRangeBuckets(range, now);
+
+    const orders = await Order.find({
+      resellerOwner: resellerId,
+      createdAt: { $gte: start, $lt: end },
+    })
+      .select("createdAt")
+      .lean();
+
+    const buckets = new Array(bucketCount).fill(0);
+
+    orders.forEach((o) => {
+      const idx = getBucketIndex(new Date(o.createdAt));
+      if (idx >= 0 && idx < bucketCount) {
+        buckets[idx] += 1;
+      }
+    });
+
+    const labels = Array.from({ length: bucketCount }, (_, i) => getLabel(i));
+
+    res.json({ range, labels, data: buckets });
+  } catch (error) {
+    console.error("RESELLER ORDER VOLUME TREND ERROR:", error);
+    res.status(500).json({ message: "Failed to fetch order volume trend" });
   }
 };
 

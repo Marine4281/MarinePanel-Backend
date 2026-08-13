@@ -15,7 +15,17 @@ import {
 import { resolveService } from "./helpers/serviceResolver.js";
 import { resolveProviderProfile } from "./helpers/provider.js";
 import { resolveChildPanelData } from "./helpers/childPanel.js";
-import { calculateOrderPricing } from "./helpers/pricing.js";
+import {
+  calculateOrderPricing,
+} from "./helpers/pricing.js";
+import {
+  creditResellerCommission,
+  creditChildPanelCommission,
+  creditAdminRevenue,
+  reverseResellerCommission,
+  reverseChildPanelCommission,
+  reverseAdminRevenue,
+} from "./helpers/commissions.js";
 
 export const createOrder = async (req, res) => {
   try {
@@ -357,6 +367,15 @@ export const createOrder = async (req, res) => {
         : null,
     });
 
+    // ─── INSTANT COMMISSION + REVENUE ACCRUAL ─────────────────────────────
+    // Credited the moment the order exists — the end user (and any
+    // upstream CP/reseller owner) has already been charged above, so this
+    // money has already moved. If the provider call fails or the order
+    // later goes partial/failed/refunded, these are reversed accordingly.
+    await creditResellerCommission(order);
+    await creditChildPanelCommission(order);
+    await creditAdminRevenue(order);
+
     // ─── PROVIDER CALL ────────────────────────────────────────────────────
     if (cpOwnerInsufficientFunds || resellerOwnerInsufficientFunds) {
       // ← NEW: combined gate
@@ -475,6 +494,12 @@ export const createOrder = async (req, res) => {
             }
           }
         }
+
+        // ← NEW: reverse commission/revenue that was credited instantly
+        // above, since the provider call never went through.
+        await reverseResellerCommission(order);
+        await reverseChildPanelCommission(order);
+        await reverseAdminRevenue(order);
 
         order.status = "failed";
         order.providerStatus = "failed";

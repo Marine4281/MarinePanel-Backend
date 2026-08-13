@@ -197,7 +197,12 @@ export const getCPOrderStats = async (req, res) => {
 
     const match = { childPanelOwner: ownerId };
 
-    if (status) match.status = status;
+    if (status === "in progress") {
+      match.status = "processing";
+      match.providerStatus = /in\s*progress/i;
+    } else if (status) {
+      match.status = status;
+    }
     if (fromDate || toDate) {
       match.createdAt = {};
       if (fromDate) match.createdAt.$gte = new Date(fromDate);
@@ -223,13 +228,22 @@ export const getCPOrderStats = async (req, res) => {
       match.$or = orQueries;
     }
 
+    const inProgressRegex = /in\s*progress/i;
+
     const stats = await Order.aggregate([
       { $match: match },
       {
         $facet: {
           total: [{ $count: "count" }],
           pending: [{ $match: { status: "pending" } }, { $count: "count" }],
-          processing: [{ $match: { status: "processing" } }, { $count: "count" }],
+          processing: [
+            { $match: { status: "processing", providerStatus: { $not: inProgressRegex } } },
+            { $count: "count" },
+          ],
+          inProgress: [
+            { $match: { status: "processing", providerStatus: inProgressRegex } },
+            { $count: "count" },
+          ],
           completed: [{ $match: { status: "completed" } }, { $count: "count" }],
           partial: [{ $match: { status: "partial" } }, { $count: "count" }],
           failed: [{ $match: { status: "failed" } }, { $count: "count" }],
@@ -242,6 +256,7 @@ export const getCPOrderStats = async (req, res) => {
       total: r.total[0]?.count || 0,
       pending: r.pending[0]?.count || 0,
       processing: r.processing[0]?.count || 0,
+      inProgress: r.inProgress[0]?.count || 0,
       completed: r.completed[0]?.count || 0,
       partial: r.partial[0]?.count || 0,
       failed: r.failed[0]?.count || 0,

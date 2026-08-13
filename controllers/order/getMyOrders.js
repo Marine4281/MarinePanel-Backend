@@ -46,7 +46,10 @@ export const getMyOrders = async (req, res) => {
       delete query.$or;
     }
 
-    if (status) {
+    if (status === "in progress") {
+      query.status = "processing";
+      query.providerStatus = /in\s*progress/i;
+    } else if (status) {
       query.status = status;
     }
 

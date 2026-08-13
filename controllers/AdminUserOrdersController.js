@@ -3,8 +3,9 @@ import Order from "../models/Order.js";
 import User from "../models/User.js";
 import Wallet from "../models/Wallet.js";
 import {
-  creditResellerCommission,
   reverseResellerCommission,
+  reverseChildPanelCommission,
+  reverseAdminRevenue,
 } from "./orderController.js";
 import { formatProviderStatusDisplay } from "../utils/providerStatusMapper.js";
 
@@ -24,7 +25,6 @@ const processRefund = async ({
   const payerId = order.endUserId || order.userId;
 
   const wallet = await Wallet.findOne({ user: payerId });
-
   if (!wallet) return;
 
   const alreadyRefunded = wallet.transactions.find(
@@ -32,7 +32,6 @@ const processRefund = async ({
       t.reference?.toString() === order._id.toString() &&
       t.type === "Refund"
   );
-
   if (alreadyRefunded) return;
 
   let refundAmount = 0;
@@ -77,7 +76,10 @@ const processRefund = async ({
   order.refundProcessed = true;
   await order.save();
 
-  await reverseResellerCommission(order);
+  const ratio = Number(order.charge) > 0 ? refundAmount / Number(order.charge) : 1;
+  await reverseResellerCommission(order, ratio);
+  await reverseChildPanelCommission(order, ratio);
+  await reverseAdminRevenue(order, ratio);
 
   return {
     refundAmount,
@@ -372,10 +374,6 @@ export const updateOrderStatus = async (req, res) => {
       refundData = await processRefund({ order, refundType: "partial" });
     }
 
-    if (order.status === "completed") {
-      await creditResellerCommission(order);
-    }
-
     const io = req.app.get("io");
     if (io) emitOrderUpdated(io, order, refundData);
 
@@ -435,10 +433,6 @@ export const updateOrderProgress = async (req, res) => {
     order.providerStatus = order.status;
 
     await order.save();
-
-    if (order.status === "completed") {
-      await creditResellerCommission(order);
-    }
 
     const io = req.app.get("io");
     if (io) emitOrderUpdated(io, order);

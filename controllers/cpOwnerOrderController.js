@@ -7,6 +7,8 @@ import logCpAdminAction from "../utils/logCpAdminAction.js";
 import { formatProviderStatusDisplay } from "../utils/providerStatusMapper.js";
 import {
   reverseChildPanelCommission,
+  reverseResellerCommission,
+  reverseAdminRevenue,
 } from "./orderController.js";
 
 // ======================= HELPERS =======================
@@ -111,7 +113,13 @@ const processRefund = async ({ order, refundType = "full", customAmount = 0 }) =
   order.refundProcessed = true;
   await order.save();
 
-  await reverseChildPanelCommission(order);
+  // Reverse commission/revenue proportionally to how much of the
+  // order's value was actually refunded — full for "full"/"custom"
+  // refunds that cover the whole charge, partial otherwise.
+  const ratio = Number(order.charge) > 0 ? refundAmount / Number(order.charge) : 1;
+  await reverseChildPanelCommission(order, ratio);
+  await reverseResellerCommission(order, ratio);
+  await reverseAdminRevenue(order, ratio);
 
   return { refundAmount, walletBalance: wallet.balance, walletUserId: payerId };
 };

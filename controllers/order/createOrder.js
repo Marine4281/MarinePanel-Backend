@@ -2,6 +2,7 @@
 
 import Order from "../../models/Order.js";
 import User from "../../models/User.js";
+import Settings from "../../models/Settings.js";
 import Wallet from "../../models/Wallet.js";
 import axios from "axios";
 import { v4 as uuidv4 } from "uuid";
@@ -280,7 +281,7 @@ export const createOrder = async (req, res) => {
     }
 
     // ─── DEDUCT BASE COST FROM RESELLER OWNER (PAID ORDERS) ───────────────
-    // Mirrors the CP owner block above. The end user already paid
+    // ← NEW: mirrors the CP owner block above. The end user already paid
     // the full marked-up price into their own wallet; the reseller owner
     // now pays the wholesale cost (pre-reseller-markup) out of their own
     // wallet, keeping their markup as retained profit automatically.
@@ -377,6 +378,7 @@ export const createOrder = async (req, res) => {
 
     // ─── PROVIDER CALL ────────────────────────────────────────────────────
     if (cpOwnerInsufficientFunds || resellerOwnerInsufficientFunds) {
+      // ← NEW: combined gate
       order.status = "pending";
       order.providerStatus = "pending";
       order.errorMessage = "Upstream owner insufficient funds — provider call skipped";
@@ -451,7 +453,7 @@ export const createOrder = async (req, res) => {
           wallet.balance = calculateBalance(wallet.transactions);
           await wallet.save();
 
-          // Refund CP owner (their wholesale deduction, if any)
+          // ← NEW: Refund CP owner (their wholesale deduction, if any)
           if (childPanelOwnerId) {
             const cpOwnerDeduction = routeThroughMainPlatformApi ? systemCharge : baseCharge;
             const cpOwnerWalletForRefund = await Wallet.findOne({ user: childPanelOwnerId });
@@ -472,7 +474,7 @@ export const createOrder = async (req, res) => {
             }
           }
 
-          // Refund reseller owner (their wholesale deduction, if any)
+          // ← NEW: Refund reseller owner (their wholesale deduction, if any)
           if (user.resellerOwner) {
             const resellerWalletForRefund = await Wallet.findOne({ user: user.resellerOwner });
 
@@ -493,8 +495,8 @@ export const createOrder = async (req, res) => {
           }
         }
 
-        // Reverse commission/revenue that was credited instantly above,
-        // since the provider call never went through.
+        // ← NEW: reverse commission/revenue that was credited instantly
+        // above, since the provider call never went through.
         await reverseResellerCommission(order);
         await reverseChildPanelCommission(order);
         await reverseAdminRevenue(order);
@@ -509,6 +511,15 @@ export const createOrder = async (req, res) => {
           message: "Provider failed",
           error: err.response?.data || err.message,
         });
+      }
+    }
+
+    // ─── ADMIN REVENUE ────────────────────────────────────────────────────
+    if (!isFreeOrder) {
+      const settings = await Settings.findOne();
+      if (settings) {
+        settings.totalRevenue += finalCharge - baseCharge;
+        await settings.save();
       }
     }
 

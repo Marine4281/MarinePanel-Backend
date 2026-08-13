@@ -115,11 +115,10 @@ export const stopSyncOrder = async (req, res) => {
     if (!order) return res.status(404).json({ message: "Order not found" });
 
     order.syncPaused = true;
-    order.status = "cancelled";
     order.syncAdminNote = req.body.note || "Stopped by admin";
     await order.save();
 
-    res.json({ message: "Order stopped", order });
+    res.json({ message: "Order sync stopped", order });
   } catch (err) {
     res.status(500).json({ message: "Failed to stop" });
   }

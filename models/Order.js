@@ -51,6 +51,14 @@ const orderSchema = new mongoose.Schema(
       default: 0,
     },
 
+
+    // Reseller commission reversal tracking (supports partial→full reversal
+// without double-reversing)
+resellerCommissionReversedAmount: {
+  type: Number,
+  default: 0,
+},
+
     earningsCredited: {
       type: Boolean,
       default: false,
@@ -77,12 +85,32 @@ const orderSchema = new mongoose.Schema(
       default: 0,
     },
 
+    // Child panel commission reversal tracking
+childPanelCommissionReversedAmount: {
+  type: Number,
+  default: 0,
+},
+
     // Has the child panel commission been credited to their wallet?
     childPanelEarningsCredited: {
       type: Boolean,
       default: false,
       index: true,
     },
+
+    // Has admin/platform revenue (order.adminProfit) been credited to
+// Settings.totalRevenue yet? Credited instantly at order creation.
+adminRevenueCredited: {
+  type: Boolean,
+  default: false,
+  index: true,
+},
+
+// Admin revenue reversal tracking
+adminRevenueReversedAmount: {
+  type: Number,
+  default: 0,
+},
 
     //Order placed via childPanel
     placedViaChildPanel: { type: Boolean, default: false },

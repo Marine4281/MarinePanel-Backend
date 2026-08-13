@@ -1,6 +1,6 @@
 // routes/adminNotificationRoutes.js
 import express from "express";
-import { authMiddleware } from "../middlewares/authMiddleware.js"; // adjust to your actual export name if different
+import { protect } from "../middlewares/authMiddleware.js";
 import { adminOnly } from "../middlewares/adminMiddleware.js";
 import {
   getNotifications,
@@ -10,6 +10,8 @@ import {
 } from "../controllers/notificationController.js";
 
 const router = express.Router();
+
+router.use(protect, adminOnly);
 
 router.get("/", getNotifications);
 router.post("/", createNotification);

@@ -5,7 +5,7 @@ import ProviderProfile from "../models/ProviderProfile.js";
 import Wallet from "../models/Wallet.js";
 import axios from "axios";
 import { mapProviderStatus, calculateDelivered, formatProviderStatusDisplay } from "../utils/providerStatusMapper.js";
-import { creditResellerCommission, reverseResellerCommission } from "../controllers/orderController.js";
+import { creditResellerCommission, reverseResellerCommission, reverseChildPanelCommission, reverseAdminRevenue,} from "../controllers/orderController.js";
 
 const calculateBalance = (transactions = []) =>
   transactions.reduce((acc, t) => acc + (t.amount || 0), 0);
@@ -187,8 +187,12 @@ export const syncProviderOrders = async (io) => {
               wallet.balance = calculateBalance(wallet.transactions);
               order.refundProcessed = true;
               await wallet.save();
-              await reverseResellerCommission(order);
               await order.save();
+
+              // Full reversal — nothing was delivered.
+              await reverseResellerCommission(order, 1);
+              await reverseChildPanelCommission(order, 1);
+              await reverseAdminRevenue(order, 1);
             }
 
             if (mappedStatus === "partial") {
@@ -212,18 +216,19 @@ export const syncProviderOrders = async (io) => {
                 wallet.balance = calculateBalance(wallet.transactions);
                 order.refundProcessed = true;
                 await wallet.save();
-                await reverseResellerCommission(order);
                 await order.save();
+
+                // Proportional reversal — only the undelivered share.
+                const ratio = order.charge > 0 ? refundAmount / order.charge : 0;
+                await reverseResellerCommission(order, ratio);
+                await reverseChildPanelCommission(order, ratio);
+                await reverseAdminRevenue(order, ratio);
               } else {
                 order.refundProcessed = true;
                 await order.save();
               }
             }
           }
-        }
-
-        if (order.status === "completed") {
-          await creditResellerCommission(order);
         }
 
         /* ============================================================

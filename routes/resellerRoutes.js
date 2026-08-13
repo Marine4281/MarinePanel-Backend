@@ -1,4 +1,3 @@
-
 // routes/resellerRoutes.js
 
 import express from "express";
@@ -8,6 +7,8 @@ import {
   getResellerDashboard,
   getResellerUsers,
   getResellerOrders,
+  getResellerCommissionTrend,
+  getResellerOrderVolumeTrend,
   withdrawResellerFunds,
   switchResellerDomain, 
 } from "../controllers/resellerController.js";
@@ -50,6 +51,20 @@ Reseller Orders
 --------------------------------
 */
 router.get("/orders", protect, getResellerOrders);
+
+/*
+--------------------------------
+Reseller Commission Trend (chart)
+--------------------------------
+*/
+router.get("/commission-trend", protect, getResellerCommissionTrend);
+
+/*
+--------------------------------
+Reseller Order Volume Trend (chart)
+--------------------------------
+*/
+router.get("/order-volume-trend", protect, getResellerOrderVolumeTrend);
 
 /*
 --------------------------------

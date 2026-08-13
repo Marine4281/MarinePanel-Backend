@@ -185,7 +185,10 @@ export const getUserOrders = async (req, res) => {
 
     let query = { ...baseFilter };
 
-    if (status) {
+    if (status === "in progress") {
+      query.status = "processing";
+      query.providerStatus = /in\s*progress/i;
+    } else if (status) {
       query.status = status;
     }
 
@@ -245,7 +248,12 @@ export const getUserOrders = async (req, res) => {
         ],
       };
 
-      if (status) query.status = status;
+      if (status === "in progress") {
+      match.status = "processing";
+      match.providerStatus = /in\s*progress/i;
+    } else if (status) {
+      match.status = status;
+      }
 
       if (fromDate || toDate) {
         query.createdAt = {};
@@ -524,13 +532,22 @@ export const getOrderStats = async (req, res) => {
       ];
     }
 
+    const inProgressRegex = /in\s*progress/i;
+
     const stats = await Order.aggregate([
       { $match: match },
       {
         $facet: {
           total: [{ $count: "count" }],
           pending: [{ $match: { status: "pending" } }, { $count: "count" }],
-          processing: [{ $match: { status: "processing" } }, { $count: "count" }],
+          processing: [
+            { $match: { status: "processing", providerStatus: { $not: inProgressRegex } } },
+            { $count: "count" },
+          ],
+          inProgress: [
+            { $match: { status: "processing", providerStatus: inProgressRegex } },
+            { $count: "count" },
+          ],
           completed: [{ $match: { status: "completed" } }, { $count: "count" }],
           partial: [{ $match: { status: "partial" } }, { $count: "count" }],
           failed: [{ $match: { status: "failed" } }, { $count: "count" }],
@@ -544,6 +561,7 @@ export const getOrderStats = async (req, res) => {
       total: result.total[0]?.count || 0,
       pending: result.pending[0]?.count || 0,
       processing: result.processing[0]?.count || 0,
+      inProgress: result.inProgress[0]?.count || 0,
       completed: result.completed[0]?.count || 0,
       partial: result.partial[0]?.count || 0,
       failed: result.failed[0]?.count || 0,

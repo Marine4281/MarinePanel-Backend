@@ -27,6 +27,8 @@ import apiV2Routes from "./routes/apiV2Routes.js";
 import supportRoutes from "./routes/supportRoutes.js";
 import maintenanceRoutes from "./routes/maintenanceRoutes.js";
 import currencyRoutes from "./routes/currencyRoutes.js";
+import notificationRoutes from "./routes/notificationRoutes.js";
+import adminNotificationRoutes from "./routes/adminNotificationRoutes.js";
 
 // Reseller Routes
 import resellerRoutes from "./routes/resellerRoutes.js";
@@ -245,6 +247,7 @@ app.use("/api/v2", apiV2Routes);
 app.use("/api/support", supportRoutes);
 app.use("/api/maintenance", maintenanceRoutes);
 app.use("/api/currencies", currencyRoutes);
+app.use("/api/notifications", notificationRoutes);
 
 /* =================================================
    RESELLER ROUTES
@@ -293,5 +296,6 @@ app.use("/api", paymentGatewayRoutes);
 app.use("/api/child-panel", childPanelGuideRoutes);
 app.use("/api/admin/child-panel-guides", cpGuideAdminRoutes);
 app.use("/api/admin/sync", adminSyncRoutes);
+app.use("/api/admin/notifications", authMiddleware, adminOnly, adminNotificationRoutes);
 
 export default app;

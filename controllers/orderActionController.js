@@ -1,8 +1,17 @@
 // controllers/orderActionController.js
 
 import Order from "../models/Order.js";
+import Wallet from "../models/Wallet.js";
 import ProviderProfile from "../models/ProviderProfile.js";
 import { callProvider } from "../utils/providerApi.js";
+import {
+  reverseResellerCommission,
+  reverseChildPanelCommission,
+  reverseAdminRevenue,
+} from "./orderController.js";
+
+const calculateBalance = (transactions = []) =>
+  transactions.reduce((acc, t) => acc + (Number(t.amount) || 0), 0);
 
 /* =========================================================
    🔧 HELPER: GET PROVIDER (SAFE + FUTURE PROOF)
@@ -23,6 +32,70 @@ const isOrderOwner = (order, userId) => {
   if (order.userId.toString() === uid) return true;
   if (order.endUserId && order.endUserId.toString() === uid) return true;
   return false;
+};
+
+/* =========================================================
+   🔧 HELPER: REFUND + REVERSE ON SUCCESSFUL CANCEL
+   Refunds the payer for whatever wasn't delivered yet, and
+   reverses reseller/CP/admin commission proportionally.
+   Mirrors the pattern in AdminUserOrdersController.js /
+   providerStatusSync.js / smmWebhookController.js.
+========================================================= */
+const processCancelRefund = async (order) => {
+  if (order.isFreeOrder || !order.isCharged || order.refundProcessed) {
+    return null;
+  }
+
+  const quantity = Number(order.quantity || 0);
+  const delivered = Number(order.quantityDelivered || 0);
+  const remaining = quantity - delivered;
+
+  if (remaining <= 0) {
+    order.refundProcessed = true;
+    await order.save();
+    return null;
+  }
+
+  const payerId = order.endUserId || order.userId;
+  if (!payerId) return null;
+
+  const wallet = await Wallet.findOne({ user: payerId });
+  if (!wallet) return null;
+
+  const alreadyRefunded = wallet.transactions.some(
+    (t) => t.type === "Refund" && t.reference?.toString() === order._id.toString()
+  );
+  if (alreadyRefunded) {
+    order.refundProcessed = true;
+    await order.save();
+    return null;
+  }
+
+  const charge = Number(order.charge || 0);
+  const refundAmount = Number(((remaining / quantity) * charge).toFixed(4));
+
+  if (refundAmount > 0) {
+    wallet.transactions.push({
+      type: "Refund",
+      amount: refundAmount,
+      status: "Completed",
+      note: `Refund - Cancelled order #${order.orderId} (${remaining} undelivered)`,
+      reference: order._id,
+      createdAt: new Date(),
+    });
+    wallet.balance = calculateBalance(wallet.transactions);
+    await wallet.save();
+  }
+
+  order.refundProcessed = true;
+  await order.save();
+
+  const ratio = charge > 0 ? refundAmount / charge : 1;
+  await reverseResellerCommission(order, ratio);
+  await reverseChildPanelCommission(order, ratio);
+  await reverseAdminRevenue(order, ratio);
+
+  return { refundAmount, walletBalance: wallet.balance, walletUserId: payerId };
 };
 
 /* =========================================================
@@ -97,12 +170,50 @@ export const cancelOrder = async (req, res) => {
 
     await order.save();
 
+    // ─── REFUND + COMMISSION/REVENUE REVERSAL ─────────────────────────
+    // Only on a successful provider cancel — a failed cancel request
+    // means the order is still live with the provider, nothing to refund.
+    let refundData = null;
+    if (isSuccess) {
+      refundData = await processCancelRefund(order);
+    }
+
+    const io = req.app.get("io");
+    if (io) {
+      io.emit("order:update", {
+        _id: order._id,
+        status: order.status,
+        quantityDelivered: order.quantityDelivered,
+        refundProcessed: order.refundProcessed || false,
+      });
+
+      const notifyUserId = order.endUserId || order.userId;
+      if (notifyUserId) {
+        io.to(notifyUserId.toString()).emit("orderUpdated", {
+          orderId: order._id,
+          status: order.status,
+          providerStatus: order.providerStatus || order.status,
+          delivered: order.quantityDelivered,
+          total: order.quantity,
+          refundProcessed: order.refundProcessed || false,
+        });
+      }
+
+      if (refundData) {
+        io.emit("wallet:update", {
+          userId: refundData.walletUserId,
+          balance: refundData.walletBalance,
+        });
+      }
+    }
+
     res.json({
       message: isSuccess
         ? "Order cancelled successfully"
         : "Cancel request failed",
       success: isSuccess,
       response,
+      refundAmount: refundData?.refundAmount || 0,
     });
 
   } catch (error) {

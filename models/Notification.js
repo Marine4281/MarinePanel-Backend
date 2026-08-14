@@ -15,6 +15,7 @@ const notificationSchema = new mongoose.Schema(
     },
 
     // "all" | "platform" | "reseller" | "cp"
+    // Only used for admin-created notifications (cpOwner: null)
     audience: {
       type: String,
       enum: ["all", "platform", "reseller", "cp"],
@@ -45,13 +46,39 @@ const notificationSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
     },
+
+    /*
+    ----------------------------------------------------------------
+    CP OWNERSHIP
+    null      = admin-created, shown platform-wide per `audience`
+    ObjectId  = created by a child panel owner, shown only within
+                that panel per `cpAudience`
+    ----------------------------------------------------------------
+    */
+    cpOwner: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      default: null,
+      index: true,
+    },
+
+    // Only meaningful when cpOwner is set.
+    // "own"              -> users the CP owner signed up directly (resellerOwner: null)
+    // "resellerEndUsers" -> end users belonging to the CP's resellers (resellerOwner set)
+    // "both"             -> everyone under this child panel
+    cpAudience: {
+      type: String,
+      enum: ["own", "resellerEndUsers", "both"],
+      default: "own",
+    },
   },
   { timestamps: true }
 );
 
-// Only one notification should be "isActive: true" at a time.
-// Enforced in the controller (not schema-level) so history isn't blocked.
-notificationSchema.index({ isActive: 1 });
+// Only one notification should be "isActive: true" at a time
+// PER SCOPE (admin scope = cpOwner:null, each CP owner is its own scope).
+// Enforced in the controllers (not schema-level) so history isn't blocked.
+notificationSchema.index({ isActive: 1, cpOwner: 1 });
 
 export default mongoose.models.Notification ||
   mongoose.model("Notification", notificationSchema);

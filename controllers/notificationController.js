@@ -5,12 +5,14 @@ import logAdminAction from "../utils/logAdminAction.js";
 
 /* ============================================================
    ADMIN — CRUD + HISTORY
+   Scoped to cpOwner: null so CP-owner-created notifications
+   never show up in / get touched by the main admin panel.
    ============================================================ */
 
 // GET /api/admin/notifications  (history — newest first)
 export const getNotifications = async (req, res) => {
   try {
-    const notifications = await Notification.find()
+    const notifications = await Notification.find({ cpOwner: null })
       .sort({ createdAt: -1 })
       .populate("createdBy", "email");
     res.json(notifications);
@@ -30,10 +32,15 @@ export const createNotification = async (req, res) => {
       return res.status(400).json({ message: "Title and message are required" });
     }
 
-    // Only one notification active at a time — deactivate any others
-    // if this one is being created as active.
+    // Only one ADMIN notification active at a time — deactivate any
+    // other admin ones if this one is being created as active.
+    // CP-owner notifications live in a separate cpOwner scope and
+    // are untouched by this.
     if (isActive !== false) {
-      await Notification.updateMany({ isActive: true }, { isActive: false });
+      await Notification.updateMany(
+        { cpOwner: null, isActive: true },
+        { isActive: false }
+      );
     }
 
     const notification = await Notification.create({
@@ -44,6 +51,7 @@ export const createNotification = async (req, res) => {
       limitValue: limitValue || 3,
       isActive: isActive !== false,
       createdBy: req.user._id,
+      cpOwner: null,
     });
 
     await logAdminAction({
@@ -67,15 +75,18 @@ export const updateNotification = async (req, res) => {
     const { title, message, audience, limitType, limitValue, isActive } =
       req.body;
 
-    const notification = await Notification.findById(req.params.id);
+    const notification = await Notification.findOne({
+      _id: req.params.id,
+      cpOwner: null,
+    });
     if (!notification) {
       return res.status(404).json({ message: "Notification not found" });
     }
 
-    // Enforce "one active at a time"
+    // Enforce "one active at a time" — admin scope only
     if (isActive === true) {
       await Notification.updateMany(
-        { _id: { $ne: notification._id }, isActive: true },
+        { _id: { $ne: notification._id }, cpOwner: null, isActive: true },
         { isActive: false }
       );
     }
@@ -107,7 +118,10 @@ export const updateNotification = async (req, res) => {
 // DELETE /api/admin/notifications/:id
 export const deleteNotification = async (req, res) => {
   try {
-    const notification = await Notification.findById(req.params.id);
+    const notification = await Notification.findOne({
+      _id: req.params.id,
+      cpOwner: null,
+    });
     if (!notification) {
       return res.status(404).json({ message: "Notification not found" });
     }
@@ -134,54 +148,91 @@ export const deleteNotification = async (req, res) => {
    USER-FACING
    ============================================================ */
 
-// Figures out which audience bucket the logged-in user falls into
+// Figures out which admin-level audience bucket the logged-in
+// user falls into (used only for cpOwner: null notifications)
 const getUserAudience = (user) => {
   if (user.resellerOwner) return "reseller";
   if (user.scope && user.scope !== "platform") return "cp";
   return "platform";
 };
 
+// Figures out whether a user matches a CP-owner-created
+// notification's audience targeting
+const matchesCpAudience = (notification, user) => {
+  const isResellerEndUser = !!user.resellerOwner;
+  if (notification.cpAudience === "both") return true;
+  if (notification.cpAudience === "resellerEndUsers") return isResellerEndUser;
+  return !isResellerEndUser; // "own"
+};
+
+// Shared eligibility check (active window + dismiss/day limit)
+// Returns the trimmed notification payload, or null if not eligible
+const resolveEligibleNotification = async (notification, userId) => {
+  if (!notification) return null;
+
+  if (notification.limitType === "days") {
+    const ageMs = Date.now() - new Date(notification.createdAt).getTime();
+    const ageDays = ageMs / (1000 * 60 * 60 * 24);
+    if (ageDays >= notification.limitValue) return null;
+  }
+
+  if (notification.limitType === "dismissCount") {
+    const dismissal = await NotificationDismissal.findOne({
+      userId,
+      notificationId: notification._id,
+    });
+    if (dismissal && dismissal.dismissCount >= notification.limitValue) {
+      return null;
+    }
+  }
+
+  return {
+    _id: notification._id,
+    title: notification.title,
+    message: notification.message,
+  };
+};
+
 // GET /api/notifications/active
-// Auth required — returns the single eligible notification for this user, or null
+// Auth required — returns the single eligible notification for this user, or null.
+// A CP owner's notification (scoped to the user's own child panel) takes
+// priority over the main platform's notification when both are active.
 export const getActiveNotification = async (req, res) => {
   try {
-    const notification = await Notification.findOne({ isActive: true });
-    if (!notification) return res.json({ notification: null });
+    const user = req.user;
 
-    const userAudience = getUserAudience(req.user);
-    const matchesAudience =
-      notification.audience === "all" || notification.audience === userAudience;
-
-    if (!matchesAudience) return res.json({ notification: null });
-
-    // Days-based expiry
-    if (notification.limitType === "days") {
-      const ageMs = Date.now() - new Date(notification.createdAt).getTime();
-      const ageDays = ageMs / (1000 * 60 * 60 * 24);
-      if (ageDays >= notification.limitValue) {
-        return res.json({ notification: null });
-      }
-    }
-
-    // Dismiss-count based expiry
-    let dismissal = null;
-    if (notification.limitType === "dismissCount") {
-      dismissal = await NotificationDismissal.findOne({
-        userId: req.user._id,
-        notificationId: notification._id,
+    // 1. CP-scoped notification, if this user belongs to a child panel
+    if (user.childPanelOwner) {
+      const cpNotification = await Notification.findOne({
+        isActive: true,
+        cpOwner: user.childPanelOwner,
       });
-      if (dismissal && dismissal.dismissCount >= notification.limitValue) {
-        return res.json({ notification: null });
+
+      if (cpNotification && matchesCpAudience(cpNotification, user)) {
+        const eligible = await resolveEligibleNotification(cpNotification, user._id);
+        if (eligible) return res.json({ notification: eligible });
       }
     }
 
-    res.json({
-      notification: {
-        _id: notification._id,
-        title: notification.title,
-        message: notification.message,
-      },
+    // 2. Fall back to the main platform / admin notification
+    const adminNotification = await Notification.findOne({
+      isActive: true,
+      cpOwner: null,
     });
+
+    if (adminNotification) {
+      const userAudience = getUserAudience(user);
+      const matchesAudience =
+        adminNotification.audience === "all" ||
+        adminNotification.audience === userAudience;
+
+      if (matchesAudience) {
+        const eligible = await resolveEligibleNotification(adminNotification, user._id);
+        if (eligible) return res.json({ notification: eligible });
+      }
+    }
+
+    res.json({ notification: null });
   } catch (err) {
     console.error("getActiveNotification error:", err);
     res.status(500).json({ message: "Failed to fetch notification" });

@@ -1,14 +1,38 @@
 import CategoryMeta from "../models/CategoryMeta.js";
 import CPCategoryMeta from "../models/CPCategoryMeta.js";
 import Service from "../models/Service.js";
+import User from "../models/User.js";
+
+/* =========================================================
+   Resolve which CP owner (if any) this request belongs to.
+   - Direct CP domain            -> req.childPanel is already the CP
+   - Reseller domain, under a CP -> walk reseller.childPanelOwner,
+                                     same active-check serviceController.js uses
+   - Main platform / not under a CP -> null (falls back to admin meta)
+========================================================= */
+const resolveCpOwnerId = async (req) => {
+  if (req.childPanel) return req.childPanel._id;
+
+  if (req.reseller?.childPanelOwner) {
+    const cpOwner = await User.findById(req.reseller.childPanelOwner)
+      .select("isChildPanel childPanelIsActive")
+      .lean();
+
+    if (cpOwner && cpOwner.isChildPanel && cpOwner.childPanelIsActive) {
+      return req.reseller.childPanelOwner;
+    }
+  }
+
+  return null;
+};
 
 // GET /api/category-meta
-// Public route — auto-scopes to the visiting child panel's own category
-// meta (via req.childPanel, set by detectChildPanelDomain) the same way
-// /api/services does. Falls back to platform-wide meta on the main domain.
+// Public route — auto-scopes to whichever child panel this visitor's
+// domain (or, for reseller end users, their reseller's parent CP)
+// belongs to. Falls back to platform-wide meta on the main domain.
 export const getCategoryMeta = async (req, res) => {
   try {
-    const cpOwner = req.childPanel?._id;
+    const cpOwner = await resolveCpOwnerId(req);
 
     const serviceMatch = cpOwner ? { status: true, cpOwner } : { status: true };
 
@@ -68,7 +92,7 @@ export const saveCategoryMeta = async (req, res) => {
 export const getCategoryServices = async (req, res) => {
   try {
     const category = decodeURIComponent(req.params.category);
-    const cpOwner  = req.childPanel?._id;
+    const cpOwner  = await resolveCpOwnerId(req);
     const match    = cpOwner ? { category, cpOwner } : { category };
 
     const services = await Service.find(match)

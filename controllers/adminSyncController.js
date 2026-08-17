@@ -331,3 +331,65 @@ export const getSyncCancels = async (req, res) => {
     res.status(500).json({ message: "Failed to fetch cancels" });
   }
 };
+
+// POST /api/admin/sync/orders/:id/pause
+export const pauseSyncOrder = async (req, res) => {
+  try {
+    const order = await Order.findById(req.params.id);
+    if (!order) return res.status(404).json({ message: "Order not found" });
+    if (["completed", "cancelled", "refunded"].includes(order.status)) {
+      return res.status(400).json({ message: "Order is in a final state" });
+    }
+    if (order.syncStopped) {
+      return res.status(400).json({ message: "Order was permanently stopped" });
+    }
+
+    order.syncPaused = true;
+    order.syncPausedAt = new Date();
+    order.syncAdminNote = req.body.note || "Paused by admin";
+    await order.save();
+
+    res.json({ message: "Order polling paused", order });
+  } catch (err) {
+    res.status(500).json({ message: "Failed to pause" });
+  }
+};
+
+// POST /api/admin/sync/orders/:id/resume
+export const resumeSyncOrder = async (req, res) => {
+  try {
+    const order = await Order.findById(req.params.id);
+    if (!order) return res.status(404).json({ message: "Order not found" });
+    if (order.syncStopped) {
+      return res.status(400).json({ message: "This order was permanently stopped and cannot be resumed" });
+    }
+
+    order.syncPaused = false;
+    order.syncTimedOut = false;
+    order.syncTimedOutAt = null;
+    order.syncAdminNote = req.body.note || "Resumed by admin";
+    await order.save();
+
+    res.json({ message: "Order polling resumed", order });
+  } catch (err) {
+    res.status(500).json({ message: "Failed to resume" });
+  }
+};
+
+// POST /api/admin/sync/orders/:id/stop
+export const stopSyncOrder = async (req, res) => {
+  try {
+    const order = await Order.findById(req.params.id);
+    if (!order) return res.status(404).json({ message: "Order not found" });
+
+    order.syncPaused = true;
+    order.syncStopped = true;
+    order.syncStoppedAt = new Date();
+    order.syncAdminNote = req.body.note || "Stopped by admin";
+    await order.save();
+
+    res.json({ message: "Order sync stopped permanently", order });
+  } catch (err) {
+    res.status(500).json({ message: "Failed to stop" });
+  }
+};

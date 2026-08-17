@@ -38,6 +38,7 @@ export const syncProviderOrders = async (io) => {
         status: { $in: ["pending", "processing"] },
         providerOrderId: { $ne: "" },
         syncPaused: { $ne: true },
+        syncStopped: { $ne: true },   // NEW — a stopped order was already excluded via syncPaused, this is belt-and-suspenders
         syncTimedOut: { $ne: true },
         createdAt: { $lte: orderCutoff },
       },
@@ -64,6 +65,7 @@ export const syncProviderOrders = async (io) => {
           status: { $in: ["pending", "processing"] },
           providerOrderId: { $ne: "" },
           syncPaused: { $ne: true },
+          syncStopped: { $ne: true },   // NEW
         },
         {
           status: { $in: ["partial", "failed"] },
@@ -71,6 +73,7 @@ export const syncProviderOrders = async (io) => {
           refundProcessed: false,
           isFreeOrder: { $ne: true },
           syncPaused: { $ne: true },
+          syncStopped: { $ne: true },   // NEW
         },
       ],
     });

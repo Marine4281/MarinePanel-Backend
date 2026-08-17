@@ -17,6 +17,37 @@ const parseQuery = (req) => ({
 });
 
 /* ============================================================
+   ── SUMMARY ──
+============================================================ */
+
+// GET /api/admin/sync/summary
+export const getSyncSummary = async (req, res) => {
+  try {
+    const [
+      ordersActive, ordersPaused, ordersStopped, ordersTimedOut,
+      refillsActive, refillsTimedOut, refillsStopped,
+    ] = await Promise.all([
+      Order.countDocuments({ status: { $in: ["pending", "processing"] }, syncPaused: { $ne: true } }),
+      Order.countDocuments({ syncPaused: true, syncStopped: { $ne: true } }),
+      Order.countDocuments({ syncStopped: true }),
+      Order.countDocuments({ syncTimedOut: true }),
+      Order.countDocuments({ refillRequested: true, refillStatus: { $in: ["pending", "processing"] }, refillProcessed: false }),
+      Order.countDocuments({ refillTimedOut: true }),
+      Order.countDocuments({ refillStatus: "stopped" }),
+    ]);
+
+    res.json({
+      orders:  { active: ordersActive, paused: ordersPaused, stopped: ordersStopped, timedOut: ordersTimedOut },
+      refills: { active: refillsActive, timedOut: refillsTimedOut, stopped: refillsStopped },
+      totalActive: ordersActive + refillsActive, // what's actually still hitting the provider right now
+    });
+  } catch (err) {
+    console.error("getSyncSummary:", err);
+    res.status(500).json({ message: "Failed to fetch summary" });
+  }
+};
+
+/* ============================================================
    ── ORDERS ──
 ============================================================ */
 
@@ -39,6 +70,10 @@ export const getSyncOrders = async (req, res) => {
     } else if (status === "paused") {
       delete query.$or;
       query.syncPaused = true;
+      query.syncStopped = { $ne: true }; // "paused" tab excludes permanently-stopped ones
+    } else if (status === "stopped") {
+      delete query.$or;
+      query.syncStopped = true;
     } else if (status === "timed_out") {
       delete query.$or;
       query.syncTimedOut = true;
@@ -61,7 +96,7 @@ export const getSyncOrders = async (req, res) => {
       .limit(limit)
       .populate("userId", "email")
       .populate("providerProfileId", "name")
-      .select("orderId userId providerProfileId service status providerStatus providerOrderId quantityDelivered quantity syncPaused syncTimedOut syncTimedOutAt syncPausedAt syncAdminNote createdAt isCharged refundProcessed");
+      .select("orderId userId providerProfileId service status providerStatus providerOrderId quantityDelivered quantity syncPaused syncTimedOut syncTimedOutAt syncPausedAt syncStopped syncStoppedAt syncAdminNote createdAt isCharged refundProcessed");
 
     res.json({ orders, total, page, pages: Math.ceil(total / limit) });
   } catch (err) {
@@ -78,6 +113,9 @@ export const pauseSyncOrder = async (req, res) => {
     if (["completed", "cancelled", "refunded"].includes(order.status)) {
       return res.status(400).json({ message: "Order is in a final state" });
     }
+    if (order.syncStopped) {
+      return res.status(400).json({ message: "Order was permanently stopped" });
+    }
 
     order.syncPaused = true;
     order.syncPausedAt = new Date();
@@ -91,10 +129,15 @@ export const pauseSyncOrder = async (req, res) => {
 };
 
 // POST /api/admin/sync/orders/:id/resume
+// Works for BOTH manually-paused and auto-timed-out orders.
+// Blocked ONLY for orders that were permanently Stopped.
 export const resumeSyncOrder = async (req, res) => {
   try {
     const order = await Order.findById(req.params.id);
     if (!order) return res.status(404).json({ message: "Order not found" });
+    if (order.syncStopped) {
+      return res.status(400).json({ message: "This order was permanently stopped and cannot be resumed" });
+    }
 
     order.syncPaused = false;
     order.syncTimedOut = false;
@@ -115,10 +158,12 @@ export const stopSyncOrder = async (req, res) => {
     if (!order) return res.status(404).json({ message: "Order not found" });
 
     order.syncPaused = true;
+    order.syncStopped = true;
+    order.syncStoppedAt = new Date();
     order.syncAdminNote = req.body.note || "Stopped by admin";
     await order.save();
 
-    res.json({ message: "Order sync stopped", order });
+    res.json({ message: "Order sync stopped permanently", order });
   } catch (err) {
     res.status(500).json({ message: "Failed to stop" });
   }
@@ -158,6 +203,53 @@ export const forceCheckOrder = async (req, res) => {
   } catch (err) {
     console.error("forceCheckOrder:", err);
     res.status(500).json({ message: "Force check failed", error: err.message });
+  }
+};
+
+// POST /api/admin/sync/orders/bulk-pause   body: { ids: [...] } or { all: true }
+export const bulkPauseSyncOrders = async (req, res) => {
+  try {
+    const { ids, all, note } = req.body;
+    const filter = all
+      ? { status: { $in: ["pending", "processing"] }, syncPaused: { $ne: true } }
+      : { _id: { $in: ids || [] }, syncStopped: { $ne: true } };
+
+    const result = await Order.updateMany(filter, {
+      $set: {
+        syncPaused: true,
+        syncPausedAt: new Date(),
+        syncAdminNote: note || "Bulk paused by admin",
+      },
+    });
+
+    res.json({ message: `Paused ${result.modifiedCount} order(s)`, modified: result.modifiedCount });
+  } catch (err) {
+    res.status(500).json({ message: "Bulk pause failed" });
+  }
+};
+
+// POST /api/admin/sync/orders/bulk-resume   body: { ids: [...] }
+// Same rule as single resume: stopped orders are excluded, timed-out ones are included.
+export const bulkResumeSyncOrders = async (req, res) => {
+  try {
+    const { ids, note } = req.body;
+    if (!ids?.length) return res.status(400).json({ message: "No order IDs provided" });
+
+    const result = await Order.updateMany(
+      { _id: { $in: ids }, syncStopped: { $ne: true } },
+      {
+        $set: {
+          syncPaused: false,
+          syncTimedOut: false,
+          syncTimedOutAt: null,
+          syncAdminNote: note || "Bulk resumed by admin",
+        },
+      }
+    );
+
+    res.json({ message: `Resumed ${result.modifiedCount} order(s)`, modified: result.modifiedCount });
+  } catch (err) {
+    res.status(500).json({ message: "Bulk resume failed" });
   }
 };
 
@@ -213,6 +305,7 @@ export const pauseRefill = async (req, res) => {
     const order = await Order.findById(req.params.id);
     if (!order?.refillRequested) return res.status(404).json({ message: "Not found" });
     if (order.refillStatus === "completed") return res.status(400).json({ message: "Already completed" });
+    if (order.refillStatus === "stopped") return res.status(400).json({ message: "Refill was permanently stopped" });
 
     order.refillProcessed = true;
     order.refillAdminNote = req.body.note || "Paused by admin";
@@ -225,11 +318,15 @@ export const pauseRefill = async (req, res) => {
 };
 
 // POST /api/admin/sync/refills/:id/resume
+// Works for auto-timed-out refills too (refillTimedOut). Blocked only for "stopped" or "completed".
 export const resumeRefill = async (req, res) => {
   try {
     const order = await Order.findById(req.params.id);
     if (!order?.refillRequested) return res.status(404).json({ message: "Not found" });
     if (order.refillStatus === "completed") return res.status(400).json({ message: "Already completed" });
+    if (order.refillStatus === "stopped") {
+      return res.status(400).json({ message: "This refill was permanently stopped and cannot be resumed" });
+    }
     if (!order.refillId) return res.status(400).json({ message: "No refill ID" });
 
     order.refillProcessed = false;
@@ -329,67 +426,5 @@ export const getSyncCancels = async (req, res) => {
     res.json({ orders, total, page, pages: Math.ceil(total / limit) });
   } catch (err) {
     res.status(500).json({ message: "Failed to fetch cancels" });
-  }
-};
-
-// POST /api/admin/sync/orders/:id/pause
-export const pauseSyncOrder = async (req, res) => {
-  try {
-    const order = await Order.findById(req.params.id);
-    if (!order) return res.status(404).json({ message: "Order not found" });
-    if (["completed", "cancelled", "refunded"].includes(order.status)) {
-      return res.status(400).json({ message: "Order is in a final state" });
-    }
-    if (order.syncStopped) {
-      return res.status(400).json({ message: "Order was permanently stopped" });
-    }
-
-    order.syncPaused = true;
-    order.syncPausedAt = new Date();
-    order.syncAdminNote = req.body.note || "Paused by admin";
-    await order.save();
-
-    res.json({ message: "Order polling paused", order });
-  } catch (err) {
-    res.status(500).json({ message: "Failed to pause" });
-  }
-};
-
-// POST /api/admin/sync/orders/:id/resume
-export const resumeSyncOrder = async (req, res) => {
-  try {
-    const order = await Order.findById(req.params.id);
-    if (!order) return res.status(404).json({ message: "Order not found" });
-    if (order.syncStopped) {
-      return res.status(400).json({ message: "This order was permanently stopped and cannot be resumed" });
-    }
-
-    order.syncPaused = false;
-    order.syncTimedOut = false;
-    order.syncTimedOutAt = null;
-    order.syncAdminNote = req.body.note || "Resumed by admin";
-    await order.save();
-
-    res.json({ message: "Order polling resumed", order });
-  } catch (err) {
-    res.status(500).json({ message: "Failed to resume" });
-  }
-};
-
-// POST /api/admin/sync/orders/:id/stop
-export const stopSyncOrder = async (req, res) => {
-  try {
-    const order = await Order.findById(req.params.id);
-    if (!order) return res.status(404).json({ message: "Order not found" });
-
-    order.syncPaused = true;
-    order.syncStopped = true;
-    order.syncStoppedAt = new Date();
-    order.syncAdminNote = req.body.note || "Stopped by admin";
-    await order.save();
-
-    res.json({ message: "Order sync stopped permanently", order });
-  } catch (err) {
-    res.status(500).json({ message: "Failed to stop" });
   }
 };

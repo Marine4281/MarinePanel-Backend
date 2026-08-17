@@ -29,6 +29,7 @@ import maintenanceRoutes from "./routes/maintenanceRoutes.js";
 import currencyRoutes from "./routes/currencyRoutes.js";
 import notificationRoutes from "./routes/notificationRoutes.js";
 import adminNotificationRoutes from "./routes/adminNotificationRoutes.js";
+import adminApiRoutes from "./routes/adminApiRoutes.js";
 
 // Reseller Routes
 import resellerRoutes from "./routes/resellerRoutes.js";
@@ -299,5 +300,6 @@ app.use("/api/child-panel", childPanelGuideRoutes);
 app.use("/api/admin/child-panel-guides", cpGuideAdminRoutes);
 app.use("/api/admin/sync", adminSyncRoutes);
 app.use("/api/admin/notifications", authMiddleware, adminOnly, adminNotificationRoutes);
+app.use("/api/admin/api", adminApiRoutes);
 
 export default app;

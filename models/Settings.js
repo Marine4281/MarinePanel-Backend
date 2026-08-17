@@ -307,6 +307,17 @@ seo: {
       type: Date,
       default: null,
     },
+
+    // API ACCESS CONTROL
+apiEnabled: {
+  type: Boolean,
+  default: true,
+},
+apiRateLimitPerMinute: {
+  type: Number,
+  default: 180,
+  min: 1,
+},
   },
   {
     timestamps: true,

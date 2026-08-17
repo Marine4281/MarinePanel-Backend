@@ -347,6 +347,13 @@ resellerOwnerCharge: {
       default: null,
     },
 
+    orderSource: {
+  type: String,
+  enum: ["web", "api"],
+  default: "web",
+  index: true,
+},
+
     // ── REFILL additions ──────────────────────────────
 refillCompletedAt:  { type: Date, default: null },
 refillRejectedAt:   { type: Date, default: null },

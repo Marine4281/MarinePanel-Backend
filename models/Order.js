@@ -369,6 +369,8 @@ syncPaused:         { type: Boolean, default: false, index: true },
 syncPausedAt:       { type: Date, default: null },
 syncTimedOut:       { type: Boolean, default: false, index: true },
 syncTimedOutAt:     { type: Date, default: null },
+    syncStopped:    { type: Boolean, default: false, index: true },  
+syncStoppedAt:      { type: Date, default: null },    
 syncAdminNote:      { type: String, default: "" },
 
     /* ===============================

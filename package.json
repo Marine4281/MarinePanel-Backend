@@ -8,6 +8,7 @@
     "dev": "nodemon server.js"
   },
   "dependencies": {
+    "@google-analytics/data": "^7.0.0",
     "agenda": "^5.0.0",
     "axios": "^1.13.2",
     "bcryptjs": "^3.0.3",

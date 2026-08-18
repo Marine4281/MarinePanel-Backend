@@ -1,24 +1,19 @@
-// controllers/gscController.js
-//
-// Admin-only Google Search Console reporting endpoints, backed by
-// the Google Search Console API (see utils/gscClient.js).
+// controllers/analyticsController.js
 
-const { getGscClient, getPropertyUrl } = require("../utils/gscClient");
+import { getGscClient, getPropertyUrl } from "../utils/gscClient.js";
 
-// Helper to map range query params to start dates
 function resolveStartDate(range) {
   const days = range === "7d" ? 7 : range === "90d" ? 90 : 30;
   const date = new Date();
   date.setDate(date.getDate() - days);
-  return date.toISOString().split("T")[0]; // YYYY-MM-DD
+  return date.toISOString().split("T")[0];
 }
 
 function getTodayDate() {
-  return new Date().toISOString().split("T")[0]; // YYYY-MM-DD
+  return new Date().toISOString().split("T")[0];
 }
 
-// GET /api/admin/gsc/overview?range=7d|30d|90d
-exports.getOverview = async (req, res) => {
+export const getOverview = async (req, res) => {
   try {
     const client = await getGscClient();
     const siteUrl = getPropertyUrl();
@@ -30,11 +25,7 @@ exports.getOverview = async (req, res) => {
     const response = await client.request({
       url: requestURL,
       method: "POST",
-      data: {
-        startDate,
-        endDate,
-        // No dimensions requested aggregates total site metrics
-      },
+      data: { startDate, endDate },
     });
 
     const row = response.data.rows?.[0] || { clicks: 0, impressions: 0, ctr: 0, position: 0 };
@@ -51,8 +42,7 @@ exports.getOverview = async (req, res) => {
   }
 };
 
-// GET /api/admin/gsc/timeseries?range=7d|30d|90d
-exports.getTimeseries = async (req, res) => {
+export const getTimeseries = async (req, res) => {
   try {
     const client = await getGscClient();
     const siteUrl = getPropertyUrl();
@@ -64,15 +54,11 @@ exports.getTimeseries = async (req, res) => {
     const response = await client.request({
       url: requestURL,
       method: "POST",
-      data: {
-        startDate,
-        endDate,
-        dimensions: ["date"],
-      },
+      data: { startDate, endDate, dimensions: ["date"] },
     });
 
     const rows = (response.data.rows || []).map((r) => ({
-      date: r.keys[0], // YYYY-MM-DD
+      date: r.keys[0],
       clicks: r.clicks,
       impressions: r.impressions,
       ctr: r.ctr,
@@ -86,8 +72,7 @@ exports.getTimeseries = async (req, res) => {
   }
 };
 
-// GET /api/admin/gsc/top-queries?range=7d|30d|90d&limit=10
-exports.getTopQueries = async (req, res) => {
+export const getTopQueries = async (req, res) => {
   try {
     const client = await getGscClient();
     const siteUrl = getPropertyUrl();
@@ -100,12 +85,7 @@ exports.getTopQueries = async (req, res) => {
     const response = await client.request({
       url: requestURL,
       method: "POST",
-      data: {
-        startDate,
-        endDate,
-        dimensions: ["query"],
-        rowLimit,
-      },
+      data: { startDate, endDate, dimensions: ["query"], rowLimit },
     });
 
     const rows = (response.data.rows || []).map((r) => ({
@@ -123,8 +103,7 @@ exports.getTopQueries = async (req, res) => {
   }
 };
 
-// GET /api/admin/gsc/top-pages?range=7d|30d|90d&limit=10
-exports.getTopPages = async (req, res) => {
+export const getTopPages = async (req, res) => {
   try {
     const client = await getGscClient();
     const siteUrl = getPropertyUrl();
@@ -137,12 +116,7 @@ exports.getTopPages = async (req, res) => {
     const response = await client.request({
       url: requestURL,
       method: "POST",
-      data: {
-        startDate,
-        endDate,
-        dimensions: ["page"],
-        rowLimit,
-      },
+      data: { startDate, endDate, dimensions: ["page"], rowLimit },
     });
 
     const rows = (response.data.rows || []).map((r) => ({

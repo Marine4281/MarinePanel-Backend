@@ -1,6 +1,6 @@
 // utils/gscClient.js
-const fs = require("fs");
-const { JWT } = require("google-auth-library");
+import fs from "fs";
+import { JWT } from "google-auth-library";
 
 let client = null;
 
@@ -28,7 +28,7 @@ function loadCredentials() {
   }
 }
 
-async function getGscClient() {
+export async function getGscClient() {
   if (client) return client;
 
   const credentials = loadCredentials();
@@ -42,12 +42,10 @@ async function getGscClient() {
   return client;
 }
 
-function getPropertyUrl() {
+export function getPropertyUrl() {
   const url = process.env.GSC_PROPERTY_URL;
   if (!url) {
     throw new Error("GSC_PROPERTY_URL env var is not set.");
   }
   return url.trim();
 }
-
-module.exports = { getGscClient, getPropertyUrl };

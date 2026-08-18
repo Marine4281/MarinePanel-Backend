@@ -5,12 +5,10 @@ import { JWT } from "google-auth-library";
 let client = null;
 
 function loadCredentials() {
-  // 1. Render Secret File path check
-  const credFilePath = process.env.GOOGLE_APPLICATION_CREDENTIALS;
-  if (credFilePath) {
-    if (!fs.existsSync(credFilePath)) {
-      throw new Error(`GOOGLE_APPLICATION_CREDENTIALS points to "${credFilePath}", but the file does not exist.`);
-    }
+  // 1. Check explicit env var or fallback to Render's default Secret File path
+  const credFilePath = process.env.GOOGLE_APPLICATION_CREDENTIALS || "/etc/secrets/keyfile.json";
+  
+  if (fs.existsSync(credFilePath)) {
     const fileData = fs.readFileSync(credFilePath, "utf8");
     return JSON.parse(fileData);
   }
@@ -18,7 +16,7 @@ function loadCredentials() {
   // 2. Local dev JSON string fallback
   const raw = process.env.GSC_CREDENTIALS;
   if (!raw) {
-    throw new Error("Missing credentials. Set either GOOGLE_APPLICATION_CREDENTIALS or GSC_CREDENTIALS.");
+    throw new Error("Missing credentials. Neither the Secret File (/etc/secrets/keyfile.json) nor GSC_CREDENTIALS was found.");
   }
 
   try {

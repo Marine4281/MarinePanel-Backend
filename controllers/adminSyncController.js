@@ -117,13 +117,19 @@ export const pauseSyncOrder = async (req, res) => {
       return res.status(400).json({ message: "Order was permanently stopped" });
     }
 
-    order.syncPaused = true;
-    order.syncPausedAt = new Date();
-    order.syncAdminNote = req.body.note || "Paused by admin";
-    await order.save();
+    const syncPausedAt = new Date();
+    const syncAdminNote = req.body.note || "Paused by admin";
 
-    res.json({ message: "Order polling paused", order });
+    await order.updateOne({
+      $set: { syncPaused: true, syncPausedAt, syncAdminNote },
+    });
+
+    res.json({
+      message: "Order polling paused",
+      order: { ...order.toObject(), syncPaused: true, syncPausedAt, syncAdminNote },
+    });
   } catch (err) {
+    console.error("pauseSyncOrder:", err);
     res.status(500).json({ message: "Failed to pause" });
   }
 };

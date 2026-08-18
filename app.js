@@ -53,6 +53,7 @@ import adminWithdrawalRoutes from "./routes/adminWithdrawalRoutes.js";
 import childPanelGuideRoutes, { adminGuideRouter as cpGuideAdminRoutes }
   from "./routes/childPanelGuideRoutes.js";
 import adminSyncRoutes from "./routes/adminSyncRoutes.js";
+import analyticsRoutes from "./routes/analyticsRoutes.js";
 
 // Child Panel Routes
 import childPanelRoutes from "./routes/childPanelRoutes.js";
@@ -301,5 +302,6 @@ app.use("/api/admin/child-panel-guides", cpGuideAdminRoutes);
 app.use("/api/admin/sync", adminSyncRoutes);
 app.use("/api/admin/notifications", authMiddleware, adminOnly, adminNotificationRoutes);
 app.use("/api/admin/api", adminApiRoutes);
+app.use("/api/admin/analytics", analyticsRoutes);
 
 export default app;

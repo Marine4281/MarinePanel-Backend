@@ -25,7 +25,14 @@ export const handleAdd = async (req, res, user) => {
 
   // ─── RESOLVE SERVICE ──────────────────────────────────────────────
   let selectedService;
-  if (user.childPanelOwner && !user.isChildPanel) {
+  if (user.isChildPanel) {
+    // CP owner's own key — their own catalog only
+    selectedService = await Service.findOne({
+      serviceId: service,
+      status: true,
+      cpOwner: user._id,
+    });
+  } else if (user.childPanelOwner) {
     selectedService = await Service.findOne({
       serviceId: service,
       status: true,
@@ -52,15 +59,29 @@ export const handleAdd = async (req, res, user) => {
   }
 
   // ─── RESOLVE PROVIDER PROFILE EARLY ──────────────────────────────
-  let providerProfile = await ProviderProfile.findById(
-    selectedService.providerProfileId
-  );
+  let providerProfile;
+  let providerServiceId = selectedService.providerServiceId;
 
-  if (!providerProfile && selectedService.provider && selectedService.provider !== "manual") {
-    providerProfile = await ProviderProfile.findOne({
-      name: selectedService.provider,
-      cpOwner: null,
-    });
+  if (selectedService.provider === "platform") {
+    // CP-imported platform service — providerServiceId currently holds
+    // the source admin Service._id, not a real upstream service id.
+    // Look up the source service to get the real provider + real
+    // upstream service id, otherwise the provider call below would be
+    // sent an invalid service id.
+    const sourceService = await Service.findById(selectedService.providerServiceId);
+    if (sourceService) {
+      providerProfile = await ProviderProfile.findById(sourceService.providerProfileId);
+      providerServiceId = sourceService.providerServiceId;
+    }
+  } else {
+    providerProfile = await ProviderProfile.findById(selectedService.providerProfileId);
+
+    if (!providerProfile && selectedService.provider && selectedService.provider !== "manual") {
+      providerProfile = await ProviderProfile.findOne({
+        name: selectedService.provider,
+        cpOwner: selectedService.cpOwner || null,
+      });
+    }
   }
 
   if (!providerProfile || !providerProfile.apiUrl || !providerProfile.apiKey) {
@@ -76,8 +97,8 @@ export const handleAdd = async (req, res, user) => {
   }
 
   const {
-    providerRate,
     finalCharge,
+    baseCharge,
     resellerOwnerId,
     resellerCommission,
     childPanelOwnerId,
@@ -92,7 +113,6 @@ export const handleAdd = async (req, res, user) => {
   }
 
   // ─── CHECK CP OWNER FUNDS BEFORE CHARGING ANYONE ─────────────────
-  const baseCharge = Number(((qty / 1000) * providerRate).toFixed(4));
   let cpOwnerWallet = null;
 
   if (childPanelOwnerId && baseCharge > 0) {
@@ -169,7 +189,7 @@ export const handleAdd = async (req, res, user) => {
 
     providerProfileId: providerProfile._id,
     provider: selectedService.provider,
-    providerServiceId: selectedService.providerServiceId,
+    providerServiceId: providerServiceId,
     providerApiUrl: providerProfile.apiUrl,
 
     cancelAllowed: selectedService.cancelAllowed,
@@ -188,7 +208,7 @@ export const handleAdd = async (req, res, user) => {
     const payload = {
       key: providerProfile.apiKey,
       action: "add",
-      service: selectedService.providerServiceId,
+      service: providerServiceId,
       link,
       quantity: qty,
     };

@@ -3,8 +3,16 @@ import User from "../../../models/User.js";
 import Settings from "../../../models/Settings.js";
 
 export const handleServices = async (req, res, user) => {
+  // ── Which catalog does this API key see? ──────────────────────────
+  // - CP owner's own key  -> only their own catalog
+  // - Reseller/end-user under a CP -> that CP's catalog + admin services
+  //   the admin has opted in for child panels
+  // - Everyone else (main platform) -> admin catalog only
   let serviceQuery = { status: true, cpOwner: null };
-  if (user.childPanelOwner && !user.isChildPanel) {
+
+  if (user.isChildPanel) {
+    serviceQuery = { status: true, cpOwner: user._id };
+  } else if (user.childPanelOwner) {
     serviceQuery = {
       status: true,
       $or: [
@@ -13,9 +21,20 @@ export const handleServices = async (req, res, user) => {
       ],
     };
   }
+
   const services = await Service.find(serviceQuery);
   const settings = await Settings.findOne().lean();
   const adminRate = Number(settings?.commission || 0);
+
+  // Resolve the CP commission rate that applies to this key, if any —
+  // used only for pricing services that belong to that CP.
+  let cpCommissionRate = 0;
+  if (user.isChildPanel) {
+    cpCommissionRate = Number(user.childPanelCommissionRate || 0);
+  } else if (user.childPanelOwner) {
+    const cpOwner = await User.findById(user.childPanelOwner);
+    cpCommissionRate = Number(cpOwner?.childPanelCommissionRate || 0);
+  }
 
   let resellerRate = 0;
   if (user.resellerOwner) {
@@ -26,11 +45,28 @@ export const handleServices = async (req, res, user) => {
   return res.json(
     services.map((s) => {
       const providerRate = Number(s.rate || 0);
-      const systemRate = providerRate + (providerRate * adminRate) / 100;
+
+      let baseRate;
+      if (s.cpOwner) {
+        // CP-owned service — no admin/platform commission layer.
+        // The CP owner's own key pays cost (no downstream party to mark
+        // up for); a reseller/end-user under the CP pays cost + the CP's
+        // own commission.
+        baseRate = user.isChildPanel
+          ? providerRate
+          : providerRate + (providerRate * cpCommissionRate) / 100;
+      } else {
+        // Main platform service — admin's commission, then the CP's own
+        // commission layered on top when fetched through a CP context.
+        const adminFinalRate = providerRate + (providerRate * adminRate) / 100;
+        baseRate =
+          user.childPanelOwner && !user.isChildPanel
+            ? adminFinalRate + (adminFinalRate * cpCommissionRate) / 100
+            : adminFinalRate;
+      }
+
       const finalRate =
-        resellerRate > 0
-          ? systemRate + (systemRate * resellerRate) / 100
-          : systemRate;
+        resellerRate > 0 ? baseRate + (baseRate * resellerRate) / 100 : baseRate;
 
       return {
         service: s.serviceId,

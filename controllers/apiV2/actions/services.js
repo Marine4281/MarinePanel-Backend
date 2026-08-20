@@ -5,24 +5,55 @@ import Settings from "../../../models/Settings.js";
 export const handleServices = async (req, res, user) => {
   // ── Which catalog does this API key see? ──────────────────────────
   // - CP owner's own key  -> only their own catalog
-  // - Reseller/end-user under a CP -> that CP's catalog + admin services
-  //   the admin has opted in for child panels
+  // - Reseller/end-user under a CP -> gated by that CP's
+  //   childPanelServiceMode, same as getResellerServices:
+  //     "platform" -> admin services opted in for child panels only
+  //     "own"      -> the CP's own catalog only
+  //     "both"     -> both, deduped
+  //     "none"     -> nothing
   // - Everyone else (main platform) -> admin catalog only
-  let serviceQuery = { status: true, cpOwner: null };
+  let services = [];
 
   if (user.isChildPanel) {
-    serviceQuery = { status: true, cpOwner: user._id };
+    services = await Service.find({ status: true, cpOwner: user._id });
   } else if (user.childPanelOwner) {
-    serviceQuery = {
-      status: true,
-      $or: [
-        { cpOwner: user.childPanelOwner },
-        { cpOwner: null, availableToChildPanels: true },
-      ],
-    };
-  }
+    const cpOwnerDoc = await User.findById(user.childPanelOwner)
+      .select("childPanelServiceMode")
+      .lean();
+    const serviceMode = cpOwnerDoc?.childPanelServiceMode || "none";
 
-  const services = await Service.find(serviceQuery);
+    if (serviceMode === "none") {
+      return res.json([]);
+    }
+
+    if (serviceMode === "platform" || serviceMode === "both") {
+      const platformServices = await Service.find({
+        status: true,
+        cpOwner: null,
+        availableToChildPanels: true,
+      });
+      services.push(...platformServices);
+    }
+
+    if (serviceMode === "own" || serviceMode === "both") {
+      const ownServices = await Service.find({
+        status: true,
+        cpOwner: user.childPanelOwner,
+      });
+      services.push(...ownServices);
+    }
+
+    // Deduplicate by _id (mirrors getResellerServices)
+    const seen = new Set();
+    services = services.filter((s) => {
+      const key = s._id.toString();
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  } else {
+    services = await Service.find({ status: true, cpOwner: null });
+  }
   const settings = await Settings.findOne().lean();
   const adminRate = Number(settings?.commission || 0);
 

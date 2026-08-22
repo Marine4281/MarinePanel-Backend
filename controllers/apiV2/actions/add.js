@@ -203,6 +203,13 @@ export const handleAdd = async (req, res, user) => {
   await creditChildPanelCommission(order);
   await creditAdminRevenue(order);
 
+  // ─── CHILD PANEL BILLING: count this order toward the owner's cycle ──
+  if (childPanelOwnerId) {
+    await User.findByIdAndUpdate(childPanelOwnerId, {
+      $inc: { childPanelOrdersThisCycle: 1 },
+    });
+  }
+
   // ─── CALL PROVIDER ────────────────────────────────────────────────
   try {
     const payload = {

@@ -65,47 +65,17 @@ export const getResellerServices = async (req, res) => {
     let services = [];
 
     if (cpOwnerId) {
-      const cpOwner = await User.findById(cpOwnerId).lean();
-      const serviceMode = cpOwner?.childPanelServiceMode || "none";
-
-      if (serviceMode === "none") {
-        return res.json({ services: [], commission: resellerCommission });
-      }
-
-      if (serviceMode === "platform" || serviceMode === "both") {
-        // FIX: only pull platform services the main admin has explicitly
-        // whitelisted for child panels — was previously pulling every
-        // platform service in the database regardless of approval status.
-        const platformServices = await Service.find({
-          status: true,
-          cpOwner: null,
-          availableToChildPanels: true,
-        })
-          .select("name rate min max category platform visible serviceId isFree freeQuantity cooldownHours refillAllowed cancelAllowed serviceType description cpOwner commissionOverride")
-          .sort({ serviceId: 1 })
-          .lean();
-        services.push(...sortByNewestCategoryFirst(platformServices));
-      }
-
-      if (serviceMode === "own" || serviceMode === "both") {
-        const ownServices = await Service.find({
-          status: true,
-          cpOwner: cpOwnerId,
-        })
-          .select("name rate min max category platform visible serviceId isFree freeQuantity cooldownHours refillAllowed cancelAllowed serviceType description cpOwner commissionOverride")
-          .sort({ serviceId: 1 })
-          .lean();
-        services.push(...sortByNewestCategoryFirst(ownServices));
-      }
-
-      // Deduplicate by _id
-      const seen = new Set();
-      services = services.filter((s) => {
-        const key = s._id.toString();
-        if (seen.has(key)) return false;
-        seen.add(key);
-        return true;
-      });
+      // A CP's catalog is just Service docs with cpOwner = that CP's id —
+      // whether they came from the CP's own provider or were imported
+      // from the platform catalog via importCPPlatformServices, they
+      // land in the same place. childPanelServiceMode only drives what
+      // the CP owner's dashboard UI offers them; it is not a live filter
+      // over the admin catalog, so it plays no part in what's served here.
+      const raw = await Service.find({ status: true, cpOwner: cpOwnerId })
+        .select("name rate min max category platform visible serviceId isFree freeQuantity cooldownHours refillAllowed cancelAllowed serviceType description cpOwner commissionOverride")
+        .sort({ serviceId: 1 })
+        .lean();
+      services = sortByNewestCategoryFirst(raw);
     } else {
       // Main platform reseller — platform services only
       const raw = await Service.find({ status: true, cpOwner: null })

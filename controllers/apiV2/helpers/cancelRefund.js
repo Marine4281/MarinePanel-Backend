@@ -1,5 +1,5 @@
 import Wallet from "../../../models/Wallet.js";
-import { calculateBalance } from "./balance.js";
+import { calculateBalance, updateUserBalance } from "../../order/helpers/wallet.js";
 import {
   reverseResellerCommission,
   reverseChildPanelCommission,
@@ -8,8 +8,9 @@ import {
 
 /* =========================================================
    🔧 REFUND + REVERSE ON SUCCESSFUL CANCEL
-   Refunds the payer for whatever wasn't delivered, and reverses
-   reseller/CP/admin commission proportionally.
+   Refunds the end-user, the CP owner, and the reseller owner
+   proportionally for whatever wasn't delivered, and reverses
+   reseller/CP/admin commission by the same ratio.
 ========================================================= */
 export const processCancelRefund = async (order) => {
   if (order.isFreeOrder || !order.isCharged || order.refundProcessed) {
@@ -42,7 +43,8 @@ export const processCancelRefund = async (order) => {
   }
 
   const charge = Number(order.charge || 0);
-  const refundAmount = Number(((remaining / quantity) * charge).toFixed(4));
+  const ratio = quantity > 0 ? remaining / quantity : 0;
+  const refundAmount = Number((ratio * charge).toFixed(4));
 
   if (refundAmount > 0) {
     wallet.transactions.push({
@@ -55,12 +57,56 @@ export const processCancelRefund = async (order) => {
     });
     wallet.balance = calculateBalance(wallet.transactions);
     await wallet.save();
+    await updateUserBalance(payerId, wallet);
+  }
+
+  // ─── REFUND CP OWNER for the wholesale share of the undelivered qty ──
+  const cpOwnerCharge = Number(order.cpOwnerCharge || 0);
+  if (order.childPanelOwner && cpOwnerCharge > 0) {
+    const cpOwnerRefund = Number((ratio * cpOwnerCharge).toFixed(4));
+    if (cpOwnerRefund > 0) {
+      const cpOwnerWallet = await Wallet.findOne({ user: order.childPanelOwner });
+      if (cpOwnerWallet) {
+        cpOwnerWallet.transactions.push({
+          type: "Refund",
+          amount: cpOwnerRefund,
+          status: "Completed",
+          note: `Refund - Cancelled order #${order.customOrderId} (${remaining} undelivered)`,
+          reference: order._id,
+          createdAt: new Date(),
+        });
+        cpOwnerWallet.balance = calculateBalance(cpOwnerWallet.transactions);
+        await cpOwnerWallet.save();
+        await updateUserBalance(order.childPanelOwner, cpOwnerWallet);
+      }
+    }
+  }
+
+  // ─── REFUND RESELLER OWNER for the wholesale share of the undelivered qty ─
+  const resellerOwnerCharge = Number(order.resellerOwnerCharge || 0);
+  if (order.resellerOwner && resellerOwnerCharge > 0) {
+    const resellerOwnerRefund = Number((ratio * resellerOwnerCharge).toFixed(4));
+    if (resellerOwnerRefund > 0) {
+      const resellerOwnerWallet = await Wallet.findOne({ user: order.resellerOwner });
+      if (resellerOwnerWallet) {
+        resellerOwnerWallet.transactions.push({
+          type: "Refund",
+          amount: resellerOwnerRefund,
+          status: "Completed",
+          note: `Refund - Cancelled order #${order.customOrderId} (${remaining} undelivered)`,
+          reference: order._id,
+          createdAt: new Date(),
+        });
+        resellerOwnerWallet.balance = calculateBalance(resellerOwnerWallet.transactions);
+        await resellerOwnerWallet.save();
+        await updateUserBalance(order.resellerOwner, resellerOwnerWallet);
+      }
+    }
   }
 
   order.refundProcessed = true;
   await order.save();
 
-  const ratio = charge > 0 ? refundAmount / charge : 1;
   await reverseResellerCommission(order, ratio);
   await reverseChildPanelCommission(order, ratio);
   await reverseAdminRevenue(order, ratio);

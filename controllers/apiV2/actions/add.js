@@ -22,9 +22,9 @@ import {
 } from "../../orderController.js";
 
 export const handleAdd = async (req, res, user) => {
-  const { service, link, quantity } = req.body;
+  const { service, link, quantity, comments } = req.body;
 
-  if (!service || !link || !quantity) {
+  if (!service || !link) {
     return res.json({ error: "Missing required fields" });
   }
 
@@ -62,6 +62,51 @@ export const handleAdd = async (req, res, user) => {
     return res.json({ error: "Service not found" });
   }
 
+  // ─── CUSTOM COMMENTS HANDLING ──────────────────────────────────────
+  const isCustomCommentsOrder =
+    selectedService.serviceType === "Custom Comments" ||
+    selectedService.serviceType === "Custom Comments Package";
+
+  if (!isCustomCommentsOrder && !quantity) {
+    return res.json({ error: "Missing required fields" });
+  }
+
+  if (isCustomCommentsOrder && (!comments || !comments.trim())) {
+    return res.json({ error: "Comments are required for this service" });
+  }
+
+  const qty = isCustomCommentsOrder
+    ? comments?.trim().split("\n").filter((l) => l.trim()).length || 0
+    : Number(quantity);
+
+  if (isCustomCommentsOrder && qty === 0) {
+    return res.json({ error: "Please enter at least one comment" });
+  }
+
+  if (!isCustomCommentsOrder && qty <= 0) {
+    return res.json({ error: "Invalid quantity" });
+  }
+
+  // ─── BLOCK DUPLICATE ACTIVE ORDER FOR SAME LINK + SAME SERVICE ────
+  // Scoped to this service only — the same link can still be ordered
+  // for a different service while an order on another service is active.
+  const existingActiveOrder = await Order.findOne({
+    link,
+    serviceId: selectedService.serviceId,
+    status: { $in: ["pending", "processing"] },
+    $or: [
+      { endUserId: user._id },
+      { endUserId: null, userId: user._id },
+    ],
+  }).lean();
+
+  if (existingActiveOrder) {
+    return res.json({
+      error:
+        "You have an active order with this link for this service. Please wait until it is completed.",
+    });
+  }
+
   // ─── RESOLVE PROVIDER PROFILE EARLY ──────────────────────────────
   let providerProfile;
   let providerServiceId = selectedService.providerServiceId;
@@ -90,9 +135,7 @@ export const handleAdd = async (req, res, user) => {
     return res.json({ error: "Service provider not configured" });
   }
 
-  const qty = Number(quantity);
-
-  if (qty < selectedService.min || qty > selectedService.max) {
+  if (!isCustomCommentsOrder && (qty < selectedService.min || qty > selectedService.max)) {
     return res.json({
       error: `Quantity must be between ${selectedService.min} and ${selectedService.max}`,
     });
@@ -219,6 +262,7 @@ export const handleAdd = async (req, res, user) => {
     serviceId: selectedService.serviceId,
     link,
     quantity: qty,
+    comments: isCustomCommentsOrder ? comments.trim() : undefined,
     charge: finalCharge,
     rate: Number(selectedService.rate || 0),
     isCharged: true,
@@ -272,8 +316,13 @@ export const handleAdd = async (req, res, user) => {
       action: "add",
       service: providerServiceId,
       link,
-      quantity: qty,
     };
+
+    if (isCustomCommentsOrder) {
+      payload.comments = comments.trim();
+    } else {
+      payload.quantity = qty;
+    }
 
     const providerRes = await axios.post(providerProfile.apiUrl, payload, {
       timeout: 15000,

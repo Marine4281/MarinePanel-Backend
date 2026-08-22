@@ -35,12 +35,25 @@ export const createOrder = async (req, res) => {
       return res.status(400).json({ message: "All fields are required" });
     }
 
-    // ─── BLOCK DUPLICATE ACTIVE ORDER FOR SAME LINK ────────────────────────
+    // ─── RESOLVE SERVICE ───────────────────────────────────────────────────
+    const serviceData = await resolveService({ service, req });
+
+    if (!serviceData) {
+      return res.status(404).json({ message: "Service not found" });
+    }
+
+    if (serviceData.visible === false) {
+      return res.status(403).json({ message: "Service not available" });
+    }
+
+    // ─── BLOCK DUPLICATE ACTIVE ORDER FOR SAME LINK + SAME SERVICE ────────
     // Matches on the actual submitting account (req.user._id), not the
     // owner the order is attributed to — so CP/reseller end-users don't
-    // block each other, only themselves.
+    // block each other, only themselves. Scoped to this service only —
+    // the same link ordered under a different service is not blocked.
     const existingActiveOrder = await Order.findOne({
       link,
+      serviceId: serviceData.serviceId || serviceData._id.toString(),
       status: { $in: ["pending", "processing"] },
       $or: [
         { endUserId: req.user._id },
@@ -51,19 +64,8 @@ export const createOrder = async (req, res) => {
     if (existingActiveOrder) {
       return res.status(400).json({
         message:
-          "You have an active order with this link. Please wait until it is completed.",
+          "You have an active order with this link for this service. Please wait until it is completed.",
       });
-    }
-
-    // ─── RESOLVE SERVICE ───────────────────────────────────────────────────
-    const serviceData = await resolveService({ service, req });
-
-    if (!serviceData) {
-      return res.status(404).json({ message: "Service not found" });
-    }
-
-    if (serviceData.visible === false) {
-      return res.status(403).json({ message: "Service not available" });
     }
 
     const isCustomCommentsOrder =
@@ -521,15 +523,6 @@ export const createOrder = async (req, res) => {
           message: "Provider failed",
           error: err.response?.data || err.message,
         });
-      }
-    }
-
-    // ─── ADMIN REVENUE ────────────────────────────────────────────────────
-    if (!isFreeOrder) {
-      const settings = await Settings.findOne();
-      if (settings) {
-        settings.totalRevenue += finalCharge - baseCharge;
-        await settings.save();
       }
     }
 

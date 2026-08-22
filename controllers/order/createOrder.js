@@ -376,6 +376,16 @@ export const createOrder = async (req, res) => {
     await creditChildPanelCommission(order);
     await creditAdminRevenue(order);
 
+    // ─── CHILD PANEL BILLING: count this order toward the owner's cycle ──
+    // Drives the tiered/per-order billing fee (see utils/childPanelBilling.js).
+    // Every order placed through a CP — regardless of free/paid or later
+    // status changes — counts toward that panel's current billing cycle.
+    if (childPanelOwnerId) {
+      await User.findByIdAndUpdate(childPanelOwnerId, {
+        $inc: { childPanelOrdersThisCycle: 1 },
+      });
+    }
+
     // ─── PROVIDER CALL ────────────────────────────────────────────────────
     if (cpOwnerInsufficientFunds || resellerOwnerInsufficientFunds) {
       // ← NEW: combined gate

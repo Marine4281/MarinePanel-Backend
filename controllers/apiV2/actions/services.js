@@ -4,53 +4,19 @@ import Settings from "../../../models/Settings.js";
 
 export const handleServices = async (req, res, user) => {
   // ── Which catalog does this API key see? ──────────────────────────
-  // - CP owner's own key  -> only their own catalog
-  // - Reseller/end-user under a CP -> gated by that CP's
-  //   childPanelServiceMode, same as getResellerServices:
-  //     "platform" -> admin services opted in for child panels only
-  //     "own"      -> the CP's own catalog only
-  //     "both"     -> both, deduped
-  //     "none"     -> nothing
-  // - Everyone else (main platform) -> admin catalog only
+  // A CP's "catalog" is just Service docs with cpOwner = that CP's id —
+  // whether those came from the CP's own provider or were imported from
+  // the platform catalog via importCPPlatformServices, they land in the
+  // same place. childPanelServiceMode only controls what the CP owner's
+  // dashboard UI offers them (connect own provider / browse platform
+  // services to import) — it is not a live filter over the admin
+  // catalog, so it plays no part in what gets served here.
   let services = [];
 
   if (user.isChildPanel) {
     services = await Service.find({ status: true, cpOwner: user._id });
   } else if (user.childPanelOwner) {
-    const cpOwnerDoc = await User.findById(user.childPanelOwner)
-      .select("childPanelServiceMode")
-      .lean();
-    const serviceMode = cpOwnerDoc?.childPanelServiceMode || "none";
-
-    if (serviceMode === "none") {
-      return res.json([]);
-    }
-
-    if (serviceMode === "platform" || serviceMode === "both") {
-      const platformServices = await Service.find({
-        status: true,
-        cpOwner: null,
-        availableToChildPanels: true,
-      });
-      services.push(...platformServices);
-    }
-
-    if (serviceMode === "own" || serviceMode === "both") {
-      const ownServices = await Service.find({
-        status: true,
-        cpOwner: user.childPanelOwner,
-      });
-      services.push(...ownServices);
-    }
-
-    // Deduplicate by _id (mirrors getResellerServices)
-    const seen = new Set();
-    services = services.filter((s) => {
-      const key = s._id.toString();
-      if (seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    });
+    services = await Service.find({ status: true, cpOwner: user.childPanelOwner });
   } else {
     services = await Service.find({ status: true, cpOwner: null });
   }
